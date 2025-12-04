@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed:email-templates": "node src/scripts/seedEmailTemplates.js"
   },
   "kmkdir sceywords": [],
   "author": "",
@@ -18,7 +19,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^7.0.11"
   },
   "devDependencies": {
     "nodemon": "^3.1.11",

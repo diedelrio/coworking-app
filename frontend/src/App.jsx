@@ -5,6 +5,11 @@ import DashboardUser from './pages/DashboardUser';
 import DashboardAdmin from './pages/DashboardAdmin';
 import ProtectedRoute from './components/ProtectedRoute';
 import SpaceCalendar from './pages/SpaceCalendar';
+import UserReservations from './pages/UserReservations';
+import UserNewReservation from './pages/UserNewReservation';
+import AdminSettings from './pages/AdminSettings';
+import AdminNewReservation from './pages/AdminNewReservation';
+import AdminSpaces from './pages/AdminSpaces';
 
 function App() {
   return (
@@ -12,6 +17,7 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
+      {/* RUTAS USUARIO */}
       <Route
         path="/user"
         element={
@@ -20,7 +26,24 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/user/reservas"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserReservations />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/user/reservar"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserNewReservation />
+          </ProtectedRoute>
+        }
+      />
 
+      {/* RUTAS ADMIN */}
       <Route
         path="/admin"
         element={
@@ -37,10 +60,38 @@ function App() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/admin/settings"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminSettings />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/espacios"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminSpaces />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/reservas/nueva"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminNewReservation />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* CATCH ALL AL FINAL */}
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>
   );
 }
 
 export default App;
-

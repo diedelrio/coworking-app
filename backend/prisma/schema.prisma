@@ -25,6 +25,8 @@ model User {
   updatedAt DateTime  @updatedAt
 
   reservations Reservation[]
+  settingHistories SettingHistory[]
+
 }
 
 model Space {
@@ -68,5 +70,58 @@ enum SpaceType {
   FIX_DESK
   FLEX_DESK
   MEETING_ROOM
+}
+
+enum SettingStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SettingAction {
+  CREATED
+  UPDATED
+  DEACTIVATED
+}
+
+enum SettingValueType {
+  NUMBER
+  STRING
+  BOOLEAN
+}
+
+model Setting {
+  id          Int              @id @default(autoincrement())
+  key         String           @unique
+  value       String
+  valueType   SettingValueType
+  status      SettingStatus    @default(ACTIVE)
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  history     SettingHistory[]
+}
+
+model SettingHistory {
+  id              Int             @id @default(autoincrement())
+  settingId       Int
+  oldValue        String?
+  newValue        String
+  action          SettingAction
+  changedByUserId Int?
+  createdAt       DateTime        @default(now())
+
+  setting   Setting @relation(fields: [settingId], references: [id])
+  changedBy User?    @relation(fields: [changedByUserId], references: [id])
+}
+
+model EmailTemplate {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  name      String
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 

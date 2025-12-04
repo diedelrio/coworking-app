@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../api/axiosClient';
-import Header from '../components/Header';
+//import Header from '../components/Header';
+import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
 
 function formatDateInput(date) {
@@ -418,9 +419,7 @@ export default function SpaceCalendar() {
   );
 
   return (
-    <div>
-      <Header user={user} />
-
+    <Layout user={user}>
       <div className="admin-page">
         <div
           className="admin-header"
@@ -611,6 +610,6 @@ export default function SpaceCalendar() {
           )}
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }

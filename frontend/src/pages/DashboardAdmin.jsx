@@ -1,14 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axiosClient';
-import Header from '../components/Header';
+import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
+import calendarImg from '../images/calendar-illustration.png';
 
 const SPACE_TYPES = [
   { value: 'FIX_DESK', label: 'Puesto fijo' },
   { value: 'FLEX_DESK', label: 'Puesto flex' },
   { value: 'MEETING_ROOM', label: 'Sala de reuniones' },
 ];
+
+function formatDateInput(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 export default function DashboardAdmin() {
   const [spaces, setSpaces] = useState([]);
@@ -23,6 +31,19 @@ export default function DashboardAdmin() {
 
   const [error, setError] = useState('');
 
+  // Calendario rápido por espacio (día)
+  const [calendarSpaceId, setCalendarSpaceId] = useState('');
+  const [calendarDate, setCalendarDate] = useState(() =>
+    formatDateInput(new Date())
+  );
+  const [calendarReservations, setCalendarReservations] = useState([]);
+  const [loadingCalendar, setLoadingCalendar] = useState(false);
+
+  // Paginación reservas futuras
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  // Formulario espacios
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
     name: '',
@@ -50,6 +71,10 @@ export default function DashboardAdmin() {
       setLoadingSpaces(true);
       const res = await api.get('/spaces');
       setSpaces(res.data);
+
+      if (!calendarSpaceId && res.data.length > 0) {
+        setCalendarSpaceId(String(res.data[0].id));
+      }
     } catch (err) {
       console.error(err);
       setError('No se pudieron cargar los espacios');
@@ -61,8 +86,33 @@ export default function DashboardAdmin() {
   async function fetchReservations() {
     try {
       setLoadingReservations(true);
-      const res = await api.get('/reservations'); // todas las reservas (admin)
-      setReservations(res.data);
+      const res = await api.get('/reservations'); // admin
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const upcoming = res.data
+        .filter((r) => {
+          const d = new Date(r.date);
+          d.setHours(0, 0, 0, 0);
+          return d >= today;
+        })
+        .sort((a, b) => {
+          const spaceA = a.space?.name || '';
+          const spaceB = b.space?.name || '';
+          const cmpSpace = spaceA.localeCompare(spaceB);
+          if (cmpSpace !== 0) return cmpSpace;
+
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          const cmpDate = dateA - dateB;
+          if (cmpDate !== 0) return cmpDate;
+
+          return new Date(a.startTime) - new Date(b.startTime);
+        });
+
+      setReservations(upcoming);
+      setCurrentPage(1);
     } catch (err) {
       console.error(err);
       setError('No se pudieron cargar las reservas');
@@ -70,6 +120,36 @@ export default function DashboardAdmin() {
       setLoadingReservations(false);
     }
   }
+
+  async function fetchCalendarReservations() {
+    if (!calendarSpaceId) return;
+
+    try {
+      setLoadingCalendar(true);
+      const res = await api.get(`/reservations/space/${calendarSpaceId}`, {
+        params: {
+          from: calendarDate,
+          to: calendarDate,
+        },
+      });
+      setCalendarReservations(res.data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingCalendar(false);
+    }
+  }
+  async function handleCancelReservation(id) {
+  if (!window.confirm('¿Seguro que quieres cancelar esta reserva?')) return;
+
+  try {
+    await api.delete(`/reservations/${id}`);
+    await fetchReservations(); // recarga la tabla
+  } catch (err) {
+    console.error(err);
+    setError('Error al cancelar la reserva');
+  }
+}
 
   async function fetchUsers() {
     try {
@@ -90,13 +170,19 @@ export default function DashboardAdmin() {
       await Promise.all([fetchSpaces(), fetchReservations(), fetchUsers()]);
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    fetchCalendarReservations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarSpaceId, calendarDate]);
+
   function handleChange(e) {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setForm((prev) => ({
       ...prev,
-      [name]: name === 'capacity' ? Number(value) : value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
   }
 
@@ -106,14 +192,22 @@ export default function DashboardAdmin() {
     setError('');
 
     try {
+      const payload = {
+        name: form.name,
+        type: form.type,
+        capacity: Number(form.capacity),
+        description: form.description,
+        active: form.active,
+      };
+
       if (editingId) {
-        await api.put(`/spaces/${editingId}`, form);
+        await api.put(`/spaces/${editingId}`, payload);
       } else {
-        await api.post('/spaces', form);
+        await api.post('/spaces', payload);
       }
 
-      await fetchSpaces();
       resetForm();
+      await fetchSpaces();
     } catch (err) {
       console.error(err);
       setError('Error al guardar el espacio');
@@ -146,8 +240,7 @@ export default function DashboardAdmin() {
   }
 
   async function handleChangeUserRole(u, newRole) {
-    if (u.role === newRole) return;
-
+    const isAdmin = u.role === 'ADMIN';
     if (!window.confirm(`¿Seguro que quieres cambiar el rol de ${u.email} a ${newRole}?`)) {
       return;
     }
@@ -177,260 +270,186 @@ export default function DashboardAdmin() {
     }
   }
 
-  return (
-    <div>
-      <Header user={user} />
+  const totalPages = Math.max(1, Math.ceil(reservations.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const pageItems = reservations.slice(startIndex, startIndex + pageSize);
 
+  return (
+    <Layout user={user}>
       <div className="admin-page">
+        {/* Encabezado Dashboard */}
         <div
           className="admin-header"
-          style={{ justifyContent: 'space-between' }}
+          style={{ justifyContent: 'space-between', marginBottom: '1.25rem' }}
         >
           <div>
             <h1>Panel de administrador</h1>
             <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-              Gestión de espacios, reservas y usuarios
+              Visión general de reservas y gestión del coworking
             </span>
           </div>
-
-          <Link
-            to="/admin/calendar"
-            style={{
-              fontSize: '0.85rem',
-              padding: '0.35rem 0.9rem',
-              borderRadius: '999px',
-              border: '1px solid #d1d5db',
-              textDecoration: 'none',
-              color: '#4f46e5',
-            }}
-          >
-            Ver calendario por espacio
-          </Link>
         </div>
 
         {error && (
-          <div className="error" style={{ maxWidth: 600, marginBottom: '1rem' }}>
+          <div className="error" style={{ maxWidth: 700, marginBottom: '1rem' }}>
             {error}
           </div>
         )}
 
-        {/* Gestión de espacios */}
-        <div className="admin-grid">
-          {/* Listado de espacios */}
-          <div className="admin-card">
-            <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-              Espacios
+        {/* Card acción rápida: agendar reserva */}
+        <div
+          className="admin-card"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '1.5rem',
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, marginBottom: '0.25rem', fontSize: '1.1rem' }}>
+              Agendar una reserva
             </h2>
-
-            {loadingSpaces ? (
-              <p>Cargando espacios...</p>
-            ) : spaces.length === 0 ? (
-              <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-                No hay espacios todavía. Crea el primero con el formulario de la derecha.
-              </p>
-            ) : (
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Tipo</th>
-                    <th>Capacidad</th>
-                    <th>Estado</th>
-                    <th style={{ width: '150px' }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {spaces.map((space) => (
-                    <tr key={space.id}>
-                      <td>{space.name}</td>
-                      <td>
-                        <span className="chip">
-                          {SPACE_TYPES.find((t) => t.value === space.type)?.label ||
-                            space.type}
-                        </span>
-                      </td>
-                      <td>{space.capacity}</td>
-                      <td>
-                        {space.active ? (
-                          <span className="badge green">Activo</span>
-                        ) : (
-                          <span className="badge red">Inactivo</span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          className="btn-small btn-outline"
-                          onClick={() => handleEdit(space)}
-                        >
-                          Editar
-                        </button>
-                        {space.active && (
-                          <button
-                            className="btn-small btn-danger"
-                            onClick={() => handleDeactivate(space.id)}
-                          >
-                            Desactivar
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#6b7280' }}>
+              Crea una reserva a nombre de un usuario que te contacte por teléfono, mail u otro canal.
+            </p>
           </div>
-
-          {/* Formulario crear/editar espacio */}
-          <div className="admin-card">
-            <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-              {editingId ? 'Editar espacio' : 'Nuevo espacio'}
-            </h2>
-
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Nombre</label>
-                <input
-                  name="name"
-                  type="text"
-                  value={form.name}
-                  onChange={handleChange}
-                  placeholder="Ej: Sala Mareas"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Tipo</label>
-                <select
-                  name="type"
-                  value={form.type}
-                  onChange={handleChange}
-                  style={{
-                    borderRadius: '0.5rem',
-                    border: '1px solid #d1d5db',
-                    padding: '0.6rem 0.8rem',
-                    fontSize: '0.95rem',
-                  }}
-                >
-                  {SPACE_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Capacidad</label>
-                <input
-                  name="capacity"
-                  type="number"
-                  min="1"
-                  value={form.capacity}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Descripción</label>
-                <textarea
-                  name="description"
-                  value={form.description}
-                  onChange={handleChange}
-                  rows={3}
-                  style={{
-                    borderRadius: '0.5rem',
-                    border: '1px solid #d1d5db',
-                    padding: '0.6rem 0.8rem',
-                    fontSize: '0.95rem',
-                    resize: 'vertical',
-                  }}
-                  placeholder="Ej: Pantalla, pizarra, buena luz natural..."
-                />
-              </div>
-
-              {editingId && (
-                <div className="form-group">
-                  <label>Estado</label>
-                  <select
-                    name="active"
-                    value={form.active ? 'true' : 'false'}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        active: e.target.value === 'true',
-                      }))
-                    }
-                    style={{
-                      borderRadius: '0.5rem',
-                      border: '1px solid #d1d5db',
-                      padding: '0.6rem 0.8rem',
-                      fontSize: '0.95rem',
-                    }}
-                  >
-                    <option value="true">Activo</option>
-                    <option value="false">Inactivo</option>
-                  </select>
-                </div>
-              )}
-
-              <button className="button" type="submit" disabled={savingSpace}>
-                {savingSpace
-                  ? 'Guardando...'
-                  : editingId
-                  ? 'Guardar cambios'
-                  : 'Crear espacio'}
-              </button>
-
-              {editingId && (
-                <button
-                  type="button"
-                  className="button"
-                  style={{
-                    marginTop: '0.5rem',
-                    background: '#e5e7eb',
-                    color: '#111827',
-                  }}
-                  onClick={resetForm}
-                >
-                  Cancelar edición
-                </button>
-              )}
-            </form>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <img
+              src={calendarImg}
+              alt="Calendario"
+              style={{ width: 64, height: 64, objectFit: 'contain' }}
+            />
+            <Link
+              to="/admin/reservas/nueva"
+              style={{
+                padding: '0.6rem 1.2rem',
+                borderRadius: '999px',
+                background: '#4f46e5',
+                color: 'white',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Nueva reserva
+            </Link>
           </div>
         </div>
 
-        {/* Tabla de todas las reservas */}
-        <div className="admin-card" style={{ marginTop: '1.5rem' }}>
-          <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-            Todas las reservas
-          </h2>
+        {/* Calendario rápido por espacio (día) */}
+        <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginBottom: '0.75rem',
+              gap: '1rem',
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, marginBottom: '0.25rem', fontSize: '1.1rem' }}>
+                Calendario por espacio
+              </h2>
+              <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                Revisa rápidamente las reservas de hoy para un espacio concreto.
+              </span>
+            </div>
 
-          {loadingReservations ? (
-            <p>Cargando reservas...</p>
-          ) : reservations.length === 0 ? (
+            <Link
+              to={
+                calendarSpaceId
+                  ? `/admin/calendar?spaceId=${calendarSpaceId}&date=${calendarDate}`
+                  : '/admin/calendar'
+              }
+              style={{
+                fontSize: '0.85rem',
+                padding: '0.35rem 0.9rem',
+                borderRadius: '999px',
+                border: '1px solid #d1d5db',
+                textDecoration: 'none',
+                color: '#4f46e5',
+                alignSelf: 'flex-start',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Ver vista completa
+            </Link>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              marginBottom: '0.75rem',
+            }}
+          >
+            <div style={{ minWidth: 220 }}>
+              <label
+                style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.2rem' }}
+              >
+                Espacio
+              </label>
+              <select
+                value={calendarSpaceId}
+                onChange={(e) => setCalendarSpaceId(e.target.value)}
+                style={{
+                  width: '100%',
+                  borderRadius: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  padding: '0.5rem 0.7rem',
+                  fontSize: '0.9rem',
+                }}
+              >
+                {spaces.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ minWidth: 180 }}>
+              <label
+                style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.2rem' }}
+              >
+                Fecha
+              </label>
+              <input
+                type="date"
+                value={calendarDate}
+                onChange={(e) => setCalendarDate(e.target.value)}
+                style={{
+                  width: '100%',
+                  borderRadius: '0.5rem',
+                  border: '1px solid #d1d5db',
+                  padding: '0.5rem 0.7rem',
+                  fontSize: '0.9rem',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Lista de reservas del día para el espacio */}
+          {loadingCalendar ? (
+            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Cargando calendario...</p>
+          ) : calendarReservations.length === 0 ? (
             <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-              No hay reservas registradas todavía.
+              No hay reservas para esta fecha en este espacio.
             </p>
           ) : (
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Franja</th>
-                  <th>Espacio</th>
-                  <th>Usuario</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reservations.map((r) => {
-                  const dateObj = new Date(r.date);
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {calendarReservations
+                .slice()
+                .sort(
+                  (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+                )
+                .map((r) => {
                   const start = new Date(r.startTime);
                   const end = new Date(r.endTime);
-
-                  const fecha = dateObj.toLocaleDateString('es-ES');
                   const horaInicio = start.toLocaleTimeString('es-ES', {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -439,33 +458,172 @@ export default function DashboardAdmin() {
                     hour: '2-digit',
                     minute: '2-digit',
                   });
+                  const userName = r.user?.name || r.user?.email || '';
 
                   return (
-                    <tr key={r.id}>
-                      <td>{fecha}</td>
-                      <td>
-                        {horaInicio} - {horaFin}
-                      </td>
-                      <td>{r.space?.name}</td>
-                      <td>
-                        {r.user
-                          ? `${r.user.name} ${r.user.lastName} (${r.user.email})`
-                          : '—'}
-                      </td>
-                      <td>
+                    <li
+                      key={r.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.5rem 0.3rem',
+                        borderBottom: '1px solid #e5e7eb',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600 }}>
+                          {horaInicio} – {horaFin}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#4b5563' }}>
+                          Usuario: {userName || '—'}
+                        </div>
+                      </div>
+                      <div>
                         {r.status === 'CANCELLED' ? (
                           <span className="badge red">Cancelada</span>
                         ) : (
                           <span className="badge green">Activa</span>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
+            </ul>
           )}
         </div>
+
+        {/* Tabla de reservas (hoy en adelante) */}
+        <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>
+            Reservas desde hoy
+          </h2>
+
+          {loadingReservations ? (
+            <p>Cargando reservas...</p>
+          ) : reservations.length === 0 ? (
+            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
+              No hay reservas próximas registradas.
+            </p>
+          ) : (
+            <>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Espacio</th>
+                    <th>Fecha</th>
+                    <th>Franja</th>
+                    <th>Usuario</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((r) => {
+                    const d = new Date(r.date);
+                    const start = new Date(r.startTime);
+                    const end = new Date(r.endTime);
+
+                    const fechaStr = d.toLocaleDateString('es-ES', {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: '2-digit',
+                    });
+
+                    const horaInicio = start.toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    });
+                    const horaFin = end.toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    });
+
+                    const userName = r.user?.name || r.user?.email || '';
+
+                    return (
+                      <tr key={r.id}>
+                        <td>{r.space?.name || '—'}</td>
+                        <td>{fechaStr}</td>
+                        <td>{horaInicio} - {horaFin}</td>
+                        <td>{userName}</td>
+                        <td>
+                          {r.status === 'CANCELLED' ? (
+                            <span className="badge red">Cancelada</span>
+                          ) : (
+                            <span className="badge green">Activa</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.status !== 'CANCELLED' ? (
+                            <button
+                              className="btn-small btn-danger"
+                              onClick={() => handleCancelReservation(r.id)}
+                            >
+                              Cancelar
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                              —
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* paginado simple */}
+              <div
+                style={{
+                  marginTop: '0.5rem',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={safePage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  style={{
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '999px',
+                    border: '1px solid #d1d5db',
+                    background: safePage === 1 ? '#f9fafb' : '#ffffff',
+                    cursor: safePage === 1 ? 'default' : 'pointer',
+                  }}
+                >
+                  ◀
+                </button>
+                <span>
+                  Página {safePage} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage === totalPages}
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  style={{
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '999px',
+                    border: '1px solid #d1d5db',
+                    background: safePage === totalPages ? '#f9fafb' : '#ffffff',
+                    cursor: safePage === totalPages ? 'default' : 'pointer',
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Secciones de gestión existentes (espacios y usuarios) */}
 
         {/* Gestión de usuarios */}
         <div className="admin-card" style={{ marginTop: '1.5rem' }}>
@@ -477,7 +635,7 @@ export default function DashboardAdmin() {
             <p>Cargando usuarios...</p>
           ) : users.length === 0 ? (
             <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-              No hay usuarios registrados todavía.
+              No hay usuarios registrados.
             </p>
           ) : (
             <table className="admin-table">
@@ -485,7 +643,6 @@ export default function DashboardAdmin() {
                 <tr>
                   <th>Nombre</th>
                   <th>Email</th>
-                  <th>Teléfono</th>
                   <th>Rol</th>
                   <th>Estado</th>
                   <th style={{ width: '200px' }}>Acciones</th>
@@ -493,14 +650,11 @@ export default function DashboardAdmin() {
               </thead>
               <tbody>
                 {users.map((u) => {
-                  const fullName = `${u.name || ''} ${u.lastName || ''}`.trim() || '—';
                   const isAdmin = u.role === 'ADMIN';
-
                   return (
                     <tr key={u.id}>
-                      <td>{fullName}</td>
+                      <td>{u.name}</td>
                       <td>{u.email}</td>
-                      <td>{u.phone || '—'}</td>
                       <td>
                         <span className="chip">
                           {isAdmin ? 'Admin' : 'Cliente'}
@@ -537,6 +691,6 @@ export default function DashboardAdmin() {
           )}
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }
