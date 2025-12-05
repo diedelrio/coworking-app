@@ -17,6 +17,7 @@ export default function UserNewReservation() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loadingSpaces, setLoadingSpaces] = useState(true);
+  
 
   // Estados del modal
   const [overrideInfo, setOverrideInfo] = useState(null);

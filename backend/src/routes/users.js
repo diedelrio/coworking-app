@@ -32,56 +32,90 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/users/:id
+ * Obtener los datos de un usuario (solo admin)
+ */
+router.get('/:id', authRequired, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const user = await prisma.user.findUnique({
+    where: { id },
+  });
+
+  if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+  const { password, ...safeUser } = user;
+  res.json(safeUser);
+});
+
+/**
  * PUT /api/users/:id
  * Actualizar datos básicos de usuario (rol, activo, nombre, phone)
  * Body: { name?, lastName?, phone?, role?, active? }
  */
 router.put('/:id', authRequired, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { name, lastName, phone, role, active } = req.body;
+  const id = Number(req.params.id);
+  const { name, lastName, email, phone, role, active } = req.body;
 
-    const data = {};
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (!existing) {
+    return res.status(404).json({ message: 'Usuario no encontrado' });
+  }
 
-    if (typeof name === 'string') data.name = name;
-    if (typeof lastName === 'string') data.lastName = lastName;
-    if (typeof phone === 'string') data.phone = phone;
+  const updates = { name, lastName, email, phone, role, active };
+  const fieldsToTrack = ['name', 'lastName', 'email', 'phone,', 'role', 'active'];
 
-    if (typeof role === 'string') {
-      // Ajusta esto si en tu schema el enum es distinto
-      const allowedRoles = ['ADMIN', 'USER'];
-      if (!allowedRoles.includes(role)) {
-        return res
-          .status(400)
-          .json({ message: 'Rol no válido. Usa ADMIN o USER.' });
-      }
-      data.role = role;
+  const historyEntries = [];
+  fieldsToTrack.forEach((field) => {
+    if (typeof updates[field] === 'undefined') return;
+
+    const oldValue = existing[field];
+    const newValue = updates[field];
+
+    // solo registramos si cambió
+    if (oldValue !== newValue) {
+      historyEntries.push({
+        userId: id,
+        field,
+        oldValue: oldValue !== null ? String(oldValue) : null,
+        newValue: newValue !== null ? String(newValue) : null,
+        changedBy: req.user.id, // asumiendo que authRequired setea req.user
+      });
     }
+  });
 
-    if (typeof active === 'boolean') {
-      data.active = active;
-    }
-
-    const updated = await prisma.user.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
       where: { id },
-      data,
-      select: {
-        id: true,
-        name: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        role: true,
-        active: true,
-        createdAt: true,
-      },
+      data: updates,
     });
 
-    res.json(updated);
-  } catch (err) {
-    console.error('ERROR PUT /users/:id', err);
-    res.status(500).json({ message: 'Error al actualizar usuario' });
-  }
+    if (historyEntries.length > 0) {
+      await tx.userHistory.createMany({
+        data: historyEntries,
+      });
+    }
+
+    return u;
+  });
+
+  const { password, ...safeUser } = updated;
+  res.json(safeUser);
 });
+
+/**
+ * GET /api/users/:id/history
+ * Obtener el historial de cambios de un usuario (solo admin)
+ */
+router.get('/:id/history', authRequired, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+
+  const history = await prisma.userHistory.findMany({
+    where: { userId: id },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(history);
+});
+
 
 module.exports = router;

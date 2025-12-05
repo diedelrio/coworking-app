@@ -33,7 +33,7 @@ export default function Header({ user, onToggleSidebar }) {
             aria-label="Alternar menú lateral"
             style={{
               border: 'none',
-              background: 'white',
+              background: '#33576f',
               width: 36,
               height: 36,
               borderRadius: '999px',
@@ -41,10 +41,10 @@ export default function Header({ user, onToggleSidebar }) {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              boxShadow: '0 0 0 1px #e5e7eb',
+              boxShadow: '0 0 0 1px #33576f',
             }}
           >
-            <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>☰</span>
+            <span style={{ fontSize: '1.2rem', lineHeight: 1, color: 'white', fontWeight:'bold' }}>☰</span>
           </button>
         )}
 

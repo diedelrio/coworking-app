@@ -26,7 +26,19 @@ model User {
 
   reservations Reservation[]
   settingHistories SettingHistory[]
+  history    UserHistory[]
+}
 
+model UserHistory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  field     String
+  oldValue  String?
+  newValue  String?
+  changedBy Int?     // id del usuario admin que hizo el cambio
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Space {

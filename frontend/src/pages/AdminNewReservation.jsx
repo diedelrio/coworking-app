@@ -160,7 +160,7 @@ export default function AdminNewReservation() {
               whiteSpace: 'nowrap',
             }}
           >
-            ← Volver al panel
+            ← Cancelar
           </Link>
         </div>
 
@@ -229,14 +229,16 @@ export default function AdminNewReservation() {
 
                 {/* Por ahora, simplemente enlazamos a la gestión de usuarios */}
                 <Link
-                  to="/admin"
+                  to="/admin/usuarios/nuevo"
                   style={{
                     padding: '0.5rem 0.75rem',
                     borderRadius: '0.5rem',
-                    border: '1px solid #d1d5db',
                     fontSize: '0.85rem',
                     textDecoration: 'none',
                     whiteSpace: 'nowrap',
+                    background: '#4f46e5',
+                    color: 'white',
+                    fontWeight: '600',
                   }}
                 >
                   + Crear usuario

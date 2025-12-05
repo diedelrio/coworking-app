@@ -10,6 +10,8 @@ import UserNewReservation from './pages/UserNewReservation';
 import AdminSettings from './pages/AdminSettings';
 import AdminNewReservation from './pages/AdminNewReservation';
 import AdminSpaces from './pages/AdminSpaces';
+import AdminNewUser from './pages/AdminNewUser';
+import AdminUsers from './pages/AdminUsers';
 
 function App() {
   return (
@@ -88,6 +90,33 @@ function App() {
         }
       />
 
+      <Route
+        path="/admin/usuarios/nuevo"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminNewUser />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/usuarios"
+        element={
+          <ProtectedRoute role="ADMIN">
+            <AdminUsers />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/usuarios/:id"
+        element={
+          <ProtectedRoute role="ADMIN">
+            <AdminNewUser />
+          </ProtectedRoute>
+        }
+      />
+      
       {/* CATCH ALL AL FINAL */}
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>

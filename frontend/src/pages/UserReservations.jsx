@@ -211,13 +211,23 @@ export default function UserReservations() {
   function handleSlotClick(slot) {
     if (!selectedDate || slot.status !== 'DISPONIBLE') return;
     const dateParam = formatKeyFromDate(selectedDate); // YYYY-MM-DD
-    navigate(
+
+    const params = new URLSearchParams({
+      date: dateParam,
+      start: slot.start,
+      end: slot.end,
+      spaceId: String(selectedSpaceId),
+    });
+
+    navigate(`/user/reservar?${params.toString()}`);
+
+    /* navigate(
       `/user/reservar?date=${encodeURIComponent(
         dateParam
       )}&start=${encodeURIComponent(slot.start)}&end=${encodeURIComponent(
         slot.end
       )}`
-    );
+    ); */
   }
   function handleEditReservation(id) {
     navigate(`/user/reservar?edit=${encodeURIComponent(id)}`);
@@ -716,40 +726,40 @@ export default function UserReservations() {
                         minute: '2-digit',
                       });
                       return (
-  <li
-    key={r.id}
-    style={{
-      marginBottom: '0.2rem',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: '0.5rem',
-    }}
-  >
-    <div>
-      <strong>{r.space?.name}</strong> ({horaInicio}–{horaFin}) –{' '}
-      {r.status === 'CANCELLED' ? 'Cancelada' : 'Activa'}
-    </div>
+                        <li
+                          key={r.id}
+                          style={{
+                            marginBottom: '0.2rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                          }}
+                        >
+                          <div>
+                            <strong>{r.space?.name}</strong> ({horaInicio}–{horaFin}) –{' '}
+                            {r.status === 'CANCELLED' ? 'Cancelada' : 'Activa'}
+                          </div>
 
-    {r.status === 'ACTIVE' && new Date(r.startTime) > new Date() && (
-      <button
-        type="button"
-        onClick={() => handleEditReservation(r.id)}
-        style={{
-          fontSize: '0.75rem',
-          padding: '0.15rem 0.6rem',
-          borderRadius: '999px',
-          border: '1px solid #3b82f6',
-          background: '#eff6ff',
-          color: '#1d4ed8',
-          cursor: 'pointer',
-        }}
-      >
-        Editar
-      </button>
-    )}
-  </li>
-);
+                          {r.status === 'ACTIVE' && new Date(r.startTime) > new Date() && (
+                            <button
+                              type="button"
+                              onClick={() => handleEditReservation(r.id)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.15rem 0.6rem',
+                                borderRadius: '999px',
+                                border: '1px solid #3b82f6',
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Editar
+                            </button>
+                          )}
+                        </li>
+                      );
 
                     })}
                   </ul>

@@ -40,3 +40,106 @@
 .read-the-docs {
   color: #888;
 }
+
+.admin-page-header h1 {
+  margin: 0;
+}
+
+.admin-page-subtitle {
+  margin-top: 0.25rem;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.admin-card {
+  background: #ffffff;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  margin-bottom: 1rem;
+}
+
+.admin-label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  color: #4b5563;
+}
+
+.admin-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+}
+
+.admin-button {
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.admin-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.admin-button-outline {
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #9ca3af;
+  background: transparent;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+
+.admin-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.5rem 0.4rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.tag-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.tag-inactive {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.tag-admin {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.tag-client {
+  background: #fef3c7;
+  color: #92400e;
+}

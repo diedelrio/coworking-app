@@ -23,7 +23,7 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
     color: isActive ? '#ffffff' : '#e5e7eb',
     padding: '0.55rem 0.75rem',
     borderRadius: '0.5rem',
-    background: isActive ? '#4f46e5' : 'transparent',
+    background: isActive ? '#5686a7ff' : 'transparent',
     marginBottom: '0.1rem',
     textAlign: collapsed ? 'center' : 'left',
   });
@@ -64,7 +64,7 @@ export default function Navbar({ collapsed }) {
   const isSpaces = path === '/admin/espacios';
   const isSettings = path === '/admin/settings';
   
-  const isUsers = path.startsWith('/admin/usuarios'); // futuro
+  const isUsers = path === '/admin/usuarios'; // futuro
   const isReports =
     path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
 
@@ -112,18 +112,15 @@ export default function Navbar({ collapsed }) {
 
 
       {/* Usuarios (placeholder futuro) */}
-      <div style={{ marginTop: '0.75rem' }}>
-        <NavItem
-          to="/admin/usuarios"
-          icon="👥"
-          label="Usuarios"
-          collapsed={collapsed}
-          active={isUsers}
-        />
-      </div>
+      <NavItem
+        to="/admin/usuarios"
+        icon="👥"
+        label="Usuarios"
+        collapsed={collapsed}
+        active={isUsers}
+      />
 
       {/* Reportes (placeholder futuro) */}
-      <div style={{ marginTop: '0.75rem' }}>
         <NavItem
           icon="📊"
           label="Reportes"
@@ -131,20 +128,6 @@ export default function Navbar({ collapsed }) {
           active={isReports}
         />
 
-        {!collapsed && (
-          <div
-            style={{
-              paddingLeft: '1.8rem',
-              marginTop: '0.25rem',
-              fontSize: '0.85rem',
-              color: '#9ca3af',
-            }}
-          >
-            <div style={{ marginBottom: '0.1rem' }}>Reservas (TBD)</div>
-            <div>Usuarios (TBD)</div>
-          </div>
-        )}
-      </div>
     </aside>
   );
 }
