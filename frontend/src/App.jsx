@@ -12,12 +12,16 @@ import AdminNewReservation from './pages/AdminNewReservation';
 import AdminSpaces from './pages/AdminSpaces';
 import AdminNewUser from './pages/AdminNewUser';
 import AdminUsers from './pages/AdminUsers';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* RUTAS USUARIO */}
       <Route
@@ -102,7 +106,7 @@ function App() {
       <Route
         path="/admin/usuarios"
         element={
-          <ProtectedRoute role="ADMIN">
+          <ProtectedRoute role={['ADMIN']}>
             <AdminUsers />
           </ProtectedRoute>
         }
@@ -111,7 +115,7 @@ function App() {
       <Route
         path="/admin/usuarios/:id"
         element={
-          <ProtectedRoute role="ADMIN">
+          <ProtectedRoute role={['ADMIN']}>
             <AdminNewUser />
           </ProtectedRoute>
         }

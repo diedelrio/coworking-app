@@ -15,6 +15,7 @@ export default function AdminNewUser() {
     email: '',
     phone: '',
     role: 'CLIENT',
+    classify: 'GOOD', // ✅ NUEVO: para mostrar/editar classify
     active: true,
   });
 
@@ -38,6 +39,8 @@ export default function AdminNewUser() {
     try {
       setLoading(true);
       setError('');
+      setSuccess('');
+
       // Detalle de usuario (sin password)
       const userRes = await api.get(`/users/${id}`);
       const user = userRes.data;
@@ -48,6 +51,7 @@ export default function AdminNewUser() {
         email: user.email || '',
         phone: user.phone || '',
         role: user.role || 'CLIENT',
+        classify: user.classify ?? '', // ✅ FIX: si viene null/undefined queda vacío
         active: user.active ?? true,
       });
 
@@ -58,7 +62,7 @@ export default function AdminNewUser() {
         setHistory(historyRes.data || []);
       } catch (historyErr) {
         console.error('Error cargando history', historyErr);
-        // No es crítico, solo lo mostramos si falla
+        // No es crítico
       } finally {
         setLoadingHistory(false);
       }
@@ -85,17 +89,17 @@ export default function AdminNewUser() {
 
     try {
       if (isEditMode) {
-        const res = await api.put(`/users/${id}`, {
+        await api.put(`/users/${id}`, {
           name: form.name,
           lastName: form.lastName,
           email: form.email,
           phone: form.phone,
           role: form.role,
+          classify: form.classify || null, // ✅ NUEVO: enviar classify
           active: form.active,
         });
 
         setSuccess('Usuario actualizado correctamente.');
-        // opcional: refrescar historia después de guardar
         await loadUserAndHistory();
       } else {
         const res = await api.post('/users', {
@@ -109,7 +113,6 @@ export default function AdminNewUser() {
         });
 
         setSuccess('Usuario creado correctamente.');
-        // Opcional: navegar a la ficha del nuevo usuario
         const created = res.data;
         if (created && created.id) {
           navigate(`/admin/usuarios/${created.id}`, { replace: true });
@@ -119,7 +122,9 @@ export default function AdminNewUser() {
       console.error(err);
       const msg =
         err?.response?.data?.message ||
-        (isEditMode ? 'No se pudo actualizar el usuario.' : 'No se pudo crear el usuario.');
+        (isEditMode
+          ? 'No se pudo actualizar el usuario.'
+          : 'No se pudo crear el usuario.');
       setError(msg);
     } finally {
       setSaving(false);
@@ -131,7 +136,11 @@ export default function AdminNewUser() {
       <div className="admin-page">
         <div
           className="admin-page-header"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
         >
           <div>
             <h1>{isEditMode ? 'Detalle de usuario' : 'Nuevo usuario'}</h1>
@@ -151,13 +160,25 @@ export default function AdminNewUser() {
         </div>
 
         {error && (
-          <div className="admin-card" style={{ marginBottom: '1rem', borderLeft: '4px solid #f97373' }}>
+          <div
+            className="admin-card"
+            style={{
+              marginBottom: '1rem',
+              borderLeft: '4px solid #f97373',
+            }}
+          >
             <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p>
           </div>
         )}
 
         {success && (
-          <div className="admin-card" style={{ marginBottom: '1rem', borderLeft: '4px solid #4ade80' }}>
+          <div
+            className="admin-card"
+            style={{
+              marginBottom: '1rem',
+              borderLeft: '4px solid #4ade80',
+            }}
+          >
             <p style={{ color: '#166534', margin: 0 }}>{success}</p>
           </div>
         )}
@@ -231,6 +252,32 @@ export default function AdminNewUser() {
                   </select>
                 </div>
 
+                {/* ✅ NUEVO: Classify (solo visible en edición) */}
+                {isEditMode && (
+                  <div>
+                    <label className="admin-label">Classify</label>
+                    <select
+                      className="admin-input"
+                      value={form.classify}
+                      onChange={(e) => handleChange('classify', e.target.value)}
+                    >
+                      <option value="">(Sin clasificar)</option>
+                      <option value="GOOD">Good</option>
+                      <option value="REGULAR">Regular</option>
+                      <option value="BAD">Bad</option>
+                    </select>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: '0.8rem',
+                        color: '#6b7280',
+                      }}
+                    >
+                      Solo visible para administradores.
+                    </div>
+                  </div>
+                )}
+
                 {isEditMode && (
                   <div>
                     <label className="admin-label">Estado</label>
@@ -249,16 +296,19 @@ export default function AdminNewUser() {
               </div>
 
               {/* Nota: no mostramos ni gestionamos password */}
-              <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#6b7280' }}>
-                La contraseña del usuario no se muestra ni se edita desde esta pantalla.
+              <div
+                style={{
+                  marginTop: '1rem',
+                  fontSize: '0.8rem',
+                  color: '#6b7280',
+                }}
+              >
+                La contraseña del usuario no se muestra ni se edita desde esta
+                pantalla.
               </div>
 
               <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
-                <button
-                  type="submit"
-                  className="admin-button"
-                  disabled={saving}
-                >
+                <button type="submit" className="admin-button" disabled={saving}>
                   {saving
                     ? isEditMode
                       ? 'Guardando cambios...'
@@ -306,9 +356,7 @@ export default function AdminNewUser() {
                   <tbody>
                     {history.map((h) => (
                       <tr key={h.id}>
-                        <td>
-                          {new Date(h.createdAt).toLocaleString()}
-                        </td>
+                        <td>{new Date(h.createdAt).toLocaleString()}</td>
                         <td>{h.field}</td>
                         <td>{h.oldValue ?? '-'}</td>
                         <td>{h.newValue ?? '-'}</td>

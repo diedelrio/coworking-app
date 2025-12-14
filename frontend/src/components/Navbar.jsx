@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-
+import { FaBars, FaHome, FaUserAlt, FaCog, FaChartBar } from 'react-icons/fa'; // iconos adicionales
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
   const content = (
@@ -87,7 +87,7 @@ export default function Navbar({ collapsed }) {
       {/* Dashboard */}
       <NavItem
         to="/admin"
-        icon="🏠"
+        icon={<FaHome />}
         label="Dashboard"
         collapsed={collapsed}
         active={isDashboard}
@@ -95,7 +95,7 @@ export default function Navbar({ collapsed }) {
       {/* Espacios */}
       <NavItem
         to="/admin/espacios"
-        icon="🛋️"
+        icon={<FaChartBar />}
         label="Espacios"
         collapsed={collapsed}
         active={isSpaces}
@@ -104,7 +104,7 @@ export default function Navbar({ collapsed }) {
       {/* Settings */}
       <NavItem
         to="/admin/settings"
-        icon="⚙️"
+        icon={<FaCog />}
         label="Reglas de Negocio"
         collapsed={collapsed}
         active={isSettings}
@@ -114,7 +114,7 @@ export default function Navbar({ collapsed }) {
       {/* Usuarios (placeholder futuro) */}
       <NavItem
         to="/admin/usuarios"
-        icon="👥"
+        icon={<FaUserAlt />}
         label="Usuarios"
         collapsed={collapsed}
         active={isUsers}
@@ -122,7 +122,7 @@ export default function Navbar({ collapsed }) {
 
       {/* Reportes (placeholder futuro) */}
         <NavItem
-          icon="📊"
+          icon={<FaChartBar />}
           label="Reportes"
           collapsed={collapsed}
           active={isReports}

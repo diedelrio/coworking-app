@@ -8,7 +8,9 @@ import Layout from '../components/Layout';
 const SPACE_TYPES = [
   { value: 'FIX_DESK', label: 'Puesto fijo' },
   { value: 'FLEX_DESK', label: 'Puesto flex' },
+  { value: 'SHARED_TABLE', label: 'Mesa compartida' },
   { value: 'MEETING_ROOM', label: 'Sala de reuniones' },
+  { value: 'OFFICE', label: 'Oficina privada' },
 ];
 
 export default function AdminSpaces() {

@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
+const bcrypt = require('bcrypt');
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
         email: true,
         phone: true,
         role: true,
+        classify: true,
         active: true,
         createdAt: true,
       },
@@ -32,74 +34,215 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/users
+ * Crear usuario (solo admin)
+ * Body: { name, lastName, email, phone?, role?, classify? }
+ *
+ * Nota: Tu modelo Prisma requiere password, así que generamos uno temporal hasheado.
+ * Luego el usuario puede usar "Olvidé mi contraseña".
+ */
+router.post('/', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const { name, lastName, email, phone, role, classify } = req.body;
+
+    if (!name || !lastName || !email) {
+      return res.status(400).json({
+        message: 'Faltan datos obligatorios (name, lastName, email)',
+      });
+    }
+
+    // Evitar duplicado por email
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ message: 'Ya existe un usuario con ese email' });
+    }
+
+    // Password temporal (no se devuelve por seguridad)
+    const tempPassword = Math.random().toString(36).slice(-10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    const created = await prisma.user.create({
+      data: {
+        name,
+        lastName,
+        email,
+        phone: phone || null,
+        role: role || 'CLIENT',
+        classify: 'GOOD', // Ajuste por defecto
+        active: true,
+        password: passwordHash, // ✅ requerido por Prisma
+      },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        role: true,
+        classify: true,
+        active: true,
+        createdAt: true,
+      },
+    });
+
+    // (Opcional futuro) Enviar mail con link para setear password (forgot-password)
+    return res.status(201).json(created);
+  } catch (err) {
+    console.error('ERROR POST /users', err);
+    return res.status(500).json({ message: 'Error al crear el usuario' });
+  }
+});
+
+/**
+ * GET /api/users/missing-classify
+ * Usuarios sin classify (solo admin)
+ * ⚠️ IMPORTANTE: antes de '/:id'
+ */
+router.get('/missing-classify', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { classify: null },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(users);
+  } catch (err) {
+    console.error('ERROR GET /users/missing-classify', err);
+    res.status(500).json({ message: 'Error al obtener usuarios sin classify' });
+  }
+});
+
+/**
  * GET /api/users/:id
  * Obtener los datos de un usuario (solo admin)
  */
 router.get('/:id', authRequired, requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
-  const user = await prisma.user.findUnique({
-    where: { id },
-  });
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: 'ID inválido' });
+    }
 
-  if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        role: true,
+        classify: true,
+        active: true,
+        createdAt: true,
+      },
+    });
 
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error('ERROR GET /users/:id', err);
+    res.status(500).json({ message: 'Error al obtener el usuario' });
+  }
 });
 
 /**
  * PUT /api/users/:id
- * Actualizar datos básicos de usuario (rol, activo, nombre, phone)
- * Body: { name?, lastName?, phone?, role?, active? }
+ * Actualizar datos básicos + classify (solo admin)
  */
 router.put('/:id', authRequired, requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
-  const { name, lastName, email, phone, role, active } = req.body;
-
-  const existing = await prisma.user.findUnique({ where: { id } });
-  if (!existing) {
-    return res.status(404).json({ message: 'Usuario no encontrado' });
-  }
-
-  const updates = { name, lastName, email, phone, role, active };
-  const fieldsToTrack = ['name', 'lastName', 'email', 'phone,', 'role', 'active'];
-
-  const historyEntries = [];
-  fieldsToTrack.forEach((field) => {
-    if (typeof updates[field] === 'undefined') return;
-
-    const oldValue = existing[field];
-    const newValue = updates[field];
-
-    // solo registramos si cambió
-    if (oldValue !== newValue) {
-      historyEntries.push({
-        userId: id,
-        field,
-        oldValue: oldValue !== null ? String(oldValue) : null,
-        newValue: newValue !== null ? String(newValue) : null,
-        changedBy: req.user.id, // asumiendo que authRequired setea req.user
-      });
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: 'ID inválido' });
     }
-  });
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const u = await tx.user.update({
-      where: { id },
-      data: updates,
+    const { name, lastName, email, phone, role, active, classify } = req.body;
+
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const updates = {
+      name,
+      lastName,
+      email,
+      phone,
+      role,
+      active,
+      classify: classify ?? null,
+    };
+
+    const fieldsToTrack = [
+      'name',
+      'lastName',
+      'email',
+      'phone',
+      'role',
+      'active',
+      'classify',
+    ];
+
+    const historyEntries = [];
+    fieldsToTrack.forEach((field) => {
+      if (typeof updates[field] === 'undefined') return;
+
+      const oldValue = existing[field];
+      const newValue = updates[field];
+
+      if (oldValue !== newValue) {
+        historyEntries.push({
+          userId: id,
+          field,
+          oldValue: oldValue !== null ? String(oldValue) : null,
+          newValue: newValue !== null ? String(newValue) : null,
+          changedBy: req.user.userId, // ✅ coherente con tu auth
+        });
+      }
     });
 
-    if (historyEntries.length > 0) {
-      await tx.userHistory.createMany({
-        data: historyEntries,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: updates,
+        select: {
+          id: true,
+          name: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          role: true,
+          classify: true,
+          active: true,
+          createdAt: true,
+        },
       });
-    }
 
-    return u;
-  });
+      if (historyEntries.length > 0) {
+        await tx.userHistory.createMany({
+          data: historyEntries,
+        });
+      }
 
-  const { password, ...safeUser } = updated;
-  res.json(safeUser);
+      return u;
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error('ERROR PUT /users/:id', err);
+    res.status(500).json({ message: 'Error al actualizar el usuario' });
+  }
 });
 
 /**
@@ -107,15 +250,22 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
  * Obtener el historial de cambios de un usuario (solo admin)
  */
 router.get('/:id/history', authRequired, requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: 'ID inválido' });
+    }
 
-  const history = await prisma.userHistory.findMany({
-    where: { userId: id },
-    orderBy: { createdAt: 'desc' },
-  });
+    const history = await prisma.userHistory.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+    });
 
-  res.json(history);
+    res.json(history);
+  } catch (err) {
+    console.error('ERROR GET /users/:id/history', err);
+    res.status(500).json({ message: 'Error al obtener el historial' });
+  }
 });
-
 
 module.exports = router;

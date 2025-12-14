@@ -73,9 +73,9 @@ export default function Login() {
           <Link className="link" to="/register">
             Crear cuenta
           </Link>
-          <span className="link" style={{ cursor: 'pointer', opacity: 0.7 }}>
+          <Link className="link" to="/forgot-password">
             Olvidé mi contraseña
-          </span>
+          </Link>
         </div>
       </div>
     </div>

@@ -32,8 +32,21 @@ function renderEmailTemplate(template, variables = {}) {
   return { subject, body };
 }
 
+async function getEmailTemplateByKey(key) {
+  const template = await prisma.emailTemplate.findUnique({
+    where: { key },
+  });
+
+  if (!template) {
+    throw new Error('EmailTemplate no encontrado');
+  }
+
+  return template;
+}
+
 module.exports = {
   getEmailTemplateById,
   renderTemplateString,
   renderEmailTemplate,
+  getEmailTemplateByKey,
 };

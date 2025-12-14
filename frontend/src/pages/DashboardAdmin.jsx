@@ -4,6 +4,8 @@ import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
 import calendarImg from '../images/calendar-illustration.png';
+import AdminDashboardWidgets from '../components/AdminDashboardWidgets';
+
 
 const SPACE_TYPES = [
   { value: 'FIX_DESK', label: 'Puesto fijo' },
@@ -492,7 +494,12 @@ export default function DashboardAdmin() {
             </ul>
           )}
         </div>
-
+        {/* 👉 ACÁ VA LO NUEVO */}
+        
+        <div style={{ marginBottom: '1.5rem' }}>
+          <AdminDashboardWidgets />
+        </div>
+        
         {/* Tabla de reservas (hoy en adelante) */}
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
           <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>
@@ -625,7 +632,7 @@ export default function DashboardAdmin() {
 
         {/* Secciones de gestión existentes (espacios y usuarios) */}
 
-        {/* Gestión de usuarios */}
+        {/* Gestión de usuarios 
         <div className="admin-card" style={{ marginTop: '1.5rem' }}>
           <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
             Usuarios
@@ -690,6 +697,7 @@ export default function DashboardAdmin() {
             </table>
           )}
         </div>
+        ESTA ES LA PRIMERA VERSION DE USUARIOS, LA DEJO DE BACKUP POR UNOS DÍAS 20251215*/}
       </div>
     </Layout>
   );

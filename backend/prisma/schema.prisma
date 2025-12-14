@@ -23,10 +23,13 @@ model User {
   active    Boolean  @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-
+  
+  classify UserClassify?
+  
   reservations Reservation[]
   settingHistories SettingHistory[]
   history    UserHistory[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 model UserHistory {
@@ -70,6 +73,7 @@ model Reservation {
 
 enum ReservationStatus {
   ACTIVE
+  PENDING
   CANCELLED
 }
 
@@ -82,6 +86,8 @@ enum SpaceType {
   FIX_DESK
   FLEX_DESK
   MEETING_ROOM
+  OFFICE
+  SHARED_TABLE
 }
 
 enum SettingStatus {
@@ -99,6 +105,11 @@ enum SettingValueType {
   NUMBER
   STRING
   BOOLEAN
+}
+enum UserClassify {
+  GOOD
+  REGULAR
+  BAD
 }
 
 model Setting {
@@ -137,3 +148,16 @@ model EmailTemplate {
   updatedAt DateTime @updatedAt
 }
 
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
