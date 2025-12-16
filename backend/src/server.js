@@ -25,6 +25,12 @@ app.use('/api/reservations', reservationsRoutes);
 app.use('/api/users', usersRoutes); 
 app.use('/api/settings', settingsRouter);
 
+const { bootstrapMasterAdmin } = require("./utils/bootstrapAdmin");
+
+bootstrapMasterAdmin().catch((err) => {
+  console.error("[bootstrap] Failed to create master admin:", err);
+});
+
 app.listen(PORT, () => {
   console.log(`API escuchando en http://localhost:${PORT}`);
 });

@@ -4,3 +4,4 @@ dist
 .env.local
 # No versionar backups pesados
 *.zip
+backend/generated/
