@@ -63,7 +63,7 @@ export default function Navbar({ collapsed }) {
   const isDashboard = path === '/admin';
   const isSpaces = path === '/admin/espacios';
   const isSettings = path === '/admin/settings';
-  
+  const isEmailTemplates = path === '/admin/email-templates';
   const isUsers = path === '/admin/usuarios'; // futuro
   const isReports =
     path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
@@ -110,6 +110,13 @@ export default function Navbar({ collapsed }) {
         active={isSettings}
       />
 
+      <NavItem
+        to="/admin/email-templates"
+        icon={<FaCog />}
+        label="Email Templates"
+        collapsed={collapsed}
+        active={isEmailTemplates}
+      />
 
       {/* Usuarios (placeholder futuro) */}
       <NavItem

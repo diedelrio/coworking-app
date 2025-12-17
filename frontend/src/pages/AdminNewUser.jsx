@@ -152,7 +152,7 @@ export default function AdminNewUser() {
           </div>
           <button
             type="button"
-            className="admin-button-outline"
+            className="pill-button"
             onClick={() => navigate('/admin/usuarios')}
           >
             ← Volver
@@ -189,7 +189,7 @@ export default function AdminNewUser() {
           </div>
         ) : (
           <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-            <form onSubmit={handleSubmit} className="admin-form">
+            <form onSubmit={handleSubmit} >
               <div
                 style={{
                   display: 'grid',
@@ -197,53 +197,55 @@ export default function AdminNewUser() {
                   gap: '1rem',
                 }}
               >
-                <div>
-                  <label className="admin-label">Nombre</label>
+                <div className="form-group"> 
+                  <label>Nombre</label>
                   <input
                     type="text"
-                    className="admin-input"
                     value={form.name}
-                    onChange={(e) => handleChange('name', e.target.value)}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Nombre"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="admin-label">Apellido</label>
+              <div className="form-group">
+                  <label>Apellidos</label>
                   <input
                     type="text"
-                    className="admin-input"
                     value={form.lastName}
                     onChange={(e) => handleChange('lastName', e.target.value)}
+                    placeholder="Apellidos"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="admin-label">Email</label>
+                <div className="form-group">
+                  <label>Email</label>
                   <input
                     type="email"
-                    className="admin-input"
+
                     value={form.email}
                     onChange={(e) => handleChange('email', e.target.value)}
+                    placeholder="tuemail@ejemplo.com"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="admin-label">Teléfono</label>
+                <div className="form-group">
+                  <label>Teléfono (opcional)</label>
                   <input
-                    type="text"
-                    className="admin-input"
+                    type="tel"
+                    
                     value={form.phone}
                     onChange={(e) => handleChange('phone', e.target.value)}
+                    placeholder="Ej: 600 123 123"
                   />
                 </div>
 
-                <div>
-                  <label className="admin-label">Rol</label>
+                <div className="form-group">
+                  <label>Rol</label>
                   <select
-                    className="admin-input"
+
                     value={form.role}
                     onChange={(e) => handleChange('role', e.target.value)}
                   >
@@ -308,7 +310,7 @@ export default function AdminNewUser() {
               </div>
 
               <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
-                <button type="submit" className="admin-button" disabled={saving}>
+                <button type="submit" className="pill-button" disabled={saving}>
                   {saving
                     ? isEditMode
                       ? 'Guardando cambios...'

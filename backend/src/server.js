@@ -8,6 +8,7 @@ const reservationsRoutes = require('./routes/reservations');
 const usersRoutes = require('./routes/users');
 
 const settingsRouter = require('./routes/settings');
+const adminEmailTemplates = require('./routes/adminEmailTemplates');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -24,6 +25,7 @@ app.use('/api/spaces', spacesRoutes);
 app.use('/api/reservations', reservationsRoutes);
 app.use('/api/users', usersRoutes); 
 app.use('/api/settings', settingsRouter);
+app.use('/api/admin/email-templates', adminEmailTemplates);
 
 const { bootstrapMasterAdmin } = require("./utils/bootstrapAdmin");
 

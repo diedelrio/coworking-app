@@ -14,6 +14,7 @@ import AdminNewUser from './pages/AdminNewUser';
 import AdminUsers from './pages/AdminUsers';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import AdminEmailTemplates from './pages/AdminEmailTemplates';
 
 function App() {
   return (
@@ -66,6 +67,12 @@ function App() {
           </ProtectedRoute>
         }
       />
+      
+      <Route path="/admin/email-templates" element={
+        <ProtectedRoute requiredRole="ADMIN">
+          <AdminEmailTemplates />
+        </ProtectedRoute>
+      }/>
 
       <Route
         path="/admin/settings"

@@ -6,6 +6,8 @@ const {
   getTypeReservationRules,
 } = require('../services/settingsService');
 const { notifyLimitExceeded } = require('../services/limitAlertService');
+const { notifyReservationPendingApproval } = require('../services/alertNotificationService');
+const { notifyReservationApprovedToUser } = require('../services/alertNotificationService');
 
 const router = express.Router();
 
@@ -86,6 +88,7 @@ async function validateAndBuildReservation({
   if (
     Number.isNaN(dateOnly.getTime()) ||
     Number.isNaN(startDateTime.getTime()) ||
+    Number.isNaN(endDateTime.getTime()) ||
     Number.isNaN(endDateTime.getTime())
   ) {
     throw new ReservationValidationError('Fecha u horas inválidas');
@@ -335,14 +338,79 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
       include: { user: true, space: true },
     });
 
-    // TODO: enviar mail al usuario (reserva aprobada)
+    // ✅ Email al usuario (no bloquea si falla)
+    try {
+      const { notifyReservationApprovedToUser } = require('../services/alertNotificationService');
 
-    res.json({ message: 'Reserva aprobada', reservation: updated });
+      await notifyReservationApprovedToUser({
+        reservation: updated,
+        user: updated.user,
+        space: updated.space,
+      });
+    } catch (e) {
+      console.error('No se pudo enviar email de reserva aprobada al usuario:', e);
+    }
+
+    return res.json({ message: 'Reserva aprobada', reservation: updated });
   } catch (err) {
     console.error('ERROR PATCH /reservations/:id/approve', err);
-    res.status(500).json({ message: 'Error al aprobar la reserva' });
+    return res.status(500).json({ message: 'Error al aprobar la reserva' });
   }
 });
+
+/**
+ * PATCH /api/reservations/:id/reject
+ * Rechazar reserva (admin) + email al usuario con motivo
+ */
+router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { reason } = req.body || {};
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: 'ID de reserva inválido' });
+    }
+
+    const existing = await prisma.reservation.findUnique({
+      where: { id },
+      include: { user: true, space: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Reserva no encontrada' });
+    }
+
+    if (existing.status !== 'PENDING') {
+      return res.status(400).json({ message: 'Solo se pueden rechazar reservas pendientes' });
+    }
+
+    const updated = await prisma.reservation.update({
+      where: { id },
+      data: { status: 'REJECTED' },
+      include: { user: true, space: true },
+    });
+
+    // ✅ Email al usuario (no bloquea si falla)
+    try {
+      const { notifyReservationRejectedToUser } = require('../services/alertNotificationService');
+
+      await notifyReservationRejectedToUser({
+        reservation: updated,
+        user: updated.user,
+        space: updated.space,
+        reason,
+      });
+    } catch (e) {
+      console.error('No se pudo enviar email de reserva rechazada al usuario:', e);
+    }
+
+    return res.json({ message: 'Reserva rechazada', reservation: updated });
+  } catch (err) {
+    console.error('ERROR PATCH /reservations/:id/reject', err);
+    return res.status(500).json({ message: 'Error al rechazar la reserva' });
+  }
+});
+
 
 /**
  * PATCH /api/reservations/:id/cancel
@@ -443,14 +511,33 @@ router.post('/', authRequired, async (req, res) => {
       },
     });
 
+    // ✅ Si queda pendiente, devolvemos alertKey para que el frontend muestre el popup y envie mail.
+    if (reservation.status === 'PENDING') {
+      try {
+        await notifyReservationPendingApproval({
+          reservation,
+          user: reservation.user,
+          space: reservation.space,
+        });
+      } catch (e) {
+        console.error('No se pudo enviar email de reserva pendiente:', e);
+        // No bloqueamos la creación de reserva por un fallo de email
+      }
+
+      return res.status(201).json({
+        reservation,
+        status: 'PENDING',
+        alertKey: 'reservation_pending_approval',
+        message: 'Tu reserva quedó pendiente de confirmación por el administrador.',
+      });
+    }
+
     // TODO: si role === 'ADMIN' y targetUserId !== authUserId => enviar mail al usuario asignado
 
     return res.status(201).json({
       reservation,
-      message:
-        reservation.status === 'PENDING'
-          ? 'La reserva queda pendiente de ser aprobada por el administrador, recibirá un correo cuando se haga efectiva.'
-          : 'Reserva exitosa.',
+      status: 'ACTIVE',
+      message: 'Reserva exitosa.',
     });
   } catch (err) {
     if (err instanceof ReservationValidationError) {

@@ -46,7 +46,7 @@ export default function AdminUsersWithoutClassify() {
 
         <button
           type="button"
-          className="admin-button-outline"
+          className="pill-button-outline"
           onClick={loadUsers}
           disabled={loading}
         >
@@ -93,7 +93,7 @@ export default function AdminUsersWithoutClassify() {
                       to={`/admin/usuarios/${u.id}`}
                       style={{ textDecoration: 'none' }}
                     >
-                      <button className="admin-button">
+                      <button className="pill-button-green" >
                         Clasificar
                       </button>
                     </Link>

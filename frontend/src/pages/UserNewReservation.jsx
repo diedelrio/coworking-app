@@ -5,6 +5,83 @@ import { getCurrentUser } from '../utils/auth';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import LimitOverrideModal from '../components/LimitOverrideModal';
 
+/**
+ * Modal simple para alertas (pending approval)
+ */
+function AlertModal({ open, title, description, primaryText = 'Entendido', onPrimary }) {
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        zIndex: 9999,
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          background: 'white',
+          borderRadius: 16,
+          padding: '1rem',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>{title}</h3>
+          </div>
+          <button
+            onClick={onPrimary}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              fontSize: 18,
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+            aria-label="Cerrar"
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={{ marginTop: '0.75rem', color: '#374151', lineHeight: 1.45, whiteSpace: 'pre-line' }}>
+          {description}
+        </div>
+
+        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onPrimary}
+            style={{
+              padding: '0.65rem 1rem',
+              borderRadius: 12,
+              border: 'none',
+              background: '#111827',
+              color: 'white',
+              fontWeight: 900,
+              cursor: 'pointer',
+              height: 44,
+            }}
+          >
+            {primaryText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UserNewReservation() {
   const [spaces, setSpaces] = useState([]);
   const [form, setForm] = useState({
@@ -17,12 +94,16 @@ export default function UserNewReservation() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loadingSpaces, setLoadingSpaces] = useState(true);
-  
 
-  // Estados del modal
+  // Estados del modal de override
   const [overrideInfo, setOverrideInfo] = useState(null);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [sendingOverride, setSendingOverride] = useState(false);
+
+  // Estados del popup de pending approval
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertDesc, setAlertDesc] = useState('');
 
   const user = getCurrentUser();
   const navigate = useNavigate();
@@ -61,14 +142,13 @@ export default function UserNewReservation() {
 
           const dateStr = `${yyyy}-${mm}-${dd}`;
 
-          const startStr = `${String(startObj.getHours()).padStart(
-            2,
-            '0'
-          )}:${String(startObj.getMinutes()).padStart(2, '0')}`;
-          const endStr = `${String(endObj.getHours()).padStart(
-            2,
-            '0'
-          )}:${String(endObj.getMinutes()).padStart(2, '0')}`;
+          const startStr = `${String(startObj.getHours()).padStart(2, '0')}:${String(
+            startObj.getMinutes()
+          ).padStart(2, '0')}`;
+
+          const endStr = `${String(endObj.getHours()).padStart(2, '0')}:${String(
+            endObj.getMinutes()
+          ).padStart(2, '0')}`;
 
           setForm({
             spaceId: String(r.spaceId),
@@ -105,7 +185,16 @@ export default function UserNewReservation() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  // ✔️ AQUÍ ESTABA EL PROBLEMA. ESTA ES LA VERSION CORRECTA:
+  function openPendingApprovalPopup() {
+    setAlertTitle('Reserva pendiente de confirmación');
+    setAlertDesc(
+      'Tu solicitud de reserva fue registrada correctamente, pero requiere confirmación por parte del equipo del coworking.\n\n' +
+        'Te avisaremos cuando la reserva sea confirmada o rechazada. Mientras tanto, podés verla en la sección “Mis reservas” con estado Pendiente.'
+    );
+    setShowAlertModal(true);
+  }
+
+  // ✅ Submit final: mantiene override, agrega alertKey pending approval
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
@@ -124,11 +213,19 @@ export default function UserNewReservation() {
       if (isEditMode) {
         await api.put(`/reservations/${editId}`, payload);
         setInfo('Reserva actualizada correctamente');
-      } else {
-        await api.post('/reservations', payload);
-        setInfo('Reserva creada correctamente');
+        navigate('/user/reservas');
+        return;
       }
 
+      const res = await api.post('/reservations', payload);
+
+      // ✅ Nuevo flujo: si pending => popup
+      if (res.data?.alertKey === 'reservation_pending_approval') {
+        openPendingApprovalPopup();
+        return; // no navegar aún
+      }
+
+      setInfo('Reserva creada correctamente');
       navigate('/user/reservas');
     } catch (err) {
       console.error(err);
@@ -139,7 +236,7 @@ export default function UserNewReservation() {
 
       setError(data?.message || defaultMsg);
 
-      // 👉 SI EL BACKEND PERMITE SOLICITAR EXCEPCIÓN
+      // ✅ Mantiene tu lógica de solicitar excepción
       if (data?.canRequestOverride) {
         setOverrideInfo({
           spaceId: Number(form.spaceId),
@@ -166,10 +263,7 @@ export default function UserNewReservation() {
     try {
       setSendingOverride(true);
 
-      const res = await api.post(
-        '/reservations/limit-override-request',
-        overrideInfo
-      );
+      const res = await api.post('/reservations/limit-override-request', overrideInfo);
 
       setInfo(
         res.data?.message ||
@@ -187,6 +281,11 @@ export default function UserNewReservation() {
     } finally {
       setSendingOverride(false);
     }
+  }
+
+  function handleCloseAlertModal() {
+    setShowAlertModal(false);
+    navigate('/user/reservas'); // ✅ a MIS RESERVAS (no /user/reservar)
   }
 
   if (loadingSpaces) {
@@ -229,7 +328,7 @@ export default function UserNewReservation() {
             <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
               {isEditMode
                 ? 'Modifica la fecha, franja horaria o espacio de tu reserva'
-                : 'Elige fecha, franja horaria y espacio de Conworking Sinergia'}
+                : 'Elige fecha, franja horaria y espacio de Coworking Sinergia'}
             </span>
           </div>
 
@@ -262,7 +361,6 @@ export default function UserNewReservation() {
           >
             <div>{error}</div>
 
-            {/* BOTON PARA REABRIR EL MODAL */}
             {overrideInfo && (
               <button
                 onClick={() => setShowOverrideModal(true)}
@@ -376,13 +474,22 @@ export default function UserNewReservation() {
         </div>
       </div>
 
-      {/* MODAL SEPARADO */}
+      {/* MODAL DE EXCEPCIÓN */}
       <LimitOverrideModal
         open={showOverrideModal}
         info={overrideInfo}
         loading={sendingOverride}
         onClose={handleCloseOverrideModal}
         onConfirm={handleSendOverride}
+      />
+
+      {/* POPUP DE PENDING APPROVAL */}
+      <AlertModal
+        open={showAlertModal}
+        title={alertTitle}
+        description={alertDesc}
+        primaryText="Entendido"
+        onPrimary={handleCloseAlertModal}
       />
     </div>
   );

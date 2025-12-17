@@ -20,6 +20,143 @@ function formatTime(dateStr) {
   }
 }
 
+function RejectReservationModal({ open, reservation, loading, onClose, onConfirm }) {
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    if (open) setReason('');
+  }, [open]);
+
+  if (!open) return null;
+
+  const userLabel = reservation?.user
+    ? `${reservation.user.name || ''} ${reservation.user.lastName || ''}`.trim() ||
+      reservation.user.email
+    : `Usuario #${reservation?.userId}`;
+
+  const spaceLabel = reservation?.space?.name || `Espacio #${reservation?.spaceId}`;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        zIndex: 9999,
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="admin-card"
+        style={{
+          width: '100%',
+          maxWidth: 560,
+          maxHeight: '80vh',
+          overflow: 'hidden',
+          borderRadius: 16,
+          padding: '1rem',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Rechazar reserva</h3>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+              {userLabel} · {spaceLabel}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              fontSize: 18,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              lineHeight: 1,
+              opacity: loading ? 0.6 : 1,
+            }}
+            aria-label="Cerrar"
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            overflowY: 'auto',
+            flex: 1,
+          }}
+        >
+          <label
+            style={{
+              fontWeight: 800,
+              display: 'block',
+              marginBottom: 6,
+            }}
+          >
+            Motivo (se enviará al usuario por email)
+          </label>
+
+          <textarea
+            rows={4}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Ej: No hay disponibilidad en ese horario / se requiere autorización / etc."
+            style={{
+              width: '95%',
+              border: '1px solid #e5e7eb',
+              borderRadius: 12,
+              padding: '0.75rem',
+              resize: 'vertical',
+              outline: 'none',
+              maxHeight: 160,
+            }}
+          />
+
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+            Si lo dejás vacío, se enviará “No especificado.”
+          </div>
+        </div>
+
+
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button
+            type="button"
+            className="pill-button-outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            className="pill-button"
+            onClick={() => onConfirm(reason)}
+            disabled={loading}
+           
+            title="Rechazar"
+          >
+            {loading ? 'Rechazando...' : 'Rechazar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboardWidgets() {
   const [pending, setPending] = useState([]);
   const [loadingPending, setLoadingPending] = useState(true);
@@ -30,10 +167,13 @@ export default function AdminDashboardWidgets() {
   const [actionBusyId, setActionBusyId] = useState(null);
   const [error, setError] = useState('');
 
+  // ✅ Modal rechazo
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReservation, setRejectReservation] = useState(null);
+
   const loadPending = async () => {
     setLoadingPending(true);
     try {
-      // ✅ endpoint esperado: GET /api/reservations/pending
       const res = await api.get('/reservations/pending');
       setPending(res.data || []);
     } catch (e) {
@@ -47,7 +187,6 @@ export default function AdminDashboardWidgets() {
   const loadMissingClassify = async () => {
     setLoadingMissing(true);
     try {
-      // ✅ endpoint esperado: GET /api/users/missing-classify
       const res = await api.get('/users/missing-classify');
       setMissingClassify(res.data || []);
     } catch (e) {
@@ -69,7 +208,6 @@ export default function AdminDashboardWidgets() {
     setActionBusyId(id);
     setError('');
     try {
-      // ✅ endpoint esperado: PATCH /api/reservations/:id/approve
       await api.patch(`/reservations/${id}/approve`);
       await loadPending();
     } catch (e) {
@@ -80,19 +218,38 @@ export default function AdminDashboardWidgets() {
     }
   };
 
-  const cancelReservation = async (id) => {
+  // ✅ Abrir modal de rechazo
+  const openRejectModal = (reservation) => {
+    setRejectReservation(reservation);
+    setRejectOpen(true);
+  };
+
+  // ✅ Confirmar rechazo (con reason)
+  const confirmRejectReservation = async (reason) => {
+    const id = rejectReservation?.id;
+    if (!id) return;
+
     setActionBusyId(id);
     setError('');
+
     try {
-      // ✅ endpoint esperado: PATCH /api/reservations/:id/cancel
-      await api.patch(`/reservations/${id}/cancel`);
+      await api.patch(`/reservations/${id}/reject`, { reason });
+      setRejectOpen(false);
+      setRejectReservation(null);
       await loadPending();
     } catch (e) {
       console.error(e);
-      setError(e?.response?.data?.message || 'No se pudo cancelar la reserva.');
+      setError(e?.response?.data?.message || 'No se pudo rechazar la reserva.');
     } finally {
       setActionBusyId(null);
     }
+  };
+
+  const closeRejectModal = () => {
+    // si está procesando, no cierres
+    if (actionBusyId && rejectReservation?.id === actionBusyId) return;
+    setRejectOpen(false);
+    setRejectReservation(null);
   };
 
   return (
@@ -125,26 +282,12 @@ export default function AdminDashboardWidgets() {
 
           <button
             type="button"
-            className="admin-button-outline"
+            className="pill-button-outline"
             onClick={loadPending}
             disabled={loadingPending}
           >
             {loadingPending ? 'Actualizando...' : 'Actualizar'}
           </button>
-          {/*<Link to=""
-              style={{
-                padding: '0.6rem 1.2rem',
-                borderRadius: '999px',
-                background: '#4f46e5',
-                color: 'white',
-                fontSize: '0.9rem',
-                fontWeight: '600',
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}
-            >
-                Actualizar
-            </Link> DIEGO*/}
         </div>
 
         {loadingPending ? (
@@ -180,7 +323,7 @@ export default function AdminDashboardWidgets() {
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <button
                           type="button"
-                          className="admin-button"
+                          className="pill-button-green"
                           onClick={() => approveReservation(r.id)}
                           disabled={actionBusyId === r.id}
                         >
@@ -189,11 +332,13 @@ export default function AdminDashboardWidgets() {
 
                         <button
                           type="button"
-                          className="admin-button-outline"
-                          onClick={() => cancelReservation(r.id)}
+                          className="pill-button-red"
+                          onClick={() => openRejectModal(r)}
                           disabled={actionBusyId === r.id}
+                          
+                          title="Rechazar"
                         >
-                          Cancelar
+                          Rechazar
                         </button>
                       </div>
                     </td>
@@ -205,7 +350,14 @@ export default function AdminDashboardWidgets() {
         )}
       </div>
 
-
+      {/* ✅ Modal para motivo de rechazo */}
+      <RejectReservationModal
+        open={rejectOpen}
+        reservation={rejectReservation}
+        loading={actionBusyId && rejectReservation?.id === actionBusyId}
+        onClose={closeRejectModal}
+        onConfirm={confirmRejectReservation}
+      />
     </div>
   );
 }

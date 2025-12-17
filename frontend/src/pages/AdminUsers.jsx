@@ -128,7 +128,7 @@ export default function AdminUsers() {
 
           <button
             type="button"
-            className="admin-button"
+            className="pill-button"
             onClick={() => navigate('/admin/usuarios/nuevo')}
             style={{ whiteSpace: 'nowrap' }}
           >
@@ -190,7 +190,7 @@ export default function AdminUsers() {
 
             <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
               <button
-                className="admin-button-outline"
+                className="pill-button-outline"
                 type="button"
                 onClick={fetchUsers}
                 disabled={loading}
@@ -333,16 +333,17 @@ export default function AdminUsers() {
                               onClick={() => handleToggleActive(u)}
                               disabled={saving}
                               style={{
-                                height: 34,
+                                height: 30,
                                 padding: '0 12px',
                                 borderRadius: 999,
-                                border: `1px solid ${u.active ? '#fecaca' : '#bbf7d0'}`,
+                                border: `0px solid ${u.active ? '#fecaca' : '#bbf7d0'}`,
                                 background: u.active ? '#fff1f2' : '#ecfdf5',
                                 cursor: saving ? 'not-allowed' : 'pointer',
                                 fontSize: '0.85rem',
-                                fontWeight: 800,
+                                fontWeight: 400,
                                 color: u.active ? '#b91c1c' : '#166534',
                                 opacity: saving ? 0.7 : 1,
+                                width: '55%',
                               }}
                             >
                               {u.active ? 'Desactivar' : 'Activar'}
@@ -352,14 +353,14 @@ export default function AdminUsers() {
                               type="button"
                               onClick={() => navigate(`/admin/usuarios/${u.id}`)}
                               style={{
-                                height: 34,
+                                height: 30,
                                 padding: '0 12px',
                                 borderRadius: 999,
-                                border: '1px solid #d1d5db',
-                                background: '#ffffff',
+                                border: '0px solid #49af70ff',
+                                background: '#dcfce7',
                                 cursor: 'pointer',
                                 fontSize: '0.85rem',
-                                fontWeight: 700,
+                                fontWeight: 400,
                                 color: '#0f172a',
                               }}
                             >
