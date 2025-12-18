@@ -15,6 +15,9 @@ import AdminUsers from './pages/AdminUsers';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminEmailTemplates from './pages/AdminEmailTemplates';
+import UserProfile from './pages/UserProfile';
+import AdminUserProfile from './pages/AdminUserProfile';
+
 
 function App() {
   return (
@@ -119,15 +122,25 @@ function App() {
         }
       />
 
+
+      />
+      <Route
+        path="/user/perfil"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserProfile />
+          </ProtectedRoute>
+        }
+      />      
       <Route
         path="/admin/usuarios/:id"
         element={
-          <ProtectedRoute role={['ADMIN']}>
-            <AdminNewUser />
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminUserProfile />
           </ProtectedRoute>
         }
       />
-      
+
       {/* CATCH ALL AL FINAL */}
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>

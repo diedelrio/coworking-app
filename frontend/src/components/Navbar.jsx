@@ -1,5 +1,6 @@
 import { useLocation, Link } from 'react-router-dom';
 import { FaBars, FaHome, FaUserAlt, FaCog, FaChartBar } from 'react-icons/fa'; // iconos adicionales
+import { MdOutlineMarkEmailRead } from "react-icons/md";
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
   const content = (
@@ -112,7 +113,7 @@ export default function Navbar({ collapsed }) {
 
       <NavItem
         to="/admin/email-templates"
-        icon={<FaCog />}
+        icon={<MdOutlineMarkEmailRead />}
         label="Email Templates"
         collapsed={collapsed}
         active={isEmailTemplates}

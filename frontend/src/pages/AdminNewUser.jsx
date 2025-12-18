@@ -242,10 +242,10 @@ export default function AdminNewUser() {
                   />
                 </div>
 
-                <div className="form-group">
+                <div >
                   <label>Rol</label>
                   <select
-
+                    className="admin-input"
                     value={form.role}
                     onChange={(e) => handleChange('role', e.target.value)}
                   >

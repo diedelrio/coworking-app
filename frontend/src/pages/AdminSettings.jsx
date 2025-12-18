@@ -1,299 +1,499 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../api/axiosClient';
-import Header from '../components/Header';
-import { getCurrentUser } from '../utils/auth';
 import Layout from '../components/Layout';
 
+const VALUE_TYPES = [
+  { value: 'STRING', label: 'STRING' },
+  { value: 'NUMBER', label: 'NUMBER' },
+  { value: 'BOOL', label: 'BOOL' },
+  { value: 'JSON', label: 'JSON' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'ACTIVE', label: 'Activos' },
+  { value: 'INACTIVE', label: 'Inactivos' },
+  { value: 'ALL', label: 'Todos' },
+];
+
+function safeString(v) {
+  if (v == null) return '';
+  return String(v);
+}
+
+function prettyValue(value, valueType) {
+  if (value == null) return '';
+  if (valueType === 'JSON') {
+    try {
+      const obj = typeof value === 'string' ? JSON.parse(value) : value;
+      return JSON.stringify(obj, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 export default function AdminSettings() {
-  const [settings, setSettings] = useState([]);
-  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const [selectedSetting, setSelectedSetting] = useState(null);
-  const [editValue, setEditValue] = useState('');
-  const [editStatus, setEditStatus] = useState('ACTIVE');
+  // filtros
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ACTIVE');
 
-  const [history, setHistory] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  // modal create/edit
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null); // setting | null
 
-  const user = getCurrentUser();
+  const [formKey, setFormKey] = useState('');
+  const [formValueType, setFormValueType] = useState('STRING');
+  const [formValue, setFormValue] = useState('');
+  const [formStatus, setFormStatus] = useState('ACTIVE');
+  const [formDescription, setFormDescription] = useState('');
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  // historial
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historySetting, setHistorySetting] = useState(null);
 
-  async function loadSettings() {
+  async function load() {
     try {
+      setLoading(true);
       setError('');
-      setLoadingSettings(true);
       const res = await api.get('/settings');
-      setSettings(res.data);
-    } catch (err) {
-      console.error(err);
+      setRows(res.data || []);
+    } catch (e) {
+      console.error(e);
       setError('Error al cargar las reglas de negocio');
     } finally {
-      setLoadingSettings(false);
+      setLoading(false);
     }
   }
 
-  function startEdit(setting) {
-    setSelectedSetting(setting);
-    setEditValue(setting.value);
-    setEditStatus(setting.status);
-    setHistory([]);
+  useEffect(() => {
+    load();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return (rows || [])
+      .filter((r) => {
+        if (statusFilter === 'ALL') return true;
+        return r.status === statusFilter;
+      })
+      .filter((r) => {
+        if (!q) return true;
+        const hay =
+          `${safeString(r.key)} ${safeString(r.value)} ${safeString(r.description)} ${safeString(r.valueType)}`
+            .toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => safeString(a.key).localeCompare(safeString(b.key)));
+  }, [rows, query, statusFilter]);
+
+  function openCreate() {
+    setEditing(null);
+    setFormKey('');
+    setFormValueType('STRING');
+    setFormValue('');
+    setFormStatus('ACTIVE');
+    setFormDescription('');
+    setModalOpen(true);
+    setError('');
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
-    if (!selectedSetting) return;
+  function openEdit(row) {
+    setEditing(row);
+    setFormKey(row.key || '');
+    setFormValueType(row.valueType || 'STRING');
+    setFormValue(prettyValue(row.value, row.valueType));
+    setFormStatus(row.status || 'ACTIVE');
+    setFormDescription(row.description || '');
+    setModalOpen(true);
+    setError('');
+  }
 
+  function closeModal() {
+    setModalOpen(false);
+    setEditing(null);
+    setSaving(false);
+  }
+
+  async function onSave() {
     try {
+      setSaving(true);
       setError('');
-      const res = await api.put(`/settings/${selectedSetting.id}`, {
-        value: editValue,
-        status: editStatus,
-      });
 
-      // Actualizar lista en memoria
-      setSettings((prev) =>
-        prev.map((s) => (s.id === res.data.id ? res.data : s))
-      );
-      setSelectedSetting(null);
-    } catch (err) {
-      console.error(err);
-      setError('Error al guardar los cambios');
+      const payload = {
+        key: formKey.trim(),
+        valueType: formValueType,
+        value: formValueType === 'JSON' ? formValue.trim() : safeString(formValue).trim(),
+        status: formStatus,
+        description: formDescription?.trim() || null,
+      };
+
+      // validaciones mínimas
+      if (!editing) {
+        if (!payload.key || !payload.valueType || payload.value === '') {
+          setError('Completa Key, Tipo y Valor.');
+          setSaving(false);
+          return;
+        }
+      } else {
+        // en edición permitimos cambiar value/status/description; key y type quedan bloqueados en UI
+        if (payload.value === '') {
+          setError('El valor no puede estar vacío.');
+          setSaving(false);
+          return;
+        }
+      }
+
+      // valida JSON si aplica
+      if (payload.valueType === 'JSON') {
+        try {
+          JSON.parse(payload.value);
+        } catch {
+          setError('El JSON no es válido.');
+          setSaving(false);
+          return;
+        }
+      }
+
+      if (!editing) {
+        await api.post('/settings', {
+          key: payload.key,
+          value: payload.value,
+          valueType: payload.valueType,
+          description: payload.description,
+        });
+      } else {
+        await api.put(`/settings/${editing.id}`, {
+          value: payload.value,
+          status: payload.status,
+          description: payload.description,
+        });
+      }
+
+      await load();
+      closeModal();
+    } catch (e) {
+      console.error(e);
+      setError('No se pudo guardar el setting.');
+      setSaving(false);
     }
   }
 
-  async function loadHistory(settingId) {
+  async function openHistory(row) {
     try {
-      setLoadingHistory(true);
-      setError('');
-      const res = await api.get(`/settings/${settingId}/history`);
-      setHistory(res.data);
-    } catch (err) {
-      console.error(err);
-      setError('Error al cargar el historial');
+      setHistoryOpen(true);
+      setHistorySetting(row);
+      setHistoryRows([]);
+      setHistoryError('');
+      setHistoryLoading(true);
+
+      const res = await api.get(`/settings/${row.id}/history`);
+      setHistoryRows(res.data || []);
+    } catch (e) {
+      console.error(e);
+      setHistoryError('No se pudo cargar el historial.');
     } finally {
-      setLoadingHistory(false);
+      setHistoryLoading(false);
     }
+  }
+
+  function closeHistory() {
+    setHistoryOpen(false);
+    setHistorySetting(null);
+    setHistoryRows([]);
+    setHistoryError('');
+    setHistoryLoading(false);
   }
 
   return (
-      <Layout user={user}>
-
-      <div className="admin-page">
-        <div
-          className="admin-header"
-          style={{ justifyContent: 'space-between', alignItems: 'center' }}
-        >
+    <Layout>
+      <div className="admin-page settings-page">
+        <div className="settings-header">
           <div>
-            <h1>Reglas de negocio</h1>
-            <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-              Configuración de límites de reservas y otras reglas globales
-            </span>
+            <h1 className="settings-title">Reglas de negocio</h1>
+            <div className="settings-subtitle">
+              Configuración dinámica del sistema (horarios, validaciones y límites).
+            </div>
           </div>
 
-
+          <button className="pill-button" type="button" onClick={openCreate} title="Crear setting">
+            + Crear Regla
+          </button>
         </div>
 
-        {error && (
-          <div className="error" style={{ maxWidth: 600, marginBottom: '1rem' }}>
-            {error}
-          </div>
-        )}
+        {error ? <div className="error settings-error">{error}</div> : null}
 
-        {/* Lista de reglas */}
-        <div className="admin-card">
-          <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-            Reglas configurables
-          </h2>
+        <div className="admin-card settings-card">
+          <div className="settings-toolbar">
+            <div className="settings-search">
+              <div className="settings-label">Buscar</div>
+              <input
+                className="settings-input"
+                placeholder="Buscar por key, valor, descripción..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
 
-          {loadingSettings ? (
-            <p>Cargando reglas...</p>
-          ) : settings.length === 0 ? (
-            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-              No hay reglas configuradas todavía.
-            </p>
-          ) : (
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Clave</th>
-                  <th>Descripción</th>
-                  <th>Valor</th>
-                  <th>Tipo</th>
-                  <th>Estado</th>
-                  <th>Última actualización</th>
-                  <th style={{ textAlign: 'right' }}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settings.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      <span
-                        style={{
-                          fontFamily: 'monospace',
-                          fontSize: '0.8rem',
-                          backgroundColor: '#f3f4f6',
-                          borderRadius: '999px',
-                          padding: '0.1rem 0.6rem',
-                        }}
-                      >
-                        {s.key}
-                      </span>
-                    </td>
-                    <td>{s.description || '-'}</td>
-                    <td>{s.value}</td>
-                    <td>{s.valueType}</td>
-                    <td>
-                      {s.status === 'ACTIVE' ? (
-                        <span className="badge green">Activa</span>
-                      ) : (
-                        <span className="badge gray">Inactiva</span>
-                      )}
-                    </td>
-                    <td>
-                      {s.updatedAt
-                        ? new Date(s.updatedAt).toLocaleString()
-                        : '-'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        className="btn-small"
-                        onClick={() => startEdit(s)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-small"
-                        onClick={() => loadHistory(s.id)}
-                      >
-                        Historial
-                      </button>
-                    </td>
-                  </tr>
+            <div className="settings-filter">
+              <div className="settings-label">Estado</div>
+              <select
+                className="settings-input"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="settings-loading">Cargando settings...</div>
+          ) : filtered.length === 0 ? (
+            <div className="settings-empty">No hay reglas configuradas todavía.</div>
+          ) : (
+            <div className="settings-table-wrap">
+              <table className="admin-table settings-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '42%' }}>Key</th>
+                    <th style={{ width: '14%' }}>Tipo</th>
+                    <th style={{ width: '24%' }}>Valor</th>
+                    <th style={{ width: '10%' }}>Estado</th>
+                    <th style={{ width: '10%' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r) => (
+                    <tr key={r.id}>
+                      <td className="settings-key">{r.key}</td>
+                      <td>{r.valueType}</td>
+                      <td className="settings-value">{safeString(r.value)}</td>
+                      <td>
+                        {r.status === 'ACTIVE' ? (
+                          <span className="badge green">Activo</span>
+                        ) : (
+                          <span className="badge">Inactivo</span>
+                        )}
+                      </td>
+                      <td className="settings-actions">
+                        <button
+                          type="button"
+                          className="pill-button-outline small"
+                          onClick={() => openHistory(r)}
+                        >
+                          Historial
+                        </button>
+                        <button
+                          type="button"
+                          className="pill-button-outline small"
+                          onClick={() => openEdit(r)}
+                        >
+                          Editar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        {/* Formulario de edición */}
-        {selectedSetting && (
-          <div className="admin-card" style={{ marginTop: '1.5rem' }}>
-            <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-              Editar regla: {selectedSetting.key}
-            </h2>
+        {/* ===== Modal Create/Edit ===== */}
+        {modalOpen && (
+          <div className="settings-modal-overlay" onClick={closeModal}>
+            <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="settings-modal-header">
+                <div>
+                  <div className="settings-modal-title">
+                    {editing ? 'Editar Regla' : 'Nueva Regla'}
+                  </div>
+                  <div className="settings-modal-subtitle">
+                    Cambios impactan reglas en tiempo real (cache ~60s).
+                  </div>
+                </div>
 
-            <form
-              onSubmit={handleSave}
-              style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', gap: '0.8rem' }}
-            >
-              <div>
-                <label
-                  htmlFor="value"
-                  style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}
-                >
-                  Valor ({selectedSetting.valueType})
-                </label>
-                <input
-                  id="value"
-                  type="text"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  style={{ width: '100%', padding: '0.45rem 0.6rem' }}
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="status"
-                  style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}
-                >
-                  Estado
-                </label>
-                <select
-                  id="status"
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  style={{ padding: '0.45rem 0.6rem' }}
-                >
-                  <option value="ACTIVE">ACTIVA</option>
-                  <option value="INACTIVE">INACTIVA</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button type="submit" className="button" style={{ maxWidth: 180 }}>
-                  Guardar cambios
+                <button className="settings-modal-close" type="button" onClick={closeModal}>
+                  ✕
                 </button>
+              </div>
+
+              <div className="settings-modal-body">
+                <div className="settings-modal-grid">
+                  <div className="settings-field">
+                    <label>Key {editing ? '(no editable)' : '*'}</label>
+                    <input
+                      className="settings-input"
+                      value={formKey}
+                      onChange={(e) => setFormKey(e.target.value)}
+                      disabled={!!editing || saving}
+                      placeholder="OFFICE_OPEN_HOUR"
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <label>Tipo *</label>
+                    <select
+                      className="settings-input"
+                      value={formValueType}
+                      onChange={(e) => setFormValueType(e.target.value)}
+                      disabled={!!editing || saving}
+                    >
+                      {VALUE_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="settings-field settings-field-full">
+                    <label>Valor *</label>
+                    <textarea
+                      className="settings-textarea"
+                      value={formValue}
+                      onChange={(e) => setFormValue(e.target.value)}
+                      rows={formValueType === 'JSON' ? 7 : 3}
+                      disabled={saving}
+                      placeholder={formValueType === 'JSON' ? '{ "a": 1 }' : 'Ej: 9'}
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <label>Estado</label>
+                    <select
+                      className="settings-input"
+                      value={formStatus}
+                      onChange={(e) => setFormStatus(e.target.value)}
+                      disabled={saving}
+                    >
+                      <option value="ACTIVE">ACTIVO</option>
+                      <option value="INACTIVE">INACTIVO</option>
+                    </select>
+                  </div>
+
+                  <div className="settings-field">
+                    <label>Descripción</label>
+                    <input
+                      className="settings-input"
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      disabled={saving}
+                      placeholder="Ej: Hora de apertura del coworking (24h)"
+                    />
+                  </div>
+                </div>
+
+                {error ? <div className="error settings-modal-error">{error}</div> : null}
+              </div>
+
+              <div className="settings-modal-footer">
                 <button
+                  className="pill-button-outline"
                   type="button"
-                  className="btn-secondary"
-                  style={{ maxWidth: 140 }}
-                  onClick={() => setSelectedSetting(null)}
+                  onClick={closeModal}
+                  disabled={saving}
                 >
                   Cancelar
                 </button>
+                <button className="pill-button" type="button" onClick={onSave} disabled={saving}>
+                  {saving ? 'Guardando…' : 'Guardar'}
+                </button>
               </div>
-            </form>
+            </div>
           </div>
         )}
 
-        {/* Historial de cambios */}
-        {loadingHistory && (
-          <p style={{ marginTop: '1rem' }}>Cargando historial...</p>
-        )}
+        {/* ===== Modal Historial ===== */}
+        {historyOpen && (
+          <div className="settings-modal-overlay" onClick={closeHistory}>
+            <div className="settings-modal history-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="settings-modal-header">
+                <div>
+                  <div className="settings-modal-title">Historial</div>
+                  <div className="settings-modal-subtitle">
+                    {historySetting?.key || ''}
+                  </div>
+                </div>
 
-        {history.length > 0 && (
-          <div className="admin-card" style={{ marginTop: '1.5rem' }}>
-            <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-              Historial de cambios
-            </h2>
+                <button className="settings-modal-close" type="button" onClick={closeHistory}>
+                  ✕
+                </button>
+              </div>
 
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {history.map((h) => (
-                <li
-                  key={h.id}
-                  style={{
-                    borderBottom: '1px solid #e5e7eb',
-                    paddingBottom: '0.4rem',
-                    marginBottom: '0.4rem',
-                    fontSize: '0.9rem',
-                  }}
-                >
-                  <div>
-                    <strong>{h.action}</strong> –{' '}
-                    {new Date(h.createdAt).toLocaleString()}
+              <div className="settings-modal-body">
+                {historyLoading ? (
+                  <div className="settings-loading">Cargando historial…</div>
+                ) : historyError ? (
+                  <div className="error">{historyError}</div>
+                ) : historyRows.length === 0 ? (
+                  <div className="settings-empty">Sin cambios registrados.</div>
+                ) : (
+                  <div className="settings-history-list">
+                    {historyRows.map((h) => (
+                      <div className="settings-history-item" key={h.id}>
+                        <div className="settings-history-top">
+                          <div className="settings-history-meta">
+                            <span className="settings-history-date">
+                              {new Date(h.createdAt).toLocaleString('es-ES')}
+                            </span>
+                            <span className="settings-history-badge">
+                              {h.action || 'UPDATE'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="settings-history-grid">
+                          <div>
+                            <div className="settings-history-label">Valor</div>
+                            <pre className="settings-history-pre">
+                              {prettyValue(h.value, h.valueType)}
+                            </pre>
+                          </div>
+
+                          <div>
+                            <div className="settings-history-label">Estado</div>
+                            <div>{h.status || '-'}</div>
+
+                            <div className="settings-history-label" style={{ marginTop: 10 }}>
+                              Tipo
+                            </div>
+                            <div>{h.valueType || '-'}</div>
+                          </div>
+                        </div>
+
+                        {h.description ? (
+                          <div className="settings-history-desc">
+                            <div className="settings-history-label">Descripción</div>
+                            <div>{h.description}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
-                  <div
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.8rem',
-                      marginTop: '0.2rem',
-                    }}
-                  >
-                    {h.oldValue ?? '∅'} → {h.newValue}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '0.75rem',
-                      color: '#6b7280',
-                      marginTop: '0.1rem',
-                    }}
-                  >
-                    Por:{' '}
-                    {h.changedBy
-                      ? `${h.changedBy.name || ''} (${h.changedBy.email})`
-                      : 'sistema'}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                )}
+              </div>
+
+              <div className="settings-modal-footer">
+                <button className="pill-button-outline" type="button" onClick={closeHistory}>
+                  Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
