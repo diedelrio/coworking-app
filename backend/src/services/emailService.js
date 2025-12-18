@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const EMAIL_ENABLED = String(process.env.EMAIL_ENABLED || 'true').toLowerCase() === 'true';
 
 let transporter = null;
 
@@ -19,6 +20,11 @@ function getTransporter() {
 }
 
 async function sendMail({ to, subject, text }) {
+  if (!EMAIL_ENABLED) {
+    console.log('[EMAIL DISABLED] to=%s subject=%s', to, subject);
+    return { skipped: true, disabled: true };
+  }
+
   const transporter = getTransporter();
 
   const mailOptions = {
@@ -29,8 +35,5 @@ async function sendMail({ to, subject, text }) {
   };
 
   await transporter.sendMail(mailOptions);
+  module.exports = { sendMail };
 }
-
-module.exports = {
-  sendMail,
-};

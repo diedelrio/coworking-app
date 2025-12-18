@@ -1,68 +1,62 @@
-// backend/src/services/limitAlertService.js
-const { getLimitAlertSettings } = require('./settingsService');
-const {
-  getEmailTemplateById,
-  renderEmailTemplate,
-} = require('./emailTemplateService');
+const { getActiveSettingsMap } = require('./settingsService');
+const { sendMail } = require('./emailService'); // ajusta el path si tu mail service está en otro lado
 
-/**
- * Simula (por ahora) el envío de un correo de alerta al admin
- * cuando un usuario pide "más espacio" de lo permitido.
- *
- * Más adelante aquí pluggeas tu servicio de correo real.
- */
-async function notifyLimitExceeded({
-  user,
-  space,
-  date,
-  startTime,
-  endTime,
-  limitReason,
-}) {
-  const { emails, subject: subjectOverride, templateId } =
-    await getLimitAlertSettings();
+function toBool(val, fallback = true) {
+  if (val == null) return fallback;
+  const v = String(val).toLowerCase().trim();
+  if (['true', '1', 'yes', 'y', 'on'].includes(v)) return true;
+  if (['false', '0', 'no', 'n', 'off'].includes(v)) return false;
+  return fallback;
+}
 
-  if (!emails.length) {
-    console.warn(
-      '[notifyLimitExceeded] No hay limit_alert_emails configurados, no se envía nada'
-    );
-    return;
+async function getLimitAlertConfig() {
+  const keys = [
+    'LIMIT_ALERT_EMAIL_ENABLED',
+    'LIMIT_ALERT_TO_EMAIL',
+    'LIMIT_ALERT_SUBJECT',
+  ];
+
+  const m = await getActiveSettingsMap(keys);
+
+  const enabled = toBool(m.LIMIT_ALERT_EMAIL_ENABLED?.value, true);
+  const toEmail = m.LIMIT_ALERT_TO_EMAIL?.value || process.env.ADMIN_EMAIL || null;
+  const subject = m.LIMIT_ALERT_SUBJECT?.value || 'Solicitud de ampliación de límite';
+
+  return { enabled, toEmail, subject };
+}
+
+async function notifyLimitExceeded({ user, space, date, startTime, endTime, limitReason }) {
+  const cfg = await getLimitAlertConfig();
+
+  // Si no hay destinatario, no rompemos el flujo
+  if (!cfg.toEmail) {
+    console.log('[LIMIT ALERT] Sin destinatario configurado. Se omite envío.');
+    return { skipped: true, reason: 'NO_TO_EMAIL' };
   }
 
-  const template = await getEmailTemplateById(templateId);
+  if (!cfg.enabled) {
+    console.log('[LIMIT ALERT DISABLED]', { to: cfg.toEmail, user: user?.email, space: space?.name });
+    return { skipped: true, reason: 'DISABLED' };
+  }
 
-  const variables = {
-    userName: user.name ?? '',
-    userEmail: user.email ?? '',
-    spaceType: space.type,
-    spaceName: space.name,
-    date,
-    startTime,
-    endTime,
-    limitReason,
-    adminName: 'Administrador',
-  };
+  const text =
+`Solicitud de ampliación de límite
 
-  const { subject, body } = renderEmailTemplate(template, variables);
-  const finalSubject = subjectOverride || subject;
+Usuario: ${user?.name || ''} (${user?.email || ''})
+Espacio: ${space?.name || ''} (ID: ${space?.id})
+Fecha: ${date}
+Horario: ${startTime} - ${endTime}
 
-  // FUTURO: aquí iría la integración real de correo (SendGrid, SMTP, etc.)
-  /*console.log('--- Simulación de envío de correo de límite superado ---');
-  console.log('To:', emails.join(', '));
-  console.log('Subject:', finalSubject);
-  console.log('Body:\n', body);
-  console.log('-------------------------------------------------------'); */
-
-  const { sendMail } = require('./emailService');
+Motivo:
+${limitReason || '-'}`;
 
   await sendMail({
-    to: emails.join(','),
-    subject: finalSubject,
-    text: body,
+    to: cfg.toEmail,
+    subject: cfg.subject,
+    text,
   });
 
-  console.log('[Correo enviado al administrador]');
-
+  return { ok: true };
 }
 
 module.exports = {

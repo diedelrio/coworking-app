@@ -1,17 +1,29 @@
+// backend/src/routes/reservations.js
 const express = require('express');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
-const {
-  getReservationSettings,
-  getTypeReservationRules,
-} = require('../services/settingsService');
+
+const reservationValidationService = require('../services/reservationValidationService');
+
+
+
+const { getTypeReservationRules } = reservationValidationService;
+
+const { getReservationRules } = require('../services/settingsService');
+
 const { notifyLimitExceeded } = require('../services/limitAlertService');
-const { notifyReservationPendingApproval } = require('../services/alertNotificationService');
-const { notifyReservationApprovedToUser } = require('../services/alertNotificationService');
+const {
+  notifyReservationPendingApproval,
+  notifyReservationApprovedToUser,
+} = require('../services/alertNotificationService');
+
+// ✅ Validador de horario/min/step (usa settings DB por dentro)
+const { validateReservationTimes } = require('../utils/reservationTimeValidator');
 
 const router = express.Router();
 
-// Helpers de tiempo / fechas
+/* ------------------------------ Helpers fechas ------------------------------ */
+
 function getDayRange(dateOnly) {
   const start = new Date(dateOnly);
   start.setHours(0, 0, 0, 0);
@@ -34,9 +46,8 @@ function getWeekRangeFromDate(dateOnly) {
   return { weekStart, weekEnd };
 }
 
-/**
- * Error tipado para validaciones de negocio.
- */
+/* ------------------------------ Error tipado ------------------------------ */
+
 class ReservationValidationError extends Error {
   constructor(message, code = 'VALIDATION_ERROR', extra = {}) {
     super(message);
@@ -88,7 +99,6 @@ async function validateAndBuildReservation({
   if (
     Number.isNaN(dateOnly.getTime()) ||
     Number.isNaN(startDateTime.getTime()) ||
-    Number.isNaN(endDateTime.getTime()) ||
     Number.isNaN(endDateTime.getTime())
   ) {
     throw new ReservationValidationError('Fecha u horas inválidas');
@@ -100,15 +110,46 @@ async function validateAndBuildReservation({
     );
   }
 
+  // ✅ Validación única (sin duplicar): horario + step + minDuration
+  // Este validador debe leer settings (openHour/closeHour/minMinutes/stepMinutes).
+  try {
+    await validateReservationTimes({
+      startTime: startDateTime,
+      endTime: endDateTime,
+    });
+  } catch (e) {
+    throw new ReservationValidationError(
+      e?.message || 'Reglas de horario inválidas',
+      e?.code || 'RESERVATION_TIME_RULE',
+      e?.extra || {}
+    );
+  }
+
+  // ✅ Antelación mínima (si tu sistema la usa desde settings)
+  // Si no tenés esta regla cargada, dejá default seguro.
   const now = new Date();
-  const { min_hours_before } = await getReservationSettings();
+  let minHoursBefore = 0;
+
+  try {
+    const rules = await getReservationRules();
+    // soporta varios nombres por compatibilidad
+    const v =
+      rules?.min_hours_before ??
+      rules?.minHoursBefore ??
+      rules?.MIN_HOURS_BEFORE ??
+      0;
+    minHoursBefore = Number(v) || 0;
+  } catch (e) {
+    // si falla settings, no rompemos reservas (pero dejá log si querés)
+    minHoursBefore = 0;
+  }
 
   const diffHours = (startDateTime - now) / MS_PER_HOUR;
-  if (diffHours < min_hours_before) {
+  if (diffHours < minHoursBefore) {
     throw new ReservationValidationError(
-      `Debes reservar con al menos ${min_hours_before} horas de antelación`,
+      `Debes reservar con al menos ${minHoursBefore} horas de antelación`,
       'MIN_HOURS_BEFORE_EXCEEDED',
-      { minHoursBefore: min_hours_before }
+      { minHoursBefore }
     );
   }
 
@@ -121,11 +162,17 @@ async function validateAndBuildReservation({
     throw new ReservationValidationError('El espacio no existe o está inactivo');
   }
 
+  // Reglas por tipo (viene desde reservationValidationService.js)
   const typeRules = await getTypeReservationRules(space.type);
 
-  const newReservationHours = getReservationDurationHours(startDateTime, endDateTime);
+  const newReservationHours = getReservationDurationHours(
+    startDateTime,
+    endDateTime
+  );
 
-  const excludeFilter = reservationIdToExclude ? { id: { not: reservationIdToExclude } } : {};
+  const excludeFilter = reservationIdToExclude
+    ? { id: { not: reservationIdToExclude } }
+    : {};
 
   // --- 1) Límite por día, por usuario y tipo de espacio ---
   const { start: startOfDay, end: endOfDay } = getDayRange(dateOnly);
@@ -143,9 +190,7 @@ async function validateAndBuildReservation({
         type: space.type,
       },
     },
-    include: {
-      space: true,
-    },
+    include: { space: true },
   });
 
   const usedDayHours = dayReservations.reduce(
@@ -200,9 +245,7 @@ async function validateAndBuildReservation({
         type: space.type,
       },
     },
-    include: {
-      space: true,
-    },
+    include: { space: true },
   });
 
   const usedWeekHours = weekReservations.reduce(
@@ -232,13 +275,9 @@ async function validateAndBuildReservation({
       date: dateOnly,
       startTime: { lt: endDateTime },
       endTime: { gt: startDateTime },
-      space: {
-        type: space.type,
-      },
+      space: { type: space.type },
     },
-    select: {
-      spaceId: true,
-    },
+    select: { spaceId: true },
   });
 
   const distinctSpaces = new Set(overlappingSameType.map((r) => r.spaceId));
@@ -255,12 +294,10 @@ async function validateAndBuildReservation({
     );
   }
 
-  // --- 4) Solapamiento en el mismo espacio (regla actual) ---
-  const overlappingFilter = reservationIdToExclude ? { id: { not: reservationIdToExclude } } : {};
-
+  // --- 4) Solapamiento en el mismo espacio ---
   const overlapping = await prisma.reservation.findFirst({
     where: {
-      ...overlappingFilter,
+      ...excludeFilter,
       spaceId: Number(spaceId),
       status: 'ACTIVE',
       date: dateOnly,
@@ -279,6 +316,8 @@ async function validateAndBuildReservation({
   return { dateOnly, startDateTime, endDateTime, space };
 }
 
+/* ------------------------------ ENDPOINTS ------------------------------ */
+
 /**
  * GET /api/reservations/pending
  * Reservas pendientes (admin) — IMPORTANTE: antes de '/:id'
@@ -289,14 +328,8 @@ router.get('/pending', authRequired, requireAdmin, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const reservations = await prisma.reservation.findMany({
-      where: {
-        status: 'PENDING',
-        date: { gte: today },
-      },
-      include: {
-        user: true,
-        space: true,
-      },
+      where: { status: 'PENDING', date: { gte: today } },
+      include: { user: true, space: true },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -309,12 +342,10 @@ router.get('/pending', authRequired, requireAdmin, async (req, res) => {
 
 /**
  * PATCH /api/reservations/:id/approve
- * Aprobar reserva (admin)
  */
 router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: 'ID de reserva inválido' });
     }
@@ -324,10 +355,7 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
       include: { user: true, space: true },
     });
 
-    if (!existing) {
-      return res.status(404).json({ message: 'Reserva no encontrada' });
-    }
-
+    if (!existing) return res.status(404).json({ message: 'Reserva no encontrada' });
     if (existing.status !== 'PENDING') {
       return res.status(400).json({ message: 'Solo se pueden aprobar reservas pendientes' });
     }
@@ -338,10 +366,7 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
       include: { user: true, space: true },
     });
 
-    // ✅ Email al usuario (no bloquea si falla)
     try {
-      const { notifyReservationApprovedToUser } = require('../services/alertNotificationService');
-
       await notifyReservationApprovedToUser({
         reservation: updated,
         user: updated.user,
@@ -360,7 +385,6 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
 
 /**
  * PATCH /api/reservations/:id/reject
- * Rechazar reserva (admin) + email al usuario con motivo
  */
 router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
   try {
@@ -376,10 +400,7 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
       include: { user: true, space: true },
     });
 
-    if (!existing) {
-      return res.status(404).json({ message: 'Reserva no encontrada' });
-    }
-
+    if (!existing) return res.status(404).json({ message: 'Reserva no encontrada' });
     if (existing.status !== 'PENDING') {
       return res.status(400).json({ message: 'Solo se pueden rechazar reservas pendientes' });
     }
@@ -390,10 +411,8 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
       include: { user: true, space: true },
     });
 
-    // ✅ Email al usuario (no bloquea si falla)
     try {
       const { notifyReservationRejectedToUser } = require('../services/alertNotificationService');
-
       await notifyReservationRejectedToUser({
         reservation: updated,
         user: updated.user,
@@ -411,10 +430,8 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
   }
 });
 
-
 /**
  * PATCH /api/reservations/:id/cancel
- * Cancelar (admin o dueño). Mantengo tu DELETE, pero esto sirve para el dashboard.
  */
 router.patch('/:id/cancel', authRequired, async (req, res) => {
   try {
@@ -426,13 +443,8 @@ router.patch('/:id/cancel', authRequired, async (req, res) => {
       return res.status(400).json({ message: 'ID de reserva inválido' });
     }
 
-    const reservation = await prisma.reservation.findUnique({
-      where: { id },
-    });
-
-    if (!reservation) {
-      return res.status(404).json({ message: 'Reserva no encontrada' });
-    }
+    const reservation = await prisma.reservation.findUnique({ where: { id } });
+    if (!reservation) return res.status(404).json({ message: 'Reserva no encontrada' });
 
     if (role !== 'ADMIN' && reservation.userId !== userId) {
       return res.status(403).json({ message: 'No puedes cancelar esta reserva' });
@@ -464,8 +476,8 @@ router.post('/', authRequired, async (req, res) => {
     const role = req.user.role;
     const { spaceId, date, startTime, endTime, userId: bodyUserId } = req.body;
 
-    // A quién pertenece la reserva
-    const targetUserId = role === 'ADMIN' && bodyUserId ? Number(bodyUserId) : authUserId;
+    const targetUserId =
+      role === 'ADMIN' && bodyUserId ? Number(bodyUserId) : authUserId;
 
     const targetUser = await prisma.user.findUnique({
       where: { id: Number(targetUserId) },
@@ -476,13 +488,14 @@ router.post('/', authRequired, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    const { dateOnly, startDateTime, endDateTime } = await validateAndBuildReservation({
-      userId: targetUserId,
-      spaceId,
-      date,
-      startTime,
-      endTime,
-    });
+    const { dateOnly, startDateTime, endDateTime, space } =
+      await validateAndBuildReservation({
+        userId: targetUserId,
+        spaceId,
+        date,
+        startTime,
+        endTime,
+      });
 
     const initialStatus = resolveInitialStatus({
       actorRole: role,
@@ -505,13 +518,9 @@ router.post('/', authRequired, async (req, res) => {
         endTime: endDateTime,
         status: initialStatus,
       },
-      include: {
-        space: true,
-        user: true,
-      },
+      include: { space: true, user: true },
     });
 
-    // ✅ Si queda pendiente, devolvemos alertKey para que el frontend muestre el popup y envie mail.
     if (reservation.status === 'PENDING') {
       try {
         await notifyReservationPendingApproval({
@@ -521,7 +530,6 @@ router.post('/', authRequired, async (req, res) => {
         });
       } catch (e) {
         console.error('No se pudo enviar email de reserva pendiente:', e);
-        // No bloqueamos la creación de reserva por un fallo de email
       }
 
       return res.status(201).json({
@@ -531,8 +539,6 @@ router.post('/', authRequired, async (req, res) => {
         message: 'Tu reserva quedó pendiente de confirmación por el administrador.',
       });
     }
-
-    // TODO: si role === 'ADMIN' y targetUserId !== authUserId => enviar mail al usuario asignado
 
     return res.status(201).json({
       reservation,
@@ -596,10 +602,7 @@ router.get('/space/:spaceId', authRequired, requireAdmin, async (req, res) => {
     }
 
     const reservations = await prisma.reservation.findMany({
-      where: {
-        spaceId,
-        date: { gte: fromDate, lte: toDate },
-      },
+      where: { spaceId, date: { gte: fromDate, lte: toDate } },
       include: { user: true, space: true },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
@@ -699,6 +702,7 @@ router.put('/:id', authRequired, async (req, res) => {
       return res.status(400).json({ message: 'No se puede editar una reserva pasada o en curso' });
     }
 
+    // valida contra límites/horarios/solapes, excluyendo la propia reserva
     const { dateOnly, startDateTime, endDateTime } = await validateAndBuildReservation({
       userId: existing.userId,
       spaceId,
@@ -726,10 +730,6 @@ router.put('/:id', authRequired, async (req, res) => {
           code: 'USER_BLOCKED',
         });
       }
-
-      // opcional: si querés que una edición vuelva a PENDING para REGULAR/null:
-      // - Si no querés esto, dejá comentado el siguiente bloque.
-      // if (statusDecision === 'PENDING') { ... }
     }
 
     const updated = await prisma.reservation.update({
@@ -739,7 +739,6 @@ router.put('/:id', authRequired, async (req, res) => {
         date: dateOnly,
         startTime: startDateTime,
         endTime: endDateTime,
-        // NOTA: no tocamos status en edición por defecto
       },
       include: { space: true },
     });
@@ -765,7 +764,6 @@ router.put('/:id', authRequired, async (req, res) => {
 
 /**
  * DELETE /api/reservations/:id
- * Cancelar una reserva (mantengo tu endpoint original)
  */
 router.delete('/:id', authRequired, async (req, res) => {
   try {
@@ -773,9 +771,7 @@ router.delete('/:id', authRequired, async (req, res) => {
     const userId = req.user.userId;
     const role = req.user.role;
 
-    const reservation = await prisma.reservation.findUnique({
-      where: { id },
-    });
+    const reservation = await prisma.reservation.findUnique({ where: { id } });
 
     if (!reservation) {
       return res.status(404).json({ message: 'Reserva no encontrada' });
@@ -804,7 +800,6 @@ router.delete('/:id', authRequired, async (req, res) => {
 
 /**
  * POST /api/reservations/limit-override-request
- * Se llama cuando el usuario pulsa "Solicitar más".
  */
 router.post('/limit-override-request', authRequired, async (req, res) => {
   try {

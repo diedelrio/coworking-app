@@ -1,8 +1,6 @@
+// backend/src/services/reservationValidationService.js
 const prisma = require('../prisma');
-const {
-  getReservationSettings,
-  getTypeReservationRules,
-} = require('./settingsService');
+const settingsService = require('./settingsService');
 
 // Helpers de tiempo / fechas
 function getDayRange(dateOnly) {
@@ -11,16 +9,6 @@ function getDayRange(dateOnly) {
   const end = new Date(dateOnly);
   end.setHours(23, 59, 59, 999);
   return { start, end };
-}
-
-function resolveInitialStatus({ actorRole, targetUserClassify }) {
-  if (actorRole === 'ADMIN') return 'ACTIVE';
-
-  if (targetUserClassify === 'BAD') return 'BLOCKED';
-  if (targetUserClassify === 'GOOD') return 'ACTIVE';
-
-  // null o REGULAR
-  return 'PENDING';
 }
 
 function getWeekRangeFromDate(dateOnly) {
@@ -54,6 +42,51 @@ const MS_PER_HOUR = 1000 * 60 * 60;
 
 function getReservationDurationHours(startTime, endTime) {
   return (endTime - startTime) / MS_PER_HOUR;
+}
+
+/**
+ * ✅ Reglas default por tipo (fallback si settingsService no tiene getTypeReservationRules)
+ * Ajustalas a tus valores reales.
+ */
+function getDefaultTypeRules(spaceType) {
+  const base = {
+    maxHoursPerDayPerUser: 8,
+    maxHoursPerWeekPerUser: 20,
+    maxOverlappingSpacesPerUser: 1,
+    maxSpacesPerDayPerUser: 1,
+  };
+
+  switch (spaceType) {
+    case 'MEETING_ROOM':
+      return {
+        ...base,
+        maxHoursPerDayPerUser: 4,
+        maxHoursPerWeekPerUser: 8,
+        maxSpacesPerDayPerUser: 1,
+      };
+    case 'OFFICE_ROOM':
+      return {
+        ...base,
+        maxHoursPerDayPerUser: 8,
+        maxHoursPerWeekPerUser: 30,
+        maxSpacesPerDayPerUser: 1,
+      };
+    case 'FIX_DESK':
+    case 'FLEX_DESK':
+    default:
+      return base;
+  }
+}
+
+/**
+ * ✅ Wrapper seguro: si settingsService.getTypeReservationRules existe, se usa.
+ * Si no, fallback a defaults.
+ */
+async function getTypeReservationRulesSafe(spaceType) {
+  if (typeof settingsService.getTypeReservationRules === 'function') {
+    return settingsService.getTypeReservationRules(spaceType);
+  }
+  return getDefaultTypeRules(spaceType);
 }
 
 /**
@@ -91,7 +124,16 @@ async function validateAndBuildReservation({
   }
 
   const now = new Date();
-  const { min_hours_before } = await getReservationSettings();
+
+  // ✅ settingsService.getReservationSettings debe existir (si no, también podemos fallback)
+  if (typeof settingsService.getReservationSettings !== 'function') {
+    throw new ReservationValidationError(
+      'No se pudo cargar la configuración de reservas (getReservationSettings)',
+      'SETTINGS_MISSING'
+    );
+  }
+
+  const { min_hours_before } = await settingsService.getReservationSettings();
 
   const diffHours = (startDateTime - now) / MS_PER_HOUR;
   if (diffHours < min_hours_before) {
@@ -111,11 +153,13 @@ async function validateAndBuildReservation({
     throw new ReservationValidationError('El espacio no existe o está inactivo');
   }
 
-  const typeRules = await getTypeReservationRules(space.type);
+  const typeRules = await getTypeReservationRulesSafe(space.type);
 
   const newReservationHours = getReservationDurationHours(startDateTime, endDateTime);
 
-  const excludeFilter = reservationIdToExclude ? { id: { not: reservationIdToExclude } } : {};
+  const excludeFilter = reservationIdToExclude
+    ? { id: { not: reservationIdToExclude } }
+    : {};
 
   // --- 1) Límite por día, por usuario y tipo de espacio ---
   const { start: startOfDay, end: endOfDay } = getDayRange(dateOnly);
@@ -157,7 +201,6 @@ async function validateAndBuildReservation({
   }
 
   // --- 1b) Límite de cantidad de espacios distintos por día (por tipo) ---
-  // Contamos en cuántos spacesId distintos de este tipo tiene reservas el usuario ese día
   const distinctSpacesDay = new Set(dayReservations.map((r) => r.spaceId));
   distinctSpacesDay.add(Number(spaceId));
 
@@ -227,9 +270,7 @@ async function validateAndBuildReservation({
         type: space.type,
       },
     },
-    select: {
-      spaceId: true,
-    },
+    select: { spaceId: true },
   });
 
   const distinctSpaces = new Set(overlappingSameType.map((r) => r.spaceId));
@@ -246,7 +287,7 @@ async function validateAndBuildReservation({
     );
   }
 
-  // --- 4) Solapamiento en el mismo espacio (regla actual) ---
+  // --- 4) Solapamiento en el mismo espacio ---
   const overlappingFilter = reservationIdToExclude ? { id: { not: reservationIdToExclude } } : {};
 
   const overlapping = await prisma.reservation.findFirst({
@@ -267,15 +308,11 @@ async function validateAndBuildReservation({
     );
   }
 
-  return {
-    dateOnly,
-    startDateTime,
-    endDateTime,
-    space,
-  };
+  return { dateOnly, startDateTime, endDateTime, space };
 }
 
 module.exports = {
   ReservationValidationError,
   validateAndBuildReservation,
+  getTypeReservationRules: getTypeReservationRulesSafe, // opcional pero seguro
 };

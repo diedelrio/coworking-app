@@ -65,6 +65,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       data: {
         name,
         lastName,
+        maternalLastName: true,
         email,
         phone: phone || null,
         role: role || 'CLIENT',
@@ -76,6 +77,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
         id: true,
         name: true,
         lastName: true,
+        maternalLastName: true,
         email: true,
         phone: true,
         role: true,
@@ -106,6 +108,7 @@ router.get('/missing-classify', authRequired, requireAdmin, async (req, res) => 
         id: true,
         name: true,
         lastName: true,
+        maternalLastName: true,
         email: true,
         createdAt: true,
       },
@@ -116,6 +119,84 @@ router.get('/missing-classify', authRequired, requireAdmin, async (req, res) => 
   } catch (err) {
     console.error('ERROR GET /users/missing-classify', err);
     res.status(500).json({ message: 'Error al obtener usuarios sin classify' });
+  }
+});
+// ✅ GET /api/users/me (cliente o admin: su propio perfil)
+router.get('/me', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        maternalLastName: true,
+        email: true,
+        phone: true,
+        role: true,
+        classify: true,
+        active: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+    res.json(user);
+  } catch (err) {
+    console.error('ERROR GET /users/me', err);
+    res.status(500).json({ message: 'Error al obtener el perfil' });
+  }
+});
+
+// ✅ PATCH /api/users/me (solo phone + maternalLastName)
+router.patch('/me', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { phone, maternalLastName } = req.body;
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        phone: typeof phone === 'undefined' ? undefined : (phone || null),
+        maternalLastName:
+          typeof maternalLastName === 'undefined' ? undefined : (maternalLastName || null),
+      },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        maternalLastName: true,
+        email: true,
+        phone: true,
+        role: true,
+        classify: true,
+        active: true,
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error('ERROR PATCH /users/me', err);
+    res.status(500).json({ message: 'Error al actualizar el perfil' });
+  }
+});
+
+// ✅ PATCH /api/users/me/deactivate (darse de baja)
+router.patch('/me/deactivate', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { active: false },
+    });
+
+    res.json({ message: 'Cuenta desactivada correctamente.' });
+  } catch (err) {
+    console.error('ERROR PATCH /users/me/deactivate', err);
+    res.status(500).json({ message: 'Error al desactivar la cuenta' });
   }
 });
 
@@ -136,6 +217,7 @@ router.get('/:id', authRequired, requireAdmin, async (req, res) => {
         id: true,
         name: true,
         lastName: true,
+        maternalLastName: true,
         email: true,
         phone: true,
         role: true,
@@ -167,7 +249,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'ID inválido' });
     }
 
-    const { name, lastName, email, phone, role, active, classify } = req.body;
+    const { name, lastName, maternalLastName,email, phone, role, active, classify } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
@@ -177,6 +259,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
     const updates = {
       name,
       lastName,
+      maternalLastName,
       email,
       phone,
       role,
@@ -187,6 +270,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
     const fieldsToTrack = [
       'name',
       'lastName',
+      'maternalLastName',
       'email',
       'phone',
       'role',
@@ -220,6 +304,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
           id: true,
           name: true,
           lastName: true,
+          maternalLastName: true,
           email: true,
           phone: true,
           role: true,

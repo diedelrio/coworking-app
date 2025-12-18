@@ -13,7 +13,8 @@
     "db:migrate": "dotenv -e .env -- prisma migrate dev",
     "db:deploy": "dotenv -e .env -- prisma migrate deploy",
     "prisma:gen:pg": "prisma generate",
-    "prisma:gen:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma"
+    "prisma:gen:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
+    "seed:Horarios":"node src/scripts/seedHorarios.js"
   },
   "kmkdir sceywords": [],
   "author": "",
