@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth');
 const spacesRoutes = require('./routes/spaces');
 const reservationsRoutes = require('./routes/reservations');
 const usersRoutes = require('./routes/users');
+const publicRoutes = require('./routes/public');
 
 const settingsRouter = require('./routes/settings');
 const adminEmailTemplates = require('./routes/adminEmailTemplates');
@@ -26,6 +27,8 @@ app.use('/api/reservations', reservationsRoutes);
 app.use('/api/users', usersRoutes); 
 app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);
+app.use('/api/public', publicRoutes);
+
 
 const { bootstrapMasterAdmin } = require("./utils/bootstrapAdmin");
 

@@ -1,64 +1,73 @@
-const { getActiveSettingsMap } = require('./settingsService');
-const { sendMail } = require('./emailService'); // ajusta el path si tu mail service está en otro lado
+// backend/src/services/limitAlertService.js
+const prisma = require('../prisma');
+const { sendMail } = require('./emailService');
 
-function toBool(val, fallback = true) {
-  if (val == null) return fallback;
-  const v = String(val).toLowerCase().trim();
-  if (['true', '1', 'yes', 'y', 'on'].includes(v)) return true;
-  if (['false', '0', 'no', 'n', 'off'].includes(v)) return false;
-  return fallback;
+function renderTemplate(text, vars = {}) {
+  if (!text) return '';
+  return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_, key) => {
+    const val = vars[key];
+    return val === undefined || val === null ? '' : String(val);
+  });
 }
 
-async function getLimitAlertConfig() {
-  const keys = [
-    'LIMIT_ALERT_EMAIL_ENABLED',
-    'LIMIT_ALERT_TO_EMAIL',
-    'LIMIT_ALERT_SUBJECT',
-  ];
-
-  const m = await getActiveSettingsMap(keys);
-
-  const enabled = toBool(m.LIMIT_ALERT_EMAIL_ENABLED?.value, true);
-  const toEmail = m.LIMIT_ALERT_TO_EMAIL?.value || process.env.ADMIN_EMAIL || null;
-  const subject = m.LIMIT_ALERT_SUBJECT?.value || 'Solicitud de ampliación de límite';
-
-  return { enabled, toEmail, subject };
+function splitEmails(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[;,]/g)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
+async function getLimitAlertRecipients() {
+  // según tu Setting.json, este es el campo real: limit_alert_emails
+  const s = await prisma.setting.findUnique({ where: { key: 'limit_alert_emails' } });
+  return splitEmails(s?.value);
+}
+
+/**
+ * Envia email usando EmailTemplate.key = "LIMIT_OVERRIDE_REQUEST"
+ * Variables requeridas (según tu EmailTemplate.json):
+ * adminName, userName, userEmail, spaceName, spaceType, date, startTime, endTime, limitReason
+ */
 async function notifyLimitExceeded({ user, space, date, startTime, endTime, limitReason }) {
-  const cfg = await getLimitAlertConfig();
+  const recipients = await getLimitAlertRecipients();
 
-  // Si no hay destinatario, no rompemos el flujo
-  if (!cfg.toEmail) {
-    console.log('[LIMIT ALERT] Sin destinatario configurado. Se omite envío.');
-    return { skipped: true, reason: 'NO_TO_EMAIL' };
+  if (!recipients.length) {
+    console.log('[LIMIT ALERT] Sin destinatarios configurados en Setting.limit_alert_emails. Se omite envío.');
+    return { skipped: true, reason: 'NO_RECIPIENTS' };
   }
 
-  if (!cfg.enabled) {
-    console.log('[LIMIT ALERT DISABLED]', { to: cfg.toEmail, user: user?.email, space: space?.name });
-    return { skipped: true, reason: 'DISABLED' };
-  }
-
-  const text =
-`Solicitud de ampliación de límite
-
-Usuario: ${user?.name || ''} (${user?.email || ''})
-Espacio: ${space?.name || ''} (ID: ${space?.id})
-Fecha: ${date}
-Horario: ${startTime} - ${endTime}
-
-Motivo:
-${limitReason || '-'}`;
-
-  await sendMail({
-    to: cfg.toEmail,
-    subject: cfg.subject,
-    text,
+  const tpl = await prisma.emailTemplate.findUnique({
+    where: { key: 'LIMIT_OVERRIDE_REQUEST' },
   });
 
-  return { ok: true };
+  if (!tpl) {
+    console.warn('[LIMIT ALERT] Falta EmailTemplate key=LIMIT_OVERRIDE_REQUEST');
+    return { skipped: true, reason: 'TEMPLATE_NOT_FOUND' };
+  }
+
+  const vars = {
+    adminName: 'Admin',
+    userName: user?.name || user?.email || 'Usuario',
+    userEmail: user?.email || '',
+    spaceName: space?.name || '',
+    spaceType: space?.type || '',
+    date: date || '',
+    startTime: startTime || '',
+    endTime: endTime || '',
+    limitReason: limitReason || '-',
+  };
+
+  const subject = renderTemplate(tpl.subject, vars);
+  const body = renderTemplate(tpl.body, vars);
+
+  await sendMail({
+    to: recipients.join(','),
+    subject,
+    text: body,
+  });
+
+  return { ok: true, recipients };
 }
 
-module.exports = {
-  notifyLimitExceeded,
-};
+module.exports = { notifyLimitExceeded };

@@ -1280,3 +1280,77 @@ input:focus {
     grid-template-columns: 1fr;
   }
 }
+.event-full {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,0.20) 0,
+    rgba(255,255,255,0.20) 6px,
+    rgba(255,255,255,0.06) 6px,
+    rgba(255,255,255,0.06) 12px
+  );
+}
+/* ===== FullCalendar admin styling (para que no desentone) ===== */
+.fc-admin-wrap .fc {
+  font-family: inherit;
+}
+
+.fc-admin-wrap .fc .fc-toolbar-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.fc-admin-wrap .fc .fc-button {
+  border-radius: 0.75rem;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  padding: 0.45rem 0.75rem;
+  box-shadow: none;
+}
+
+.fc-admin-wrap .fc .fc-button:hover {
+  background: #f3f4f6;
+}
+
+.fc-admin-wrap .fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc-admin-wrap .fc .fc-button-primary:not(:disabled):active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.fc-admin-wrap .fc .fc-scrollgrid,
+.fc-admin-wrap .fc .fc-scrollgrid-section > td,
+.fc-admin-wrap .fc .fc-col-header-cell,
+.fc-admin-wrap .fc .fc-timegrid-slot {
+  border-color: #e5e7eb;
+}
+
+.fc-admin-wrap .fc .fc-timegrid-slot-label,
+.fc-admin-wrap .fc .fc-col-header-cell-cushion {
+  color: #374151;
+  font-weight: 600;
+}
+
+.fc-admin-wrap .fc .fc-timegrid-axis-cushion {
+  color: #6b7280;
+}
+
+.fc-admin-wrap .fc .fc-event {
+  border-radius: 0.75rem;
+  padding: 0.25rem 0.35rem;
+  box-shadow: none;
+}
+
+.fc-admin-wrap .fc .fc-event.fc-event-soft {
+  border-width: 1px;
+}
+
+/* Ajuste de fondo (el amarillo era por estilos globales o FC theme) */
+.fc-admin-wrap .fc .fc-timegrid-col,
+.fc-admin-wrap .fc .fc-timegrid-body,
+.fc-admin-wrap .fc .fc-scrollgrid-section-body {
+  background: #ffffff;
+}
+
+/* Tu textura FULL ya existe como .event-full (la reusamos) */

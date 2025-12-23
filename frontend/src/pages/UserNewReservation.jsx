@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axiosClient';
 import Header from '../components/Header';
 import { getCurrentUser } from '../utils/auth';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
 import LimitOverrideModal from '../components/LimitOverrideModal';
 
 /**
@@ -80,6 +80,14 @@ function AlertModal({ open, title, description, primaryText = 'Entendido', onPri
       </div>
     </div>
   );
+}
+
+function isPendingApprovalResponse(data) {
+  const status = String(data?.status || '').toUpperCase();
+  const alertKey = String(data?.alertKey || '').toLowerCase();
+
+  // Si el status es PENDING, o si alertKey es 'reservation_pending_approval' (compatibilidad)
+  return status === 'PENDING' || alertKey === 'reservation_pending_approval';
 }
 
 export default function UserNewReservation() {
@@ -220,7 +228,7 @@ export default function UserNewReservation() {
       const res = await api.post('/reservations', payload);
 
       // ✅ Nuevo flujo: si pending => popup
-      if (res.data?.alertKey === 'reservation_pending_approval') {
+      if (isPendingApprovalResponse(res.data)) {
         openPendingApprovalPopup();
         return; // no navegar aún
       }

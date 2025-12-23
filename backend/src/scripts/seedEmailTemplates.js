@@ -1,20 +1,31 @@
+// backend/src/scripts/seedEmailTemplates.js
 const prisma = require('../prisma');
 
 async function main() {
-  const key = 'limit_override_request';
+  const NEW_KEY = 'LIMIT_OVERRIDE_REQUEST';
+  const OLD_KEY = 'limit_override_request';
 
-  const existing = await prisma.emailTemplate.findUnique({
-    where: { key },
-  });
+  // Si existe con key vieja, la migramos
+  const old = await prisma.emailTemplate.findUnique({ where: { key: OLD_KEY } });
+  if (old) {
+    await prisma.emailTemplate.update({
+      where: { id: old.id },
+      data: { key: NEW_KEY },
+    });
+    console.log(`EmailTemplate key migrada: ${OLD_KEY} -> ${NEW_KEY}`);
+  }
 
+  // Si ya existe con key nueva, no hacemos nada
+  const existing = await prisma.emailTemplate.findUnique({ where: { key: NEW_KEY } });
   if (existing) {
-    console.log('EmailTemplate ya existe, no se crea de nuevo.');
+    console.log('EmailTemplate ya existe con key nueva, no se crea de nuevo.');
     return;
   }
 
+  // Crear template si no existe
   await prisma.emailTemplate.create({
     data: {
-      key,
+      key: NEW_KEY,
       name: 'Solicitud extra por límite de reservas',
       subject: 'Solicitud extra de reserva de {{userName}}',
       body: `
@@ -40,9 +51,7 @@ Sistema de reservas
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-  })
+  .catch((e) => console.error(e))
   .finally(async () => {
     await prisma.$disconnect();
     process.exit(0);

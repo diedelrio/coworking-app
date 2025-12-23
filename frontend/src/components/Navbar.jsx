@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { FaBars, FaHome, FaUserAlt, FaCog, FaChartBar } from 'react-icons/fa'; // iconos adicionales
+import { FaHome, FaUserAlt, FaCog, FaChartBar } from 'react-icons/fa';
 import { MdOutlineMarkEmailRead } from "react-icons/md";
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
@@ -30,7 +30,6 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
   });
 
   if (!to) {
-    // item "sección" sin navegación
     return (
       <button
         type="button"
@@ -39,7 +38,6 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
           ...commonStyle(active),
           width: '100%',
           border: 'none',
-          background: active ? '#4f46e5' : 'transparent',
           cursor: 'pointer',
         }}
       >
@@ -55,7 +53,7 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
   );
 }
 
-export default function Navbar({ collapsed }) {
+export default function Navbar({ collapsed, onToggle }) {
   const location = useLocation();
   const width = collapsed ? 64 : 220;
 
@@ -65,7 +63,7 @@ export default function Navbar({ collapsed }) {
   const isSpaces = path === '/admin/espacios';
   const isSettings = path === '/admin/settings';
   const isEmailTemplates = path === '/admin/email-templates';
-  const isUsers = path === '/admin/usuarios'; // futuro
+  const isUsers = path === '/admin/usuarios';
   const isReports =
     path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
 
@@ -82,8 +80,30 @@ export default function Navbar({ collapsed }) {
         transition: 'width 0.2s ease',
       }}
     >
-      {/* separador superior */}
-      <div style={{ height: '0.5rem' }} />
+      {/* Toggle (siempre arriba) */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+        title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+        style={{
+          width: '100%',
+          border: 'none',
+          background: 'transparent',
+          color: '#e5e7eb',
+          cursor: 'pointer',
+          padding: '0.55rem 0.75rem',
+          borderRadius: '0.5rem',
+          textAlign: collapsed ? 'center' : 'left',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          fontSize: '1rem',
+          outline: 'none',
+        }}
+      >
+        {collapsed ? '»' : '«'}
+      </button>
 
       {/* Dashboard */}
       <NavItem
@@ -93,6 +113,7 @@ export default function Navbar({ collapsed }) {
         collapsed={collapsed}
         active={isDashboard}
       />
+
       {/* Espacios */}
       <NavItem
         to="/admin/espacios"
@@ -101,7 +122,7 @@ export default function Navbar({ collapsed }) {
         collapsed={collapsed}
         active={isSpaces}
       />
-      
+
       {/* Settings */}
       <NavItem
         to="/admin/settings"
@@ -111,6 +132,7 @@ export default function Navbar({ collapsed }) {
         active={isSettings}
       />
 
+      {/* Email Templates */}
       <NavItem
         to="/admin/email-templates"
         icon={<MdOutlineMarkEmailRead />}
@@ -119,7 +141,7 @@ export default function Navbar({ collapsed }) {
         active={isEmailTemplates}
       />
 
-      {/* Usuarios (placeholder futuro) */}
+      {/* Usuarios */}
       <NavItem
         to="/admin/usuarios"
         icon={<FaUserAlt />}
@@ -128,14 +150,13 @@ export default function Navbar({ collapsed }) {
         active={isUsers}
       />
 
-      {/* Reportes (placeholder futuro) */}
-        <NavItem
-          icon={<FaChartBar />}
-          label="Reportes"
-          collapsed={collapsed}
-          active={isReports}
-        />
-
+      {/* Reportes (placeholder sin navegación) */}
+      <NavItem
+        icon={<FaChartBar />}
+        label="Reportes"
+        collapsed={collapsed}
+        active={isReports}
+      />
     </aside>
   );
 }

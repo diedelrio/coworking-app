@@ -1,49 +1,45 @@
-import { useState } from 'react';
-import Header from './Header';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
-import { NavLink } from 'react-router-dom';
+import Header from './Header';
 
-export default function Layout({ user, children }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [configOpen, setConfigOpen] = useState(true);
+const LS_KEY_ADMIN = 'admin_navbar_collapsed';
 
-  function handleToggleSidebar() {
-    setSidebarCollapsed((prev) => !prev);
-  }
+export default function Layout({ children }) {
+  const location = useLocation();
+  const isAdmin = useMemo(() => location.pathname.startsWith('/admin'), [location.pathname]);
+
+  // default admin: colapsado
+  const [collapsed, setCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const saved = localStorage.getItem(LS_KEY_ADMIN);
+    if (saved === null) {
+      localStorage.setItem(LS_KEY_ADMIN, '1');
+      setCollapsed(true);
+      return;
+    }
+    setCollapsed(saved === '1');
+  }, [isAdmin]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (isAdmin) localStorage.setItem(LS_KEY_ADMIN, next ? '1' : '0');
+      return next;
+    });
+  };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* HEADER ARRIBA, A LO ANCHO */}
-      <Header user={user} onToggleSidebar={handleToggleSidebar} />
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Navbar controlado */}
+      <Navbar collapsed={isAdmin ? collapsed : false} onToggle={toggleCollapsed} />
 
-      {/* CUERPO: SIDENAV + CONTENIDO, DEBAJO DEL HEADER */}
-      <div
-        style={{
-          display: 'flex',
-          flex: 1,
-          alignItems: 'stretch',
-        }}
-      >
-        {/* Menú lateral */}
-        <Navbar collapsed={sidebarCollapsed} />
-
-        {/* Contenido principal */}
-        <main
-          style={{
-            flex: 1,
-            padding: '1.5rem 1.5rem 2rem',
-            overflowX: 'hidden',
-          }}
-        >
-          {children}
-        </main>
+      <div style={{ flex: 1 }}>
+        <Header />
+        {children}
       </div>
     </div>
   );

@@ -18,7 +18,6 @@ import AdminEmailTemplates from './pages/AdminEmailTemplates';
 import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
 
-
 function App() {
   return (
     <Routes>
@@ -52,6 +51,14 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/user/perfil"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserProfile />
+          </ProtectedRoute>
+        }
+      />
 
       {/* RUTAS ADMIN */}
       <Route
@@ -70,13 +77,14 @@ function App() {
           </ProtectedRoute>
         }
       />
-      
-      <Route path="/admin/email-templates" element={
-        <ProtectedRoute requiredRole="ADMIN">
-          <AdminEmailTemplates />
-        </ProtectedRoute>
-      }/>
-
+      <Route
+        path="/admin/email-templates"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminEmailTemplates />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/admin/settings"
         element={
@@ -85,7 +93,6 @@ function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/espacios"
         element={
@@ -94,7 +101,6 @@ function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/reservas/nueva"
         element={
@@ -103,7 +109,6 @@ function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/usuarios/nuevo"
         element={
@@ -112,26 +117,14 @@ function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/usuarios"
         element={
-          <ProtectedRoute role={['ADMIN']}>
+          <ProtectedRoute roles={['ADMIN']}>
             <AdminUsers />
           </ProtectedRoute>
         }
       />
-
-
-      />
-      <Route
-        path="/user/perfil"
-        element={
-          <ProtectedRoute roles={['CLIENT']}>
-            <UserProfile />
-          </ProtectedRoute>
-        }
-      />      
       <Route
         path="/admin/usuarios/:id"
         element={
@@ -141,7 +134,7 @@ function App() {
         }
       />
 
-      {/* CATCH ALL AL FINAL */}
+      {/* CATCH ALL */}
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>
   );

@@ -5,6 +5,8 @@ import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
 
+
+
 function formatDateInput(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -417,6 +419,20 @@ export default function SpaceCalendar() {
   const selectedSpace = spaces.find(
     (s) => String(s.id) === String(selectedSpaceId)
   );
+
+  function isSharedType(spaceType) {
+  const t = String(spaceType || '').toUpperCase();
+  return t === 'FLEX' || t === 'SHARED_TABLE';
+}
+
+/**
+ * Agrupa reservas compartidas por:
+ * spaceId + date + startTime + endTime
+ * Devuelve una lista de "eventos" para render.
+ *
+ * - unitarios: devuelve evento por reserva (como hoy)
+ * - compartidos: devuelve 1 evento agregado con count/capacity
+ */
 
   return (
     <Layout user={user}>

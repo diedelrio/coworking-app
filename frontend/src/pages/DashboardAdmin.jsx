@@ -5,6 +5,9 @@ import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
 import calendarImg from '../images/calendar-illustration.png';
 import AdminDashboardWidgets from '../components/AdminDashboardWidgets';
+import { aggregateSharedSlots, occupyingReservations } from '../utils/reservationsCalendar';
+import AdminDayResourcesCalendar from '../components/AdminDayResourcesCalendar';
+
 
 
 const SPACE_TYPES = [
@@ -34,7 +37,7 @@ export default function DashboardAdmin() {
   const [error, setError] = useState('');
 
   // Calendario rápido por espacio (día)
-  const [calendarSpaceId, setCalendarSpaceId] = useState('');
+  const [calendarSpaceId, setCalendarSpaceId] = useState('ALL');
   const [calendarDate, setCalendarDate] = useState(() =>
     formatDateInput(new Date())
   );
@@ -68,22 +71,22 @@ export default function DashboardAdmin() {
     });
   }
 
-  async function fetchSpaces() {
-    try {
-      setLoadingSpaces(true);
-      const res = await api.get('/spaces');
-      setSpaces(res.data);
+async function fetchSpaces() {
+  try {
+    setLoadingSpaces(true);
+    const res = await api.get('/spaces');
+    setSpaces(res.data);
 
-      if (!calendarSpaceId && res.data.length > 0) {
-        setCalendarSpaceId(String(res.data[0].id));
-      }
-    } catch (err) {
-      console.error(err);
-      setError('No se pudieron cargar los espacios');
-    } finally {
-      setLoadingSpaces(false);
-    }
+    // default admin: ALL (no forzamos primer espacio)
+    if (!calendarSpaceId) setCalendarSpaceId('ALL');
+  } catch (err) {
+    console.error(err);
+    setError('No se pudieron cargar los espacios');
+  } finally {
+    setLoadingSpaces(false);
   }
+}
+
 
   async function fetchReservations() {
     try {
@@ -123,24 +126,37 @@ export default function DashboardAdmin() {
     }
   }
 
-  async function fetchCalendarReservations() {
-    if (!calendarSpaceId) return;
+async function fetchCalendarReservations() {
+  try {
+    setLoadingCalendar(true);
 
-    try {
-      setLoadingCalendar(true);
-      const res = await api.get(`/reservations/space/${calendarSpaceId}`, {
-        params: {
-          from: calendarDate,
-          to: calendarDate,
-        },
+    if (calendarSpaceId === 'ALL') {
+      // Reusamos /reservations (admin) y filtramos por fecha en frontend
+      const res = await api.get('/reservations');
+
+      const filtered = (res.data || []).filter((r) => {
+        const d = new Date(r.date);
+        const key = formatDateInput(d);
+        return key === calendarDate;
       });
-      setCalendarReservations(res.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingCalendar(false);
+
+      setCalendarReservations(filtered);
+      return;
     }
+
+    // Un espacio: endpoint existente por espacio + rango de un día
+    const res = await api.get(`/reservations/space/${calendarSpaceId}`, {
+      params: { from: calendarDate, to: calendarDate },
+    });
+
+    setCalendarReservations(res.data || []);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoadingCalendar(false);
   }
+}
+
   async function handleCancelReservation(id) {
   if (!window.confirm('¿Seguro que quieres cancelar esta reserva?')) return;
 
@@ -341,159 +357,11 @@ export default function DashboardAdmin() {
           </div>
         </div>
 
-        {/* Calendario rápido por espacio (día) */}
-        <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: '0.75rem',
-              gap: '1rem',
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0, marginBottom: '0.25rem', fontSize: '1.1rem' }}>
-                Calendario por espacio
-              </h2>
-              <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-                Revisa rápidamente las reservas de hoy para un espacio concreto.
-              </span>
-            </div>
-
-            <Link
-              to={
-                calendarSpaceId
-                  ? `/admin/calendar?spaceId=${calendarSpaceId}&date=${calendarDate}`
-                  : '/admin/calendar'
-              }
-              style={{
-                fontSize: '0.85rem',
-                padding: '0.35rem 0.9rem',
-                borderRadius: '999px',
-                border: '1px solid #d1d5db',
-                textDecoration: 'none',
-                color: '#4f46e5',
-                alignSelf: 'flex-start',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Ver vista completa
-            </Link>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              marginBottom: '0.75rem',
-            }}
-          >
-            <div style={{ minWidth: 220 }}>
-              <label
-                style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.2rem' }}
-              >
-                Espacio
-              </label>
-              <select
-                value={calendarSpaceId}
-                onChange={(e) => setCalendarSpaceId(e.target.value)}
-                style={{
-                  width: '100%',
-                  borderRadius: '0.5rem',
-                  border: '1px solid #d1d5db',
-                  padding: '0.5rem 0.7rem',
-                  fontSize: '0.9rem',
-                }}
-              >
-                {spaces.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ minWidth: 180 }}>
-              <label
-                style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.2rem' }}
-              >
-                Fecha
-              </label>
-              <input
-                type="date"
-                value={calendarDate}
-                onChange={(e) => setCalendarDate(e.target.value)}
-                style={{
-                  width: '100%',
-                  borderRadius: '0.5rem',
-                  border: '1px solid #d1d5db',
-                  padding: '0.5rem 0.7rem',
-                  fontSize: '0.9rem',
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Lista de reservas del día para el espacio */}
-          {loadingCalendar ? (
-            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>Cargando calendario...</p>
-          ) : calendarReservations.length === 0 ? (
-            <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-              No hay reservas para esta fecha en este espacio.
-            </p>
-          ) : (
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {calendarReservations
-                .slice()
-                .sort(
-                  (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-                )
-                .map((r) => {
-                  const start = new Date(r.startTime);
-                  const end = new Date(r.endTime);
-                  const horaInicio = start.toLocaleTimeString('es-ES', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
-                  const horaFin = end.toLocaleTimeString('es-ES', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
-                  const userName = r.user?.name || r.user?.email || '';
-
-                  return (
-                    <li
-                      key={r.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '0.5rem 0.3rem',
-                        borderBottom: '1px solid #e5e7eb',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600 }}>
-                          {horaInicio} – {horaFin}
-                        </div>
-                        <div style={{ fontSize: '0.85rem', color: '#4b5563' }}>
-                          Usuario: {userName || '—'}
-                        </div>
-                      </div>
-                      <div>
-                        {r.status === 'CANCELLED' ? (
-                          <span className="badge red">Cancelada</span>
-                        ) : (
-                          <span className="badge green">Activa</span>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-            </ul>
-          )}
+        {/* Calendario rápido (día) - Todos / Por espacio */}
+        <div >
+          <AdminDayResourcesCalendar />
         </div>
+
         {/* 👉 ACÁ VA LO NUEVO */}
         
         <div style={{ marginBottom: '1.5rem' }}>
