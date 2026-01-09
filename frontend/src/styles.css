@@ -1354,3 +1354,196 @@ input:focus {
 }
 
 /* Tu textura FULL ya existe como .event-full (la reusamos) */
+/* AdminSpaces grid: máximo 3 por fila */
+.spaces-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Tablet */
+@media (max-width: 1200px) {
+  .spaces-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .spaces-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* Para que las cards se estiren igual dentro del grid */
+.spaces-grid > .admin-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.space-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;     /* cantidad de líneas */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* AdminSpaces: estructura interna de las cards */
+.space-card-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Empuja los botones al fondo */
+.space-card-actions {
+  margin-top: auto;
+}
+/* AdminSpaces: card hover */
+.space-card {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.space-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.10);
+}
+
+/* AdminSpaces: imagen */
+.space-card-cover {
+  position: relative;
+  height: 280px;
+  background: #f3f4f6;
+  overflow: hidden;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.space-card-cover img {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Fallback siempre debajo */
+.space-card-cover-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: #9ca3af;
+  font-size: 36px;
+}
+
+
+/* Badges más parecidos al mock */
+.badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.badge.green {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+.badge.red {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+/* Chips (tags) más uniformes */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* Modal Espacios: layout */
+.space-modal-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .space-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.space-modal-preview {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f3f4f6;
+  height: 180px;
+  display: grid;
+  place-items: center;
+  color: #9ca3af;
+  font-size: 34px;
+}
+
+.space-modal-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.space-amenities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.space-amenities .chip {
+  background: #eef2ff;
+  color: #3730a3;
+}
+/* AdminSpaces header */
+.admin-spaces-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-spaces-header h1 {
+  margin: 0 0 4px 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-spaces-subtitle {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+/* Buscador */
+.admin-search-card {
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+
+.admin-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-search input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 0.95rem;
+  background: transparent;
+}
