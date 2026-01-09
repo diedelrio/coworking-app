@@ -202,7 +202,7 @@ export default function AdminNewUser() {
                   <input
                     type="text"
                     value={form.name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => handleChange('name', e.target.value)}
                     placeholder="Nombre"
                     required
                   />
