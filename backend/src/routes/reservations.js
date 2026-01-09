@@ -711,7 +711,7 @@ router.put('/:id', authRequired, async (req, res) => {
     }
 
     // valida contra límites/horarios/solapes, excluyendo la propia reserva
-    const { dateOnly, startDateTime, endDateTime } = await validateAndBuildReservation({
+    const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
       userId: existing.userId,
       spaceId,
       date,
@@ -742,40 +742,40 @@ router.put('/:id', authRequired, async (req, res) => {
 
     const cap = effectiveCapacity(space);
 
-if (isSharedSpaceType(space.type)) {
-  const occupied = await countOverlappingReservations({
-    spaceId: space.id,
-    date,
-    startTime,
-    endTime,
-    excludeReservationId: reservationId,
-  });
+    if (isSharedSpaceType(space.type)) {
+      const occupied = await countOverlappingReservations({
+        spaceId: space.id,
+        date,
+        startTime,
+        endTime,
+        excludeReservationId: id,
+      });
 
-  if (occupied + 1 > cap) {
-    return res.status(409).json({
-      ok: false,
-      code: 'CAPACITY_FULL',
-      message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
-      meta: { occupied, capacity: cap },
-    });
-  }
-} else {
-  const occupied = await countOverlappingReservations({
-    spaceId: space.id,
-    date,
-    startTime,
-    endTime,
-    excludeReservationId: reservationId,
-  });
+      if (occupied + 1 > cap) {
+        return res.status(409).json({
+          ok: false,
+          code: 'CAPACITY_FULL',
+          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
+          meta: { occupied, capacity: cap },
+        });
+      }
+    } else {
+      const occupied = await countOverlappingReservations({
+        spaceId: space.id,
+        date,
+        startTime,
+        endTime,
+        excludeReservationId: id,
+      });
 
-  if (occupied > 0) {
-    return res.status(409).json({
-      ok: false,
-      code: 'SPACE_UNAVAILABLE',
-      message: `El espacio ${space.name} ya está reservado en ese horario.`,
-    });
-  }
-}
+      if (occupied > 0) {
+        return res.status(409).json({
+          ok: false,
+          code: 'SPACE_UNAVAILABLE',
+          message: `El espacio ${space.name} ya está reservado en ese horario.`,
+        });
+      }
+    }
 
 
     const updated = await prisma.reservation.update({
