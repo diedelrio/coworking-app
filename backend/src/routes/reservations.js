@@ -482,59 +482,18 @@ router.post('/', authRequired, async (req, res) => {
 
     const { spaceId, date, startTime, endTime } = req.body || {};
 
-    if (!spaceId || !date || !startTime || !endTime) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Missing required fields: spaceId, date, startTime, endTime',
-      });
-    }
-
     if (!actorId) {
       return res.status(401).json({ ok: false, error: 'Unauthorized: missing user id in token' });
     }
 
-    const safeDateStr = String(date).slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(safeDateStr)) {
-      return res.status(400).json({ ok: false, error: 'Invalid date. Expected YYYY-MM-DD' });
-    }
-
-    function toDateTimeLocalFromDateAndHHmm(dateStr, hhmm) {
-      const t = String(hhmm).trim();
-      if (!/^\d{1,2}:\d{2}$/.test(t)) return null;
-      const [h, m] = t.split(':').map(Number);
-      const [y, mo, d] = dateStr.split('-').map(Number);
-      return new Date(y, mo - 1, d, h, m, 0, 0);
-    }
-
-    function parseDateTimeFlexible(dateStr, value) {
-      const asDate = new Date(value);
-      if (!Number.isNaN(asDate.getTime())) return asDate;
-
-      const local = toDateTimeLocalFromDateAndHHmm(dateStr, value);
-      if (local && !Number.isNaN(local.getTime())) return local;
-
-      return null;
-    }
-
-    const startDt = parseDateTimeFlexible(safeDateStr, startTime);
-    const endDt = parseDateTimeFlexible(safeDateStr, endTime);
-
-    if (!startDt || !endDt) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid startTime/endTime. Expected ISO DateTime or HH:MM',
+    const { dateOnly, startDateTime, endDateTime, space } =
+      await validateAndBuildReservation({
+        userId: actorId,
+        spaceId,
+        date,
+        startTime,
+        endTime,
       });
-    }
-
-    if (endDt <= startDt) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid time range: endTime must be greater than startTime.',
-      });
-    }
-
-    const [yy, mm, dd] = safeDateStr.split('-').map(Number);
-    const dateAsDay = new Date(yy, mm - 1, dd, 0, 0, 0, 0);
 
     // Traer user para decidir PENDING/ACTIVE
     const user = await prisma.user.findUnique({
@@ -546,13 +505,48 @@ router.post('/', authRequired, async (req, res) => {
 
     const status = computeReservationStatus({ actorRole, user });
 
+    const cap = effectiveCapacity(space);
+
+    if (isSharedSpaceType(space.type)) {
+      const occupied = await countOverlappingReservations({
+        spaceId: space.id,
+        date,
+        startTime,
+        endTime,
+      });
+
+      if (occupied + 1 > cap) {
+        return res.status(409).json({
+          ok: false,
+          code: 'CAPACITY_FULL',
+          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
+          meta: { occupied, capacity: cap },
+        });
+      }
+    } else {
+      const occupied = await countOverlappingReservations({
+        spaceId: space.id,
+        date,
+        startTime,
+        endTime,
+      });
+
+      if (occupied > 0) {
+        return res.status(409).json({
+          ok: false,
+          code: 'SPACE_UNAVAILABLE',
+          message: `El espacio ${space.name} ya está reservado en ese horario.`,
+        });
+      }
+    }
+
     const reservation = await prisma.reservation.create({
       data: {
         userId: actorId,
         spaceId: Number(spaceId),
-        date: dateAsDay,
-        startTime: startDt,
-        endTime: endDt,
+        date: dateOnly,
+        startTime: startDateTime,
+        endTime: endDateTime,
         status,
       },
       include: { user: true, space: true },
@@ -560,6 +554,15 @@ router.post('/', authRequired, async (req, res) => {
 
     return res.status(201).json(reservation);
   } catch (err) {
+    if (err instanceof ReservationValidationError) {
+      return res.status(400).json({
+        message: err.message,
+        code: err.code,
+        ...err.extra,
+        canRequestOverride: true,
+      });
+    }
+
     console.error('ERROR POST /reservations', err);
     return res.status(500).json({ ok: false, error: 'Internal error creating reservation' });
   }
