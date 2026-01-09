@@ -43,12 +43,20 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
  */
 router.post('/', authRequired, requireAdmin, async (req, res) => {
   try {
-    const { name, lastName, email, phone, role, classify } = req.body;
+    const { name, lastName, maternalLastName, email, phone, role, classify } = req.body;
 
     if (!name || !lastName || !email) {
       return res.status(400).json({
         message: 'Faltan datos obligatorios (name, lastName, email)',
       });
+    }
+
+    if (typeof maternalLastName !== 'undefined' && maternalLastName !== null) {
+      if (typeof maternalLastName !== 'string') {
+        return res
+          .status(400)
+          .json({ message: 'maternalLastName debe ser string o null' });
+      }
     }
 
     // Evitar duplicado por email
@@ -65,11 +73,12 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       data: {
         name,
         lastName,
-        maternalLastName: true,
+        maternalLastName:
+          typeof maternalLastName === 'undefined' ? null : (maternalLastName || null),
         email,
         phone: phone || null,
         role: role || 'CLIENT',
-        classify: 'GOOD', // Ajuste por defecto
+        classify: typeof classify === 'undefined' ? 'GOOD' : classify,
         active: true,
         password: passwordHash, // ✅ requerido por Prisma
       },
