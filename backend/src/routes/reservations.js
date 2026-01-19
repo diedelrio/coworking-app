@@ -8,8 +8,7 @@ const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
 
 const reservationValidationService = require('../services/reservationValidationService');
-
-
+const { buildPricingSnapshot } = require('../services/pricing');
 
 const { getTypeReservationRules } = reservationValidationService;
 
@@ -90,8 +89,17 @@ async function validateAndBuildReservation({
   date,
   startTime,
   endTime,
+
+  // ✅ nombre nuevo recomendado (lo usás en PUT)
+  excludeReservationId = null,
+
+  // ✅ compat: nombre viejo por si en algún lugar quedó
   reservationIdToExclude = null,
 }) {
+  // Si viene el viejo, lo usamos
+  const reservationIdToExcludeFinal =
+    excludeReservationId ?? reservationIdToExclude ?? null;
+
   if (!spaceId || !date || !startTime || !endTime) {
     throw new ReservationValidationError('Faltan datos de la reserva');
   }
@@ -130,7 +138,6 @@ async function validateAndBuildReservation({
   }
 
   // ✅ Antelación mínima (si tu sistema la usa desde settings)
-  // Si no tenés esta regla cargada, dejá default seguro.
   const now = new Date();
   let minHoursBefore = 0;
 
@@ -144,7 +151,6 @@ async function validateAndBuildReservation({
       0;
     minHoursBefore = Number(v) || 0;
   } catch (e) {
-    // si falla settings, no rompemos reservas (pero dejá log si querés)
     minHoursBefore = 0;
   }
 
@@ -174,8 +180,8 @@ async function validateAndBuildReservation({
     endDateTime
   );
 
-  const excludeFilter = reservationIdToExclude
-    ? { id: { not: reservationIdToExclude } }
+  const excludeFilter = reservationIdToExcludeFinal
+    ? { id: { not: reservationIdToExcludeFinal } }
     : {};
 
   // --- 1) Límite por día, por usuario y tipo de espacio ---
@@ -299,22 +305,26 @@ async function validateAndBuildReservation({
   }
 
   // --- 4) Solapamiento en el mismo espacio ---
-  const overlapping = await prisma.reservation.findFirst({
-    where: {
-      ...excludeFilter,
-      spaceId: Number(spaceId),
-      status: 'ACTIVE',
-      date: dateOnly,
-      startTime: { lt: endDateTime },
-      endTime: { gt: startDateTime },
-    },
-  });
+  // En espacios compartidos permitimos solapes (capacidad se valida luego por attendees)
+  if (!isSharedSpaceType(space.type)) {
+    const overlapping = await prisma.reservation.findFirst({
+      where: {
+        ...excludeFilter,
+        spaceId: Number(spaceId),
+        status: { in: ['ACTIVE', 'PENDING'] }, // ✅ alineado con el resto del flujo
+        date: dateOnly,
+        startTime: { lt: endDateTime },
+        endTime: { gt: startDateTime },
+      },
+      select: { id: true },
+    });
 
-  if (overlapping) {
-    throw new ReservationValidationError(
-      'Ya existe una reserva en ese espacio para esa franja horaria',
-      'SPACE_OVERLAP'
-    );
+    if (overlapping) {
+      throw new ReservationValidationError(
+        'Ya existe una reserva en ese espacio para esa franja horaria',
+        'SPACE_OVERLAP'
+      );
+    }
   }
 
   return { dateOnly, startDateTime, endDateTime, space };
@@ -477,15 +487,26 @@ router.patch('/:id/cancel', authRequired, async (req, res) => {
 router.post('/', authRequired, async (req, res) => {
   try {
     const actor = req.user || {};
-    const actorId = actor.id ?? actor.userId; // ✅ soporta ambos
+    const actorId = actor.id ?? actor.userId; // soporta ambos
     const actorRole = actor.role || actor.userRole || 'USER';
 
-    const { spaceId, date, startTime, endTime } = req.body || {};
+    const {
+      spaceId,
+      date,
+      startTime,
+      endTime,
+      attendees,
+      purpose,
+      notes,
+    } = req.body || {};
 
     if (!actorId) {
-      return res.status(401).json({ ok: false, error: 'Unauthorized: missing user id in token' });
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Unauthorized: missing user id in token' });
     }
 
+    // Valida reglas y construye DateTimes
     const { dateOnly, startDateTime, endDateTime, space } =
       await validateAndBuildReservation({
         userId: actorId,
@@ -501,29 +522,63 @@ router.post('/', authRequired, async (req, res) => {
       select: { id: true, role: true, classify: true },
     });
 
-    if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized user' });
+    if (!user) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized user' });
+    }
 
     const status = computeReservationStatus({ actorRole, user });
 
+    // ----- attendees (solo shared) -----
+    const shared = isSharedSpaceType(space.type);
+    let requestedAttendees = 1;
+
+    if (shared) {
+      requestedAttendees = Number(attendees ?? 1);
+      if (!Number.isInteger(requestedAttendees) || requestedAttendees < 1) {
+        return res.status(400).json({
+          ok: false,
+          code: 'INVALID_ATTENDEES',
+          message: 'attendees debe ser un entero >= 1',
+        });
+      }
+    }
+
     const cap = effectiveCapacity(space);
 
-    if (isSharedSpaceType(space.type)) {
-      const occupied = await countOverlappingReservations({
-        spaceId: space.id,
-        date,
-        startTime,
-        endTime,
+    // ----- Validación de disponibilidad -----
+    const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
+
+    if (shared) {
+      // SUM(attendees) solapados (ACTIVE/PENDING)
+      const agg = await prisma.reservation.aggregate({
+        where: {
+          spaceId: space.id,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          AND: [
+            { startTime: { gte: dayStart, lt: dayEnd } },
+            { startTime: { lt: endDateTime } },
+            { endTime: { gt: startDateTime } },
+          ],
+        },
+        _sum: { attendees: true },
       });
 
-      if (occupied + 1 > cap) {
+      const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+
+      if (occupiedAttendees + requestedAttendees > cap) {
         return res.status(409).json({
           ok: false,
           code: 'CAPACITY_FULL',
-          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
-          meta: { occupied, capacity: cap },
+          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
+          meta: {
+            occupiedAttendees,
+            requestedAttendees,
+            capacity: cap,
+          },
         });
       }
     } else {
+      // Unitarios: basta con 1 solapamiento
       const occupied = await countOverlappingReservations({
         spaceId: space.id,
         date,
@@ -540,6 +595,17 @@ router.post('/', authRequired, async (req, res) => {
       }
     }
 
+    // ----- Pricing snapshot -----
+    // CREATE: hourlyRateSnapshot se congela desde Space.hourlyRate
+    const pricing = buildPricingSnapshot({
+      startTime,
+      endTime,
+      spaceHourlyRate: space.hourlyRate,
+      hourlyRateSnapshot: null,
+      shared,
+      attendees: shared ? requestedAttendees : 1,
+    });
+
     const reservation = await prisma.reservation.create({
       data: {
         userId: actorId,
@@ -548,6 +614,17 @@ router.post('/', authRequired, async (req, res) => {
         startTime: startDateTime,
         endTime: endDateTime,
         status,
+
+        attendees: shared ? requestedAttendees : 1,
+
+        // snapshot + cálculo
+        hourlyRateSnapshot: pricing.hourlyRateSnapshot,
+        durationMinutes: pricing.durationMinutes,
+        totalAmount: pricing.totalAmount,
+
+        // opcionales mock
+        purpose: purpose ? String(purpose).trim() : null,
+        notes: notes ? String(notes).trim() : null,
       },
       include: { user: true, space: true },
     });
@@ -564,12 +641,11 @@ router.post('/', authRequired, async (req, res) => {
     }
 
     console.error('ERROR POST /reservations', err);
-    return res.status(500).json({ ok: false, error: 'Internal error creating reservation' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Internal error creating reservation' });
   }
 });
-
-
-
 
 /**
  * GET /api/reservations/my
@@ -678,100 +754,164 @@ router.get('/:id', authRequired, async (req, res) => {
 
 /**
  * PUT /api/reservations/:id
- * Editar una reserva (usuario → solo la suya; admin → cualquiera)
+ * Edita una reserva del usuario (fecha/hora/attendees/purpose/notes)
+ * Recalcula durationMinutes + totalAmount usando hourlyRateSnapshot (NO space.hourlyRate)
  */
 router.put('/:id', authRequired, async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    const userId = req.user.userId;
-    const role = req.user.role;
-    const { spaceId, date, startTime, endTime } = req.body;
+    const actor = req.user || {};
+    const actorId = actor.id ?? actor.userId;
+    const actorRole = actor.role || actor.userRole || 'USER';
 
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ message: 'ID de reserva inválido' });
+    if (!actorId) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Unauthorized: missing user id in token' });
     }
 
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ ok: false, error: 'Invalid reservation id' });
+    }
+
+    const {
+      spaceId, // opcional: permitir cambiar de espacio (si querés bloquearlo, ignóralo)
+      date,
+      startTime,
+      endTime,
+      attendees,
+      purpose,
+      notes,
+    } = req.body || {};
+
+    // 1) Traer reserva actual
     const existing = await prisma.reservation.findUnique({
       where: { id },
       include: { space: true },
     });
 
     if (!existing) {
-      return res.status(404).json({ message: 'Reserva no encontrada' });
+      return res.status(404).json({ ok: false, error: 'Reservation not found' });
     }
 
-    if (role !== 'ADMIN' && existing.userId !== userId) {
-      return res.status(403).json({ message: 'No puedes editar esta reserva' });
+    // 2) Permisos: dueño o admin
+    const isOwner = existing.userId === actorId;
+    const isAdmin = actorRole === 'ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
     }
 
-    if (existing.status === 'CANCELLED') {
-      return res.status(400).json({ message: 'No se puede editar una reserva cancelada' });
+    // 3) Estados editables (ajusta si tu negocio permite más)
+    if (!['ACTIVE', 'PENDING'].includes(existing.status)) {
+      return res.status(400).json({
+        ok: false,
+        code: 'RESERVATION_NOT_EDITABLE',
+        message: 'Solo se pueden editar reservas ACTIVAS o PENDIENTES.',
+      });
     }
 
-    const now = new Date();
-    if (existing.startTime <= now) {
-      return res.status(400).json({ message: 'No se puede editar una reserva pasada o en curso' });
-    }
+    // 4) Preparar "valores objetivo" (si algo no viene, mantener lo existente)
+    const targetSpaceId = Number(spaceId ?? existing.spaceId);
 
-    // valida contra límites/horarios/solapes, excluyendo la propia reserva
-    const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
-      userId: existing.userId,
-      spaceId,
-      date,
-      startTime,
-      endTime,
-      reservationIdToExclude: id,
-    });
+    // existing.date es Date → convertimos a YYYY-MM-DD para no romper validateAndBuildReservation
+    const existingDateYMD = (() => {
+      const d = new Date(existing.date);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    })();
 
-    // Si edita un USER y su classify es BAD, bloqueamos (consistencia)
-    if (role !== 'ADMIN') {
-      const owner = await prisma.user.findUnique({
-        where: { id: existing.userId },
-        select: { classify: true },
+    const targetDate = date ?? existingDateYMD;
+    const targetStartTime = startTime ?? toHHMM(existing.startTime);
+    const targetEndTime = endTime ?? toHHMM(existing.endTime);
+
+    // 5) Validar reglas base y obtener space / datetimes
+    const { dateOnly, startDateTime, endDateTime, space } =
+      await validateAndBuildReservation({
+        userId: existing.userId,
+        spaceId: targetSpaceId,
+        date: targetDate,
+        startTime: targetStartTime,
+        endTime: targetEndTime,
+        excludeReservationId: id,
       });
 
-      const statusDecision = resolveInitialStatus({
-        actorRole: role,
-        targetUserClassify: owner?.classify ?? null,
-      });
+    const shared = isSharedSpaceType(space.type);
+    let requestedAttendees = existing.attendees ?? 1;
 
-      if (statusDecision === 'BLOCKED') {
-        return res.status(403).json({
-          message: 'Por favor comunicarse con el administrador del Coworking.',
-          code: 'USER_BLOCKED',
+    if (shared) {
+      requestedAttendees = Number(attendees ?? existing.attendees ?? 1);
+      if (!Number.isInteger(requestedAttendees) || requestedAttendees < 1) {
+        return res.status(400).json({
+          ok: false,
+          code: 'INVALID_ATTENDEES',
+          message: 'attendees debe ser un entero >= 1',
         });
       }
+    } else {
+      requestedAttendees = 1; // unitarios
     }
 
     const cap = effectiveCapacity(space);
 
-    if (isSharedSpaceType(space.type)) {
-      const occupied = await countOverlappingReservations({
-        spaceId: space.id,
-        date,
-        startTime,
-        endTime,
-        excludeReservationId: id,
+    // 6) No permitir editar reservas en el pasado
+    const now = new Date();
+    if (startDateTime <= now) {
+      return res.status(400).json({
+        ok: false,
+        code: 'PAST_RESERVATION',
+        message: 'No se puede editar una reserva que ya comenzó o está en el pasado.',
+      });
+    }
+
+    // 7) Validación de disponibilidad (excluyendo esta reserva)
+    const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
+
+    if (shared) {
+      const agg = await prisma.reservation.aggregate({
+        where: {
+          id: { not: id },
+          spaceId: space.id,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          AND: [
+            { startTime: { gte: dayStart, lt: dayEnd } },
+            { startTime: { lt: endDateTime } },
+            { endTime: { gt: startDateTime } },
+          ],
+        },
+        _sum: { attendees: true },
       });
 
-      if (occupied + 1 > cap) {
+      const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+
+      if (occupiedAttendees + requestedAttendees > cap) {
         return res.status(409).json({
           ok: false,
           code: 'CAPACITY_FULL',
-          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
-          meta: { occupied, capacity: cap },
+          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
+          meta: {
+            occupiedAttendees,
+            requestedAttendees,
+            capacity: cap,
+          },
         });
       }
     } else {
-      const occupied = await countOverlappingReservations({
-        spaceId: space.id,
-        date,
-        startTime,
-        endTime,
-        excludeReservationId: id,
+      const overlapping = await prisma.reservation.findFirst({
+        where: {
+          id: { not: id },
+          spaceId: space.id,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          date: dateOnly,
+          startTime: { lt: endDateTime },
+          endTime: { gt: startDateTime },
+        },
+        select: { id: true },
       });
 
-      if (occupied > 0) {
+      if (overlapping) {
         return res.status(409).json({
           ok: false,
           code: 'SPACE_UNAVAILABLE',
@@ -780,22 +920,44 @@ router.put('/:id', authRequired, async (req, res) => {
       }
     }
 
+    // 8) Pricing: recalcular SIEMPRE usando snapshot existente (NO space.hourlyRate)
+    const pricing = buildPricingSnapshot({
+      startTime: targetStartTime,
+      endTime: targetEndTime,
+      spaceHourlyRate: null,
+      hourlyRateSnapshot: existing.hourlyRateSnapshot,
+      shared,
+      attendees: shared ? requestedAttendees : 1,
+    });
 
+    // 9) Persistir cambios
     const updated = await prisma.reservation.update({
       where: { id },
       data: {
-        spaceId: Number(spaceId),
+        spaceId: targetSpaceId,
         date: dateOnly,
         startTime: startDateTime,
         endTime: endDateTime,
+
+        attendees: shared ? requestedAttendees : 1,
+
+        hourlyRateSnapshot: pricing.hourlyRateSnapshot,
+        durationMinutes: pricing.durationMinutes,
+        totalAmount: pricing.totalAmount,
+
+        purpose:
+          purpose !== undefined
+            ? (purpose ? String(purpose).trim() : null)
+            : existing.purpose,
+        notes:
+          notes !== undefined
+            ? (notes ? String(notes).trim() : null)
+            : existing.notes,
       },
-      include: { space: true },
+      include: { user: true, space: true },
     });
 
-    return res.json({
-      message: 'Reserva actualizada correctamente',
-      reservation: updated,
-    });
+    return res.json(updated);
   } catch (err) {
     if (err instanceof ReservationValidationError) {
       return res.status(400).json({
@@ -807,9 +969,31 @@ router.put('/:id', authRequired, async (req, res) => {
     }
 
     console.error('ERROR PUT /reservations/:id', err);
-    return res.status(500).json({ message: 'Error al actualizar la reserva' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Internal error updating reservation' });
   }
 });
+
+/**
+ * helper local: convierte Date a "HH:MM"
+ */
+function toHHMM(dateOrString) {
+  if (typeof dateOrString === 'string') {
+    if (/^\d{2}:\d{2}$/.test(dateOrString)) return dateOrString;
+    const d = new Date(dateOrString);
+    if (!Number.isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+    return dateOrString;
+  }
+  const d = new Date(dateOrString);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
 
 /**
  * DELETE /api/reservations/:id

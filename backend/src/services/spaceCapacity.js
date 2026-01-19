@@ -1,19 +1,24 @@
 // backend/src/services/spaceCapacity.js
 
+/**
+ * Devuelve true si el tipo de espacio es compartido
+ * (permite solapamiento controlado por attendees)
+ */
 function isSharedSpaceType(spaceType) {
-  const t = String(spaceType || '').toUpperCase();
-  return t === 'FLEX' || t === 'SHARED_TABLE';
+  return spaceType === "FLEX_DESK" || spaceType === "SHARED_TABLE";
 }
 
+/**
+ * Capacidad efectiva del espacio
+ * - Compartidos: usan space.capacity (personas)
+ * - No compartidos: capacidad fija = 1
+ */
 function effectiveCapacity(space) {
-  const t = String(space?.type || '').toUpperCase();
-
-  // Tipos unitarios: cualquier reserva ocupa todo
-  if (t === 'MEETING' || t === 'OFFICE' || t === 'FIX') return 1;
-
-  // Compartidos: usar capacity real (mínimo 1)
-  const cap = Number(space?.capacity);
-  return Number.isFinite(cap) && cap > 0 ? cap : 1;
+  if (!space || !space.type) return 1;
+  return isSharedSpaceType(space.type) ? Number(space.capacity || 0) : 1;
 }
 
-module.exports = { isSharedSpaceType, effectiveCapacity };
+module.exports = {
+  isSharedSpaceType,
+  effectiveCapacity,
+};

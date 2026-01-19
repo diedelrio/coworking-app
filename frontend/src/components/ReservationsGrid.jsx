@@ -41,7 +41,7 @@ export default function ReservationsGrid({
 
     try {
       setCancellingId(id);
-      await api.put(`/reservations/${id}/cancel`);
+      await api.patch(`/reservations/${id}/cancel`);
       onCancelled?.(id);
     } catch (e) {
       console.error(e);

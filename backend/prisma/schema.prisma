@@ -60,6 +60,14 @@ model Reservation {
   status    ReservationStatus @default(ACTIVE)
   createdAt DateTime          @default(now())
   attendees Int               @default(1)
+  // ✅ NUEVOS (snapshot + cálculo)
+  hourlyRateSnapshot Decimal @default(0.00) @db.Decimal(10, 2)
+  durationMinutes    Int     @default(0)
+  totalAmount        Decimal @default(0.00) @db.Decimal(10, 2)
+  // ✅ NUEVOS (mock)
+  purpose String?
+  notes   String?
+
   space     Space             @relation(fields: [spaceId], references: [id])
   user      User              @relation(fields: [userId], references: [id])
 }

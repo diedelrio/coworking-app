@@ -1,504 +1,397 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import api from '../api/axiosClient';
-import Header from '../components/Header';
-import { getCurrentUser } from '../utils/auth';
-import LimitOverrideModal from '../components/LimitOverrideModal';
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import api from "../api/axiosClient";
+import Header from "../components/Header";
+import { getCurrentUser } from "../utils/auth";
 
-/**
- * Modal simple para alertas (pending approval)
- */
-function AlertModal({ open, title, description, primaryText = 'Entendido', onPrimary }) {
-  if (!open) return null;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.45)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-        zIndex: 9999,
-      }}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 520,
-          background: 'white',
-          borderRadius: 16,
-          padding: '1rem',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-          <div>
-            <h3 style={{ margin: 0 }}>{title}</h3>
-          </div>
-          <button
-            onClick={onPrimary}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              fontSize: 18,
-              cursor: 'pointer',
-              lineHeight: 1,
-            }}
-            aria-label="Cerrar"
-            title="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div style={{ marginTop: '0.75rem', color: '#374151', lineHeight: 1.45, whiteSpace: 'pre-line' }}>
-          {description}
-        </div>
-
-        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={onPrimary}
-            style={{
-              padding: '0.65rem 1rem',
-              borderRadius: 12,
-              border: 'none',
-              background: '#111827',
-              color: 'white',
-              fontWeight: 900,
-              cursor: 'pointer',
-              height: 44,
-            }}
-          >
-            {primaryText}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
-function isPendingApprovalResponse(data) {
-  const status = String(data?.status || '').toUpperCase();
-  const alertKey = String(data?.alertKey || '').toLowerCase();
+function toHHMM(v) {
+  if (!v) return "";
+  if (typeof v === "string") {
+    if (/^\d{2}:\d{2}$/.test(v)) return v;
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    return v;
+  }
+  const d = new Date(v);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
 
-  // Si el status es PENDING, o si alertKey es 'reservation_pending_approval' (compatibilidad)
-  return status === 'PENDING' || alertKey === 'reservation_pending_approval';
+function toYMD(dateLike) {
+  const d = new Date(dateLike);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function minutesBetween(startHHMM, endHHMM) {
+  const [sh, sm] = (startHHMM || "0:0").split(":").map(Number);
+  const [eh, em] = (endHHMM || "0:0").split(":").map(Number);
+  return eh * 60 + em - (sh * 60 + sm);
+}
+
+function formatEUR(value) {
+  const num = Number(value || 0);
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(num);
+}
+
+function isSharedSpaceType(spaceType) {
+  return spaceType === "FLEX_DESK" || spaceType === "SHARED_TABLE";
 }
 
 export default function UserNewReservation() {
-  const [spaces, setSpaces] = useState([]);
-  const [form, setForm] = useState({
-    spaceId: '',
-    date: '',
-    startTime: '09:00',
-    endTime: '11:00',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
-  const [loadingSpaces, setLoadingSpaces] = useState(true);
-
-  // Estados del modal de override
-  const [overrideInfo, setOverrideInfo] = useState(null);
-  const [showOverrideModal, setShowOverrideModal] = useState(false);
-  const [sendingOverride, setSendingOverride] = useState(false);
-
-  // Estados del popup de pending approval
-  const [showAlertModal, setShowAlertModal] = useState(false);
-  const [alertTitle, setAlertTitle] = useState('');
-  const [alertDesc, setAlertDesc] = useState('');
-
   const user = getCurrentUser();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [params] = useSearchParams();
+  const editId = params.get("edit");
 
-  const searchParams = new URLSearchParams(location.search);
-  const prefillDate = searchParams.get('date') || '';
-  const prefillStart = searchParams.get('start') || '09:00';
-  const prefillEnd = searchParams.get('end') || '11:00';
+  const [spaces, setSpaces] = useState([]);
+  const [loadingSpaces, setLoadingSpaces] = useState(true);
+  const [spacesError, setSpacesError] = useState("");
 
-  const editId = searchParams.get('edit');
-  const isEditMode = Boolean(editId);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  async function fetchSpaces() {
-    const res = await api.get('/spaces/active');
-    setSpaces(res.data);
-  }
+  // form
+  const [spaceId, setSpaceId] = useState("");
+  const [date, setDate] = useState(toYMD(new Date()));
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
+  const [attendees, setAttendees] = useState(1);
+  const [purpose, setPurpose] = useState("");
+  const [notes, setNotes] = useState("");
 
+  // pricing snapshot para UI (en edit se congela)
+  const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
+
+  const selectedSpace = useMemo(
+    () => spaces.find((s) => String(s.id) === String(spaceId)) || null,
+    [spaces, spaceId]
+  );
+
+  const shared = useMemo(() => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false), [selectedSpace]);
+
+  // duration + total (UI)
+  const durationMinutes = useMemo(() => {
+    const diff = minutesBetween(startTime, endTime);
+    return Number.isFinite(diff) ? diff : 0;
+  }, [startTime, endTime]);
+
+  const durationHoursLabel = useMemo(() => {
+    if (durationMinutes <= 0) return "—";
+    const hours = durationMinutes / 60;
+    // 3.5 como en mock, sin demasiados decimales
+    const pretty = Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 10) / 10);
+    return `${pretty} horas`;
+  }, [durationMinutes]);
+
+  const totalAmount = useMemo(() => {
+    const rate =
+      hourlyRateSnapshot != null
+        ? Number(hourlyRateSnapshot)
+        : selectedSpace?.hourlyRate != null
+          ? Number(selectedSpace.hourlyRate)
+          : 0;
+
+    const hours = Math.max(0, durationMinutes) / 60;
+    // ✅ Si es compartido, multiplica por attendees
+    const qty = shared ? Math.max(1, Number(attendees || 1)) : 1;
+
+    return rate * hours * qty;
+  }, [hourlyRateSnapshot, selectedSpace, durationMinutes, attendees, shared]);
+
+  // cargar spaces
   useEffect(() => {
-    async function load() {
+    (async () => {
       try {
         setLoadingSpaces(true);
-        await fetchSpaces();
-
-        if (isEditMode) {
-          const res = await api.get(`/reservations/${editId}`);
-          const r = res.data;
-
-          const dateObj = new Date(r.date);
-          const startObj = new Date(r.startTime);
-          const endObj = new Date(r.endTime);
-
-          const yyyy = dateObj.getFullYear();
-          const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const dd = String(dateObj.getDate()).padStart(2, '0');
-
-          const dateStr = `${yyyy}-${mm}-${dd}`;
-
-          const startStr = `${String(startObj.getHours()).padStart(2, '0')}:${String(
-            startObj.getMinutes()
-          ).padStart(2, '0')}`;
-
-          const endStr = `${String(endObj.getHours()).padStart(2, '0')}:${String(
-            endObj.getMinutes()
-          ).padStart(2, '0')}`;
-
-          setForm({
-            spaceId: String(r.spaceId),
-            date: dateStr,
-            startTime: startStr,
-            endTime: endStr,
-          });
-        } else {
-          const today = new Date();
-          const yyyy = today.getFullYear();
-          const mm = String(today.getMonth() + 1).padStart(2, '0');
-          const dd = String(today.getDate()).padStart(2, '0');
-          const todayStr = `${yyyy}-${mm}-${dd}`;
-
-          setForm((prev) => ({
-            ...prev,
-            date: prefillDate || prev.date || todayStr,
-            startTime: prefillStart,
-            endTime: prefillEnd,
-          }));
-        }
-      } catch (err) {
-        console.error(err);
-        setError('Error al cargar datos de la reserva');
+        setSpacesError("");
+        // Ajustá si tu backend usa otro endpoint. En tu captura fallaba la carga.
+        // Probá primero este:
+        const res = await api.get("/spaces/active");
+        setSpaces(Array.isArray(res.data) ? res.data : []);
+      } catch (e) {
+        console.error(e);
+        setSpacesError("No se pudieron cargar los espacios.");
       } finally {
         setLoadingSpaces(false);
       }
-    }
-    load();
-  }, [isEditMode, editId, prefillDate, prefillStart, prefillEnd]);
+    })();
+  }, []);
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  }
+  // cargar reserva si edit
+  useEffect(() => {
+    if (!editId) return;
 
-  function openPendingApprovalPopup() {
-    setAlertTitle('Reserva pendiente de confirmación');
-    setAlertDesc(
-      'Tu solicitud de reserva fue registrada correctamente, pero requiere confirmación por parte del equipo del coworking.\n\n' +
-        'Te avisaremos cuando la reserva sea confirmada o rechazada. Mientras tanto, podés verla en la sección “Mis reservas” con estado Pendiente.'
-    );
-    setShowAlertModal(true);
-  }
+    (async () => {
+      try {
+        setFormError("");
+        const res = await api.get(`/reservations/${editId}`);
+        const r = res.data;
 
-  // ✅ Submit final: mantiene override, agrega alertKey pending approval
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setSaving(true);
-    setError('');
-    setInfo('');
-    setOverrideInfo(null);
+        setSpaceId(String(r.spaceId));
+        setDate(toYMD(r.date));
+        setStartTime(toHHMM(r.startTime));
+        setEndTime(toHHMM(r.endTime));
+        setAttendees(Number(r.attendees ?? 1));
+        setPurpose(r.purpose ?? "");
+        setNotes(r.notes ?? "");
+
+        // ✅ congelar precio aplicado
+        setHourlyRateSnapshot(r.hourlyRateSnapshot ?? null);
+      } catch (e) {
+        console.error(e);
+        setFormError("No se pudo cargar la reserva para editar.");
+      }
+    })();
+  }, [editId]);
+
+  // en create: al elegir espacio, setear snapshot SOLO para UI
+  useEffect(() => {
+    if (editId) return;
+    if (!selectedSpace) return;
+    setHourlyRateSnapshot(selectedSpace.hourlyRate ?? 0);
+  }, [editId, selectedSpace]);
+
+  // si no es shared, forzar attendees = 1
+  useEffect(() => {
+    if (!selectedSpace) return;
+    if (!shared) setAttendees(1);
+  }, [shared, selectedSpace]);
+
+  async function submit() {
+    setSuccess("");
+    setFormError("");
+
+    if (!spaceId) return setFormError("Seleccioná un espacio.");
+    if (!date) return setFormError("Seleccioná una fecha.");
+    if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
+    if (minutesBetween(startTime, endTime) <= 0) return setFormError("La hora fin debe ser mayor a inicio.");
 
     try {
+      setSaving(true);
+
       const payload = {
-        spaceId: Number(form.spaceId),
-        date: form.date,
-        startTime: form.startTime,
-        endTime: form.endTime,
+        spaceId: Number(spaceId),
+        date,
+        startTime,
+        endTime,
+        attendees: Number(attendees || 1),
+        purpose: purpose ? String(purpose).trim() : null,
+        notes: notes ? String(notes).trim() : null,
       };
 
-      if (isEditMode) {
+      if (editId) {
         await api.put(`/reservations/${editId}`, payload);
-        setInfo('Reserva actualizada correctamente');
-        navigate('/user/reservas');
-        return;
+        setSuccess("Reserva actualizada.");
+      } else {
+        await api.post("/reservations", payload);
+        setSuccess("Reserva creada.");
       }
 
-      const res = await api.post('/reservations', payload);
+      setTimeout(() => navigate("/user"), 350);
+    } catch (e) {
+      console.error(e);
+      const status = e?.response?.status;
+      const data = e?.response?.data;
+      const msg =
+        data?.message ||
+        data?.error ||
+        (typeof data === "string" ? data : null) ||
+        e?.message ||
+        `Error guardando reserva (HTTP ${status || "?"})`;
 
-      // ✅ Nuevo flujo: si pending => popup
-      if (isPendingApprovalResponse(res.data)) {
-        openPendingApprovalPopup();
-        return; // no navegar aún
-      }
-
-      setInfo('Reserva creada correctamente');
-      navigate('/user/reservas');
-    } catch (err) {
-      console.error(err);
-      const data = err.response?.data;
-      const defaultMsg = isEditMode
-        ? 'Error al actualizar la reserva'
-        : 'Error al crear la reserva';
-
-      setError(data?.message || defaultMsg);
-
-      // ✅ Mantiene tu lógica de solicitar excepción
-      if (data?.canRequestOverride) {
-        setOverrideInfo({
-          spaceId: Number(form.spaceId),
-          date: form.date,
-          startTime: form.startTime,
-          endTime: form.endTime,
-          limitCode: data.code,
-          limitMessage: data.message,
-        });
-        setShowOverrideModal(true);
-      }
+      setFormError(msg);
     } finally {
       setSaving(false);
     }
-  }
-
-  function handleCloseOverrideModal() {
-    setShowOverrideModal(false);
-  }
-
-  async function handleSendOverride() {
-    if (!overrideInfo) return;
-
-    try {
-      setSendingOverride(true);
-
-      const res = await api.post('/reservations/limit-override-request', overrideInfo);
-
-      setInfo(
-        res.data?.message ||
-          'Tu solicitud fue enviada al administrador. Te contactará pronto.'
-      );
-      setError('');
-      setShowOverrideModal(false);
-      setOverrideInfo(null);
-    } catch (err) {
-      console.error(err);
-      setError(
-        err.response?.data?.message ||
-          'Hubo un problema al enviar la solicitud al administrador.'
-      );
-    } finally {
-      setSendingOverride(false);
-    }
-  }
-
-  function handleCloseAlertModal() {
-    setShowAlertModal(false);
-    navigate('/user/reservas'); // ✅ a MIS RESERVAS (no /user/reservar)
-  }
-
-  if (loadingSpaces) {
-    return (
-      <div>
-        <Header user={user} />
-        <div style={{ padding: '2rem 1rem' }}>Cargando espacios...</div>
-      </div>
-    );
   }
 
   return (
     <div>
       <Header user={user} />
 
-      <div
-        className="admin-page"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          padding: '1.5rem 1rem 2rem',
-        }}
-      >
-        {/* ENCABEZADO */}
-        <div
-          style={{
-            width: '75vw',
-            maxWidth: '960px',
-            margin: '0 auto 1.5rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <h1 style={{ marginBottom: '0.25rem' }}>
-              {isEditMode ? 'Editar reserva' : 'Agendar una reserva'}
-            </h1>
-            <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-              {isEditMode
-                ? 'Modifica la fecha, franja horaria o espacio de tu reserva'
-                : 'Elige fecha, franja horaria y espacio de Coworking Sinergia'}
-            </span>
-          </div>
-
-          <Link
-            to="/user"
-            style={{
-              padding: '0.45rem 1rem',
-              background: '#4f46e5',
-              borderRadius: '0.5rem',
-              color: 'white',
-              textDecoration: 'none',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            ← Volver al inicio
-          </Link>
-        </div>
-
-        {/* MENSAJES */}
-        {error && (
-          <div
-            className="error"
-            style={{
-              width: '75vw',
-              maxWidth: '960px',
-              margin: '0 auto 0.5rem',
-            }}
-          >
-            <div>{error}</div>
-
-            {overrideInfo && (
-              <button
-                onClick={() => setShowOverrideModal(true)}
-                style={{
-                  marginTop: '0.5rem',
-                  padding: '0.4rem 0.9rem',
-                  borderRadius: '999px',
-                  border: 'none',
-                  backgroundColor: '#f59e0b',
-                  color: 'white',
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Solicitar más al administrador
+      <div className="page-container">
+        <div className="dashboard-container">
+          {/* Header tipo mock */}
+          <div className="user-reserve-header-wrap">
+            <div className="user-reserve-header">
+              <button className="user-reserve-back" onClick={() => navigate("/user")}>
+                ←
               </button>
-            )}
-          </div>
-        )}
 
-        {info && (
-          <div
-            style={{
-              width: '75vw',
-              maxWidth: '960px',
-              margin: '0 auto 0.5rem',
-              color: '#16a34a',
-              fontSize: '0.9rem',
-            }}
-          >
-            {info}
+              <div className="user-reserve-title">
+                <h1>{editId ? "Editar Reserva" : "Nueva Reserva"}</h1>
+                <p>Crea una nueva reserva de espacio de coworking</p>
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* FORM CARD */}
-        <div
-          className="admin-card"
-          style={{
-            width: '75vw',
-            maxWidth: '960px',
-            padding: '2rem',
-          }}
-        >
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Espacio</label>
-              <select
-                name="spaceId"
-                value={form.spaceId}
-                onChange={handleChange}
-                required
-                style={{
-                  borderRadius: '0.5rem',
-                  border: '1px solid #d1d5db',
-                  padding: '0.6rem 0.8rem',
-                  fontSize: '0.95rem',
-                }}
-              >
-                <option value="">Selecciona un espacio</option>
-                {spaces.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
+
+          {spacesError ? (
+            <div className="form-error" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+              <b>Error</b>
+              <div>{spacesError}</div>
+            </div>
+          ) : null}
+
+          {formError ? (
+            <div className="form-error" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+              {formError}
+            </div>
+          ) : null}
+
+          {success ? (
+            <div className="success" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+              {success}
+            </div>
+          ) : null}
+
+          {/* Card central */}
+          <div className="user-reserve-card">
+            <div className="user-reserve-card-head">
+              <div className="title">Detalles de la Reserva</div>
+              <p className="sub">Completa la información a continuación para crear tu reserva</p>
+            </div>
+
+            <div className="user-reserve-grid">
+              {/* Espacio */}
+              <div className="user-reserve-field full">
+                <label>Espacio *</label>
+                <select
+                  value={spaceId}
+                  onChange={(e) => setSpaceId(e.target.value)}
+                  disabled={loadingSpaces || saving}
+                >
+                  <option value="">
+                    {loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}
                   </option>
-                ))}
-              </select>
+                  {spaces.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} • {formatEUR(s.hourlyRate)} / hora • {s.capacity} persona(s)
+                    </option>
+                  ))}
+                </select>
+
+                {/* Card info espacio (condicional) */}
+                {selectedSpace ? (
+                  <div className="space-info-card">
+                    <div className="space-info-row">
+                      <span>👥 Capacidad: {selectedSpace.capacity}</span>
+                      <span>💶 {formatEUR(selectedSpace.hourlyRate)} / hora</span>
+                    </div>
+                    {selectedSpace.description ? (
+                      <p className="space-info-desc">{selectedSpace.description}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Fecha */}
+              <div className="user-reserve-field full">
+                <label>Fecha *</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+
+              {/* Hora inicio / fin */}
+              <div className="user-reserve-field">
+                <label>Hora de Inicio *</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+
+              <div className="user-reserve-field">
+                <label>Hora de Fin *</label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+
+              {/* Duración + Total (condicional si hay rango válido) */}
+              {durationMinutes > 0 ? (
+                <div className="user-reserve-field full">
+                  <div className="pricing-summary">
+                    <div className="pricing-box">
+                      <span className="label">Duración</span>
+                      <span className="value">{durationHoursLabel}</span>
+                    </div>
+                    <div className="pricing-box" style={{ textAlign: "right" }}>
+                      <span className="label">Costo Total</span>
+                      <span className="value">{formatEUR(totalAmount)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Asistentes */}
+              <div className="user-reserve-field full">
+                <label>Número de Asistentes</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={attendees}
+                  onChange={(e) => setAttendees(Number(e.target.value || 1))}
+                  disabled={saving || !shared}
+                />
+                <div className="user-reserve-help">
+                  {shared
+                    ? "En espacios compartidos podés indicar cuántos asistentes ocupan cupo."
+                    : "En espacios no compartidos, siempre es 1."}
+                </div>
+              </div>
+
+              {/* Propósito */}
+              <div className="user-reserve-field full">
+                <label>Propósito / Motivo</label>
+                <input
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="ej. Reunión de equipo, Presentación a cliente"
+                  disabled={saving}
+                />
+              </div>
+
+              {/* Notas */}
+              <div className="user-reserve-field full">
+                <label>Notas Adicionales</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Algún requerimiento especial o nota..."
+                  disabled={saving}
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label>Fecha</label>
-              <input
-                type="date"
-                name="date"
-                value={form.date}
-                onChange={handleChange}
-                required
-              />
+            {/* Footer botones */}
+            <div className="user-reserve-footer">
+              <button className="pill-button-outline" onClick={() => navigate("/user")} disabled={saving}>
+                Cancelar
+              </button>
+              <button className="pill-button" onClick={submit} disabled={saving || loadingSpaces}>
+                {saving ? "Guardando..." : editId ? "Guardar cambios" : "Crear Reserva"}
+              </button>
             </div>
-
-            <div className="form-group">
-              <label>Hora inicio</label>
-              <input
-                type="time"
-                name="startTime"
-                value={form.startTime}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Hora fin</label>
-              <input
-                type="time"
-                name="endTime"
-                value={form.endTime}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <button className="button" type="submit" disabled={saving}>
-              {saving
-                ? isEditMode
-                  ? 'Guardando cambios...'
-                  : 'Creando reserva...'
-                : isEditMode
-                ? 'Guardar cambios'
-                : 'Reservar'}
-            </button>
-          </form>
+          </div>
         </div>
       </div>
-
-      {/* MODAL DE EXCEPCIÓN */}
-      <LimitOverrideModal
-        open={showOverrideModal}
-        info={overrideInfo}
-        loading={sendingOverride}
-        onClose={handleCloseOverrideModal}
-        onConfirm={handleSendOverride}
-      />
-
-      {/* POPUP DE PENDING APPROVAL */}
-      <AlertModal
-        open={showAlertModal}
-        title={alertTitle}
-        description={alertDesc}
-        primaryText="Entendido"
-        onPrimary={handleCloseAlertModal}
-      />
     </div>
   );
 }

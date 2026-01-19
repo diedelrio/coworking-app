@@ -1,37 +1,95 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosClient';
 import Header from '../components/Header';
 import { getCurrentUser } from '../utils/auth';
-import { FiCalendar, FiPlusCircle } from 'react-icons/fi';
-
-// ✅ Auto-load imágenes desde el repo (Vite)
-// Poné imágenes en: src/assets/dashboard/*.(jpg|png|webp)
-const imageModules = import.meta.glob('../assets/dashboard/*.{png,jpg,jpeg,webp}', { eager: true });
-const carouselImages = Object.values(imageModules).map((m) => m.default);
 
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
-function formatDateTime(iso) {
-  const d = new Date(iso);
-  const dd = pad2(d.getDate());
-  const mm = pad2(d.getMonth() + 1);
-  const yyyy = d.getFullYear();
-  const hh = pad2(d.getHours());
-  const mi = pad2(d.getMinutes());
-  return { date: `${dd}/${mm}/${yyyy}`, time: `${hh}:${mi}` };
+
+function toHHMM(value) {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    if (/^\d{2}:\d{2}$/.test(value)) return value;
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    return value;
+  }
+  const d = new Date(value);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function formatDateES(dateLike) {
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return String(dateLike || '');
+  return new Intl.DateTimeFormat('es-ES', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
+}
+
+function formatEUR(value) {
+  const num = Number(value || 0);
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+}
+
+function statusLabel(status) {
+  switch (status) {
+    case 'ACTIVE':
+      return 'Activa';
+    case 'PENDING':
+      return 'Pendiente';
+    case 'CANCELLED':
+      return 'Cancelada';
+    case 'REJECTED':
+      return 'Rechazada';
+    default:
+      return status || '—';
+  }
+}
+
+function isUpcoming(res) {
+  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
+  if (!statusOk) return false;
+
+  const d = new Date(res?.date);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const today = new Date();
+  const today0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const date0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  return date0 >= today0;
+}
+
+function isToday(res) {
+  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
+  if (!statusOk) return false;
+
+  const d = new Date(res?.date);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const today = new Date();
+  return (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  );
 }
 
 export default function DashboardUser() {
   const user = getCurrentUser();
+  const navigate = useNavigate();
 
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Carousel
-  const [slide, setSlide] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRes, setDetailRes] = useState(null);
 
   async function fetchReservations() {
     const res = await api.get('/reservations/my');
@@ -61,41 +119,52 @@ export default function DashboardUser() {
     };
   }, []);
 
-  // ✅ Próxima reserva vigente (sin /spaces)
-  const nextReservation = useMemo(() => {
-    const now = Date.now();
-    const actives = reservations
-      .filter((r) => r.status === 'ACTIVE')
-      .filter((r) => new Date(r.startTime).getTime() >= now)
-      .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const totalCount = reservations.length;
 
-    return actives[0] || null;
+  const upcoming = useMemo(() => {
+    return reservations
+      .filter(isUpcoming)
+      .sort((a, b) => {
+        const da = new Date(a.date);
+        const db = new Date(b.date);
+        const ta = toHHMM(a.startTime);
+        const tb = toHHMM(b.startTime);
+        if (da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
+        return ta.localeCompare(tb);
+      });
   }, [reservations]);
 
-  const messageTitle = useMemo(() => {
-    if (!nextReservation) {
-      return 'No tenés reservas';
-    }
-    const { date, time } = formatDateTime(nextReservation.startTime);
-    const spaceName = nextReservation.space?.name || 'Espacio';
-    return `Tu próxima reserva será el ${date} a las ${time} en ${spaceName}`;
-  }, [nextReservation]);
+  const todayCount = useMemo(() => reservations.filter(isToday).length, [reservations]);
+  const upcomingCount = upcoming.length;
+  const upcomingTop = useMemo(() => upcoming.slice(0, 3), [upcoming]); // mock muestra 3
 
-  const messageSubtitle = useMemo(() => {
-    if (!nextReservation) {
-      return 'Reservá tu espacio ideal para trabajar';
-    }
-    return 'Gestiona tus reservas y mantén tu rutina de trabajo en el mejor entorno.';
-  }, [nextReservation]);
+  function canEdit(res) {
+    if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
 
-  // ✅ Carousel auto-rotate
-  useEffect(() => {
-    if (!carouselImages.length) return;
-    const id = setInterval(() => {
-      setSlide((s) => (s + 1) % carouselImages.length);
-    }, 4500);
-    return () => clearInterval(id);
-  }, []);
+    const start = new Date(res?.startTime);
+    if (!Number.isNaN(start.getTime())) return start > new Date();
+
+    return isUpcoming(res);
+  }
+
+  async function cancelReservation(id) {
+    if (!window.confirm('¿Querés cancelar esta reserva?')) return;
+
+    try {
+      await api.patch(`/reservations/${id}/cancel`);
+      await fetchReservations();
+    } catch (e) {
+      const status = e?.response?.status;
+      const data = e?.response?.data;
+      const msg =
+        data?.message ||
+        data?.error ||
+        (typeof data === 'string' ? data : null) ||
+        e?.message ||
+        `No se pudo cancelar (HTTP ${status || '?'})`;
+      alert(msg);
+    }
+  }
 
   if (loading) {
     return (
@@ -114,78 +183,191 @@ export default function DashboardUser() {
 
       <div className="page-container dashboard-page">
         <div className="dashboard-container">
-          {/* Encabezado */}
-          <div className="dashboard-header">
-            <h1>Bienvenido</h1>
-            <p>Gestioná tus espacios de trabajo</p>
+          {/* Top header row (mock) */}
+          <div className="dashboard-user-top">
+            <div className="dashboard-header">
+              <h1>Bienvenido</h1>
+              <p>Gestioná tus espacios de trabajo, reservas y próximos turnos.</p>
+              {error ? <div className="form-error">{error}</div> : null}
+            </div>
 
-            {error ? <div className="form-error">{error}</div> : null}
+            <button className="pill-button" onClick={() => navigate('/user/reservar')}>
+              Nueva reserva
+            </button>
           </div>
 
-          {/* Card mensaje */}
-          <div className="admin-card dashboard-message-card">
-            <div className="dashboard-message-title">{messageTitle}</div>
-            <div className="dashboard-message-subtitle">{messageSubtitle}</div>
-          </div>
+          {/* KPIs (mock) */}
+          <div className="dashboard-kpis">
+            <div className="user-card">
+              <div className="kpi-title">Reservas totales</div>
+              <div className="kpi-value">{totalCount}</div>
+              <div className="kpi-sub">Incluye canceladas y rechazadas.</div>
+            </div>
 
-          {/* Carousel full width */}
-          <div className="dashboard-carousel-fullbleed">
-            <div className="dashboard-carousel">
-              {carouselImages.length ? (
-                <>
-                  <img
-                    className="dashboard-carousel-img"
-                    src={carouselImages[slide]}
-                    alt={`slide-${slide + 1}`}
-                  />
+            <div className="user-card">
+              <div className="kpi-title">Próximas</div>
+              <div className="kpi-value">{upcomingCount}</div>
+              <div className="kpi-sub">Activas o pendientes desde hoy.</div>
+            </div>
 
-                  <div className="dashboard-carousel-dots">
-                    {carouselImages.map((_, i) => (
-                      <button
-                        key={i}
-                        className={`dashboard-dot ${i === slide ? 'active' : ''}`}
-                        onClick={() => setSlide(i)}
-                        aria-label={`Ir a imagen ${i + 1}`}
-                        type="button"
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="admin-card" style={{ padding: 18 }}>
-                  No hay imágenes en <code>src/assets/dashboard</code>
-                </div>
-              )}
+            <div className="user-card">
+              <div className="kpi-title">Hoy</div>
+              <div className="kpi-value">{todayCount}</div>
+              <div className="kpi-sub">Reservas activas o pendientes para hoy.</div>
             </div>
           </div>
 
-          {/* Cards acciones (misma funcionalidad) */}
-          <div className="dashboard-actions">
-            <Link className="dashboard-action-card" to="/user/reservas">
-              <div className="dashboard-action-icon">
-                <FiCalendar />
-              </div>
+          {/* Próximas reservas (mock) */}
+          <div className="user-card">
+            <div className="dashboard-section-head">
               <div>
-                <div className="dashboard-action-title">Mis reservas</div>
-                <div className="dashboard-action-subtitle">
-                  Ver y gestionar tus reservas actuales
+                <div className="dashboard-section-title">Próximas reservas</div>
+                <div className="dashboard-section-sub">
+                  Accedé rápido a tus próximas reservas y gestioná cambios.
                 </div>
               </div>
-            </Link>
 
-            <Link className="dashboard-action-card" to="/user/reservar">
-              <div className="dashboard-action-icon">
-                <FiPlusCircle />
-              </div>
-              <div>
-                <div className="dashboard-action-title">Agendar reserva</div>
-                <div className="dashboard-action-subtitle">
-                  Reservá un nuevo espacio de trabajo
+              <button className="dashboard-link" onClick={() => navigate('/user/reservas')}>
+                Ver todas →
+              </button>
+            </div>
+
+            {upcomingTop.length === 0 ? (
+              <div className="dashboard-empty">
+                <div style={{ fontWeight: 900 }}>Todavía no tenés reservas próximas</div>
+                <div style={{ marginTop: 6, opacity: 0.75 }}>
+                  Creá una nueva reserva para verlas aquí.
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <button className="pill-button" onClick={() => navigate('/user/reservar')}>
+                    Nueva reserva
+                  </button>
                 </div>
               </div>
-            </Link>
+            ) : (
+              <div className="upcoming-list">
+                {upcomingTop.map((r) => (
+                  <div key={r.id} className="user-card" style={{ padding: 14 }}>
+                    <div className="upcoming-card-top">
+                      <div style={{ width: "100%" }}>
+                        {/* Título + estado en la misma línea */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+                          <div className="upcoming-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span>{r?.space?.name || `Espacio #${r.spaceId}`}</span>
+                            <span className={`status-pill status-${r.status}`}>{statusLabel(r.status)}</span>
+                          </div>
+                        </div>
+
+                        <div className="upcoming-meta">
+                          <span>{formatDateES(r.date)}</span>
+                          <span>
+                            {toHHMM(r.startTime)}–{toHHMM(r.endTime)}
+                          </span>
+                          <span>👥 {r.attendees ?? 1}</span>
+                          {r.totalAmount != null ? <span>💶 {formatEUR(r.totalAmount)}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="upcoming-actions">
+                      <button
+                        className="pill-button-outline"
+                        type="button"
+                        onClick={() => {
+                          setDetailRes(r);
+                          setDetailOpen(true);
+                        }}
+                      >
+                        Ver detalles
+                      </button>
+
+                      <button
+                        className="pill-button-outline"
+                        type="button"
+                        disabled={!canEdit(r)}
+                        onClick={() => navigate(`/user/reservar?edit=${r.id}`)}
+                      >
+                        Editar
+                      </button>
+
+                      <button
+                        className="pill-button-red"
+                        type="button"
+                        disabled={!canEdit(r)}
+                        onClick={() => cancelReservation(r.id)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Modal Detalle (si ya tenés modal-overlay/modal-card en CSS, queda ok) */}
+        {detailOpen && detailRes ? (
+          <div className="modal-overlay" onClick={() => setDetailOpen(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 18 }}>
+                    {detailRes?.space?.name || `Reserva #${detailRes.id}`}
+                  </div>
+                  <div style={{ marginTop: 6, opacity: 0.75 }}>
+                    {formatDateES(detailRes.date)} • {toHHMM(detailRes.startTime)}–{toHHMM(detailRes.endTime)}
+                  </div>
+                </div>
+
+                <span className={`status-pill status-${detailRes.status}`}>
+                  {statusLabel(detailRes.status)}
+                </span>
+              </div>
+
+              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                <div style={{ opacity: 0.85 }}>
+                  Participantes: <b>{detailRes.attendees ?? 1}</b>
+                </div>
+
+                {detailRes.durationMinutes != null ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Duración: <b>{detailRes.durationMinutes} min</b>
+                  </div>
+                ) : null}
+
+                {detailRes.hourlyRateSnapshot != null ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Precio aplicado: <b>{formatEUR(detailRes.hourlyRateSnapshot)}</b>
+                  </div>
+                ) : null}
+
+                {detailRes.totalAmount != null ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Total: <b>{formatEUR(detailRes.totalAmount)}</b>
+                  </div>
+                ) : null}
+
+                {detailRes.purpose ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Propósito: <b>{detailRes.purpose}</b>
+                  </div>
+                ) : null}
+
+                {detailRes.notes ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Notas: <b>{detailRes.notes}</b>
+                  </div>
+                ) : null}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                <button className="pill-button-outline" onClick={() => setDetailOpen(false)}>
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

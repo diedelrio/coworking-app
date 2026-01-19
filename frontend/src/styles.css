@@ -513,7 +513,7 @@ input:focus {
   opacity: 0.9;
 }
 
-/* ---------- PILL BUTTONS ---------- */
+/* ---------- PILL BUTTONS ---------- 
 .pill-button {
   border: none;
   border-radius: 999px;
@@ -544,7 +544,7 @@ input:focus {
   opacity: 0.7;
   cursor: not-allowed;
 }
-
+Diego lo borro porque hay dos */
 /* ---------- Alerts ---------- */
 .form-error {
   margin: 10px 0 12px 0;
@@ -1546,4 +1546,568 @@ input:focus {
   outline: none;
   font-size: 0.95rem;
   background: transparent;
+}
+/* =========================================================
+   UserNewReservation – helpers (compatibles con tu estética)
+   ========================================================= */
+
+.muted {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 820px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Form layout (si no querés tocar global input, usamos wrappers) */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 0.85rem;
+  color: #374151;
+  font-weight: 700;
+}
+
+.form-input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 1px #4f46e5;
+}
+
+/* Modal genérico */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 560px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.35);
+  padding: 18px;
+}
+/* =========================================================
+   Dashboard User nuevo (KPIs + Próximas reservas)
+   ========================================================= */
+
+.dashboard-user-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 700px) {
+  .dashboard-user-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dashboard-user-top .pill-button {
+    width: fit-content;
+  }
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kpi-title {
+  font-size: 13px;
+  opacity: 0.75;
+  font-weight: 700;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 900;
+  margin-top: 8px;
+}
+
+.kpi-sub {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+.dashboard-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.dashboard-section-title {
+  font-weight: 900;
+  font-size: 16px;
+  margin: 0;
+}
+
+.dashboard-section-sub {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
+.dashboard-link {
+  border: none;
+  background: transparent;
+  color: #4f46e5;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.dashboard-link:hover {
+  text-decoration: underline;
+}
+
+.upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upcoming-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upcoming-title {
+  font-weight: 900;
+  font-size: 15px;
+}
+
+.upcoming-meta {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.78;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.upcoming-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.dashboard-empty {
+  padding: 16px;
+  border: 1px dashed rgba(0,0,0,0.18);
+  border-radius: 14px;
+  background: rgba(0,0,0,0.02);
+}
+/* ===========================
+   Dashboard USER nuevo (mock)
+   =========================== */
+
+.user-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.dashboard-user-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 700px) {
+  .dashboard-user-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dashboard-user-top .pill-button {
+    width: fit-content;
+  }
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-kpis { grid-template-columns: 1fr; }
+}
+
+.kpi-title {
+  font-size: 13px;
+  opacity: 0.75;
+  font-weight: 700;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 900;
+  margin-top: 8px;
+}
+
+.kpi-sub === .kpi-sub {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+.dashboard-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.dashboard-section-title {
+  font-weight: 900;
+  font-size: 16px;
+  margin: 0;
+}
+
+.dashboard-section-sub {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
+.dashboard-link {
+  border: none;
+  background: transparent;
+  color: #4f46e5;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.dashboard-link:hover {
+  text-decoration: underline;
+}
+
+.upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upcoming-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upcoming-title {
+  font-weight: 900;
+  font-size: 15px;
+}
+
+.upcoming-meta {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.78;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.upcoming-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.dashboard-empty {
+  padding: 16px;
+  border: 1px dashed rgba(0,0,0,0.18);
+  border-radius: 14px;
+  background: rgba(0,0,0,0.02);
+}
+/* Dashboard user: alinear botón con el bloque de título/subtítulo */
+.dashboard-user-top {
+  align-items: center; /* antes estaba flex-start */
+}
+
+/* opcional: si querés que el botón quede a la misma “altura visual” del h1 */
+.dashboard-user-top .pill-button {
+  margin-top: 6px;
+}
+.upcoming-title .status-pill {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+/* ===========================
+   USER NEW RESERVATION (mock)
+   =========================== */
+
+.user-reserve-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.user-reserve-back {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 800;
+  color: #111827;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.user-reserve-back:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.user-reserve-title h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 900;
+}
+
+.user-reserve-title p {
+  margin: 3px 0 0;
+  opacity: 0.72;
+  font-size: 0.9rem;
+}
+
+.user-reserve-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(0,0,0,0.06);
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.user-reserve-card-head {
+  margin-bottom: 14px;
+}
+
+.user-reserve-card-head .title {
+  font-weight: 900;
+  font-size: 15px;
+  margin: 0 0 4px 0;
+}
+
+.user-reserve-card-head .sub {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.user-reserve-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 820px) {
+  .user-reserve-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.user-reserve-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+  color: #374151;
+}
+
+.user-reserve-field input,
+.user-reserve-field select,
+.user-reserve-field textarea {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.14);
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+}
+
+.user-reserve-field textarea {
+  height: auto;
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.user-reserve-field input:focus,
+.user-reserve-field select:focus,
+.user-reserve-field textarea:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79,70,229,.12);
+}
+
+.user-reserve-field.full {
+  grid-column: 1 / -1;
+}
+
+.user-reserve-help {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+.space-info-card {
+  background: #f0f7ff;
+  border: 1px solid #cfe3ff;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 8px 0 2px;
+}
+
+.space-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.space-info-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.pricing-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 10px 0 2px;
+}
+
+.pricing-box .label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.72;
+  margin-bottom: 2px;
+}
+
+.pricing-box .value {
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.user-reserve-footer {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+@media (max-width: 820px) {
+  .user-reserve-footer {
+    flex-direction: column;
+  }
+  .user-reserve-footer button {
+    width: 100%;
+  }
+}
+/* ===== Ajustes finos: alineación header + campos ===== */
+
+/* A) Header alineado al ancho de la card */
+.user-reserve-header-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+/* Flecha alineada con el título (menos “salida” hacia arriba) */
+.user-reserve-back {
+  margin-top: 2px;
+}
+
+/* B) Inputs alineados: evitar diferencias por paddings/altura */
+.user-reserve-field input,
+.user-reserve-field select,
+.user-reserve-field textarea {
+  box-sizing: border-box;
+}
+
+/* Los inputs tipo date/time a veces traen padding interno distinto */
+.user-reserve-field input[type="date"],
+.user-reserve-field input[type="time"] {
+  padding-right: 12px; /* evita que se "corran" por iconos nativos */
+}
+
+/* Alineación del bloque Duración/Total a full ancho exacto */
+.pricing-summary {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Importante: el grid no debe dejar “columnas” con anchos raros */
+.user-reserve-grid {
+  align-items: start;
+}
+
+/* Cuando un campo es full, que no deje padding lateral raro */
+.user-reserve-field.full {
+  width: 100%;
 }
