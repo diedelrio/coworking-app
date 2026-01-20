@@ -65,6 +65,25 @@ function isUpcoming(res) {
   return date0 >= today0;
 }
 
+
+
+function isWithinNextDays(res, maxDays) {
+  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
+  if (!statusOk) return false;
+
+  const d = new Date(res?.date);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const today = new Date();
+  const today0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const date0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  const end = new Date(today0);
+  // maxDays=7 => incluye hoy + 6
+  end.setDate(end.getDate() + Math.max(0, Number(maxDays || 0) - 1));
+
+  return date0 >= today0 && date0 <= end;
+}
 function isToday(res) {
   const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
   if (!statusOk) return false;
@@ -88,12 +107,21 @@ export default function DashboardUser() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [maxDaysUpcoming, setMaxDaysUpcoming] = useState(7);
+
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailRes, setDetailRes] = useState(null);
 
   async function fetchReservations() {
     const res = await api.get('/reservations/my');
     setReservations(Array.isArray(res.data) ? res.data : []);
+  }
+
+  async function fetchPublicSettings() {
+    const res = await api.get('/public/settings');
+    const settings = res.data?.settings || {};
+    const n = Number(settings.MAX_DAYS_UPCOMING_BOOKING);
+    setMaxDaysUpcoming(Number.isFinite(n) && n > 0 ? n : 7);
   }
 
   useEffect(() => {
@@ -103,7 +131,7 @@ export default function DashboardUser() {
       try {
         setLoading(true);
         setError('');
-        await fetchReservations();
+        await Promise.all([fetchReservations(), fetchPublicSettings()]);
       } catch (err) {
         console.error(err);
         if (!mounted) return;
@@ -124,6 +152,7 @@ export default function DashboardUser() {
   const upcoming = useMemo(() => {
     return reservations
       .filter(isUpcoming)
+      .filter((r) => isWithinNextDays(r, maxDaysUpcoming))
       .sort((a, b) => {
         const da = new Date(a.date);
         const db = new Date(b.date);
@@ -132,11 +161,11 @@ export default function DashboardUser() {
         if (da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
         return ta.localeCompare(tb);
       });
-  }, [reservations]);
+  }, [reservations, maxDaysUpcoming]);
 
   const todayCount = useMemo(() => reservations.filter(isToday).length, [reservations]);
   const upcomingCount = upcoming.length;
-  const upcomingTop = useMemo(() => upcoming.slice(0, 3), [upcoming]); // mock muestra 3
+  const upcomingTop = useMemo(() => upcoming, [upcoming]);
 
   function canEdit(res) {
     if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
@@ -224,6 +253,9 @@ export default function DashboardUser() {
                 <div className="dashboard-section-title">Próximas reservas</div>
                 <div className="dashboard-section-sub">
                   Accedé rápido a tus próximas reservas y gestioná cambios.
+                </div>
+                <div className="dashboard-section-sub" style={{ marginTop: 4, opacity: 0.8 }}>
+                  Se muestran las reservas programadas para los próximos <strong>{maxDaysUpcoming}</strong> días.
                 </div>
               </div>
 

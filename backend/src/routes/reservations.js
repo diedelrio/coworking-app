@@ -490,6 +490,30 @@ router.post('/', authRequired, async (req, res) => {
     const actorId = actor.id ?? actor.userId; // soporta ambos
     const actorRole = actor.role || actor.userRole || 'USER';
 
+    // ✅ BUG-0001: un ADMIN puede crear una reserva "en nombre" de otro usuario.
+    // Soporta userId (frontend admin) y targetUserId (alias).
+    const requestedUserIdRaw = (req.body || {}).userId ?? (req.body || {}).targetUserId;
+    const requestedUserId = requestedUserIdRaw != null && requestedUserIdRaw !== ''
+      ? Number(requestedUserIdRaw)
+      : null;
+
+    if (requestedUserId != null && Number.isNaN(requestedUserId)) {
+      return res.status(400).json({ ok: false, message: 'userId inválido' });
+    }
+
+    // Por defecto, el usuario destino es el actor.
+    let targetUserId = actorId;
+
+    // Si actor es ADMIN y viene userId, usamos ese como usuario destino.
+    if (String(actorRole).toUpperCase() === 'ADMIN' && requestedUserId) {
+      targetUserId = requestedUserId;
+    }
+
+    // Si NO es ADMIN y viene userId distinto al actor => prohibido.
+    if (String(actorRole).toUpperCase() !== 'ADMIN' && requestedUserId && requestedUserId !== actorId) {
+      return res.status(403).json({ ok: false, message: 'No puedes crear reservas para otro usuario' });
+    }
+
     const {
       spaceId,
       date,
@@ -506,10 +530,16 @@ router.post('/', authRequired, async (req, res) => {
         .json({ ok: false, error: 'Unauthorized: missing user id in token' });
     }
 
+    if (!targetUserId) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Unauthorized: missing target user id' });
+    }
+
     // Valida reglas y construye DateTimes
     const { dateOnly, startDateTime, endDateTime, space } =
       await validateAndBuildReservation({
-        userId: actorId,
+        userId: targetUserId,
         spaceId,
         date,
         startTime,
@@ -518,7 +548,7 @@ router.post('/', authRequired, async (req, res) => {
 
     // Traer user para decidir PENDING/ACTIVE
     const user = await prisma.user.findUnique({
-      where: { id: actorId },
+      where: { id: targetUserId },
       select: { id: true, role: true, classify: true },
     });
 
@@ -608,7 +638,7 @@ router.post('/', authRequired, async (req, res) => {
 
     const reservation = await prisma.reservation.create({
       data: {
-        userId: actorId,
+        userId: targetUserId,
         spaceId: Number(spaceId),
         date: dateOnly,
         startTime: startDateTime,
