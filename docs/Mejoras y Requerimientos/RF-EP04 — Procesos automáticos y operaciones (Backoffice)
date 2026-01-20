@@ -1,0 +1,9 @@
+RF-AUTO-01 — Proceso nocturno: pasar reservas activas a “pasadas”
+Descripción: Un proceso automático diario (nocturno) debe actualizar el estado de reservas activas a “pasadas” cuando corresponda.
+Reglas de negocio:
+    Frecuencia: 1 vez por noche (hora configurable).
+    Criterio de “pasada”: reservas cuya fecha/hora de fin ya ocurrió (según timezone del sistema).
+
+Criterios de aceptación:
+    Reservas que cumplan condición quedan en estado “PASSED/PAST” (o el enum actual).
+    No modifica reservas futuras ni canceladas.

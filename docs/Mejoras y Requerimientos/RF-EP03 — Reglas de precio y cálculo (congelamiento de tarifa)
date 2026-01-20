@@ -1,0 +1,16 @@
+RF-PRICE-01 — Congelar precio/hora del espacio al crear reserva
+Descripción: Al crear una reserva, se debe guardar en la reserva el precio/hora vigente del espacio y usar ese valor para todos los cálculos futuros de esa reserva.
+Reglas de negocio:
+    Al crear:
+        reservation.hourlyRateSnapshot = space.hourlyRate
+        reservation.durationMinutes o hours (según modelo)
+        reservation.totalPrice = hourlyRateSnapshot * horas (o minutos/60)
+    Si luego el usuario edita la reserva y cambia la duración:
+    Se recalcula totalPrice usando hourlyRateSnapshot, no el space.hourlyRate actual.
+
+Criterios de aceptación:
+    Si el admin cambia el hourlyRate del space después, reservas existentes no cambian su total por ese motivo.
+    Si se modifica solo horario/duración, el total cambia pero con el snapshot.
+
+Aclaración: Creo que esto ya está implementado pero no la parte que el administrador pueda cambiar el precio del espacio en las reservas ya creadas. Ejemplo: otorgar una fonificación especial a una reserva ya creada.
+Revisar este requerimiento.

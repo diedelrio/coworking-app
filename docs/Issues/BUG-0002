@@ -1,0 +1,29 @@
+🐞 BUG - 0002 — Dashboard Usuario: la grilla de “Próximas reservas” muestra solo 3 registros
+
+Tipo        : Bug / UX
+Prioridad   : Media
+Área        : Frontend (posible Backend si hay paginación fija)
+Módulo      : Dashboard Usuario
+
+📌 Descripción
+En el Dashboard del Usuario, la grilla/listado de Próximas reservas solo muestra 3 reservas, incluso cuando el usuario tiene más reservas futuras cargadas en el sistema.
+
+🔁 Pasos para reproducir
+    Ingresar como usuario con más de 3 reservas futuras.
+    Acceder al Dashboard Usuario.
+    Visualizar la sección Próximas reservas.
+
+❌ Resultado actual
+    Solo se muestran 3 reservas, sin opción de ver el resto.
+
+✅ Resultado esperado
+    Se deben mostrar todas las reservas futuras
+
+📎 Notas técnicas / posibles causas
+    Posible slice(0,3) o limit=3 en frontend.
+    Posible LIMIT 3 o paginación hardcodeada en backend.
+    No existe indicación visual de que se trate de un “preview”.
+
+📊 Impacto
+    El usuario no ve todas sus reservas futuras.
+    Puede generar confusión o percepción de pérdida de información.

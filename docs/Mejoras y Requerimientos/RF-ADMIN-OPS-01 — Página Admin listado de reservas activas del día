@@ -1,0 +1,10 @@
+RF-ADMIN-OPS-01 — Página Admin: listado de reservas activas del día para “pre-factura”
+
+Descripción: Agregar en el menú admin una página para listar reservas activas, filtrando por “día”, para facilitar generar una pre factura.
+Reglas:
+    Filtro por fecha (por defecto “hoy”).
+    Listado debe incluir: usuario, espacio, horario, duración, precio/hora snapshot, total, estado.
+
+Criterios de aceptación:
+    El admin puede ver rápidamente las reservas del día y sus importes.
+    Datos de precio vienen de la reserva (snapshot), no del space.

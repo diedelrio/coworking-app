@@ -1,0 +1,7 @@
+Dependencias y notas para implementación (útiles para backlog)
+
+Recurrencia implica persistir un “grupo/serie” (ej. recurrenceId) y una representación de regla (pattern, endByDate/endByCount).
+
+El “proceso nocturno” puede ser cron interno, job de Render, o scheduler del hosting.
+
+“Medio día”/“Día completo” idealmente parametrizable (duración medio día / jornada completa).

@@ -1,0 +1,34 @@
+🐞 BUG 0001 — Admin: la reserva se guarda asociada al usuario administrador y no al usuario seleccionado
+
+Tipo        : Bug
+Prioridad   : Alta
+Área        : Backend + Frontend
+Módulo      : Reservas / Admin – Crear reserva
+
+📌 Descripción
+Al crear una reserva desde el formulario de administrador, el sistema permite seleccionar o crear un usuario, pero al guardar la reserva esta queda asociada al usuario administrador que realiza la acción, en lugar del usuario seleccionado.
+Esto impide que el administrador pueda gestionar reservas correctamente en nombre de terceros.
+🔁 Pasos para reproducir
+    Ingresar al sistema como Administrador.
+    Ir al formulario Crear nueva reserva.
+    Seleccionar un usuario existente o crear uno nuevo desde el formulario.
+    Completar los datos de la reserva.
+    Guardar la reserva.
+    Revisar el usuario asociado a la reserva creada.
+
+❌ Resultado actual
+    La reserva queda asociada al usuario administrador que la creó, ignorando el usuario seleccionado en el formulario.
+
+✅ Resultado esperado
+    La reserva debe quedar asociada al usuario seleccionado o creado en el formulario de administración.
+
+📎 Notas técnicas / posibles causas
+    El backend estaría utilizando el userId del token/session (req.user.id) en lugar del userId enviado desde el payload.
+    Validar:
+        Payload enviado desde frontend (userId)
+        Lógica de creación de reserva en backend
+    Permisos: admin puede crear reservas para otros usuarios
+
+📊 Impacto
+    Bloquea funcionalidad clave del administrador.
+    Afecta reportes, facturación y experiencia de usuario.
