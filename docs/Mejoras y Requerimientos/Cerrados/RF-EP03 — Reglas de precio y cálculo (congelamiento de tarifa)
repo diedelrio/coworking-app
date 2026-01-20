@@ -14,3 +14,40 @@ Criterios de aceptación:
 
 Aclaración: Creo que esto ya está implementado pero no la parte que el administrador pueda cambiar el precio del espacio en las reservas ya creadas. Ejemplo: otorgar una fonificación especial a una reserva ya creada.
 Revisar este requerimiento.
+
+✅ EP-PRICING-01 · CERRADO
+Estado
+
+✔️ Implementado y validado en código
+✔️ Modelo de datos correcto
+✔️ Reglas de negocio cumplidas
+
+🧠 Decisión de diseño (registrada)
+
+No se realiza saneamiento de datos históricos
+
+No se agrega fallback automático para hourlyRateSnapshot = 0
+
+Se asume:
+
+entorno aún en pruebas
+
+dataset controlado
+
+En el futuro:
+
+el Admin podrá editar manualmente el valor de la reserva
+
+se resolverán ajustes históricos en el requerimiento de edición avanzada
+
+👉 Esta decisión queda documentada y evita complejidad innecesaria ahora.
+
+📌 Implicaciones positivas
+
+No tocamos lógica estable
+
+No metemos reglas “temporales” que después hay que desarmar
+
+Mantenemos el pricing predecible y explícito
+
+Dejamos el ajuste fino para cuando exista una necesidad real

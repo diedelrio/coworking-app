@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axiosClient";
 import Header from "../components/Header";
+import ReservationTimeFields from "../components/ReservationTimeFields";
 import { getCurrentUser } from "../utils/auth";
 
 function pad2(n) {
@@ -304,25 +305,13 @@ export default function UserNewReservation() {
               </div>
 
               {/* Hora inicio / fin */}
-              <div className="user-reserve-field">
-                <label>Hora de Inicio *</label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="user-reserve-field">
-                <label>Hora de Fin *</label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  disabled={saving}
-                />
-              </div>
+              <ReservationTimeFields
+                startTime={startTime}
+                endTime={endTime}
+                setStartTime={setStartTime}
+                setEndTime={setEndTime}
+                disabled={saving}
+              />
 
               {/* Duración + Total (condicional si hay rango válido) */}
               {durationMinutes > 0 ? (

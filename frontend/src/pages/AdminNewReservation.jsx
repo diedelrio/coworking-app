@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
+import ReservationTimeFields from '../components/ReservationTimeFields';
 import { getCurrentUser } from '../utils/auth';
 
 export default function AdminNewReservation() {
@@ -282,27 +283,15 @@ export default function AdminNewReservation() {
               />
             </div>
 
-            <div className="form-group">
-              <label>Hora inicio</label>
-              <input
-                type="time"
-                name="startTime"
-                value={form.startTime}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Hora fin</label>
-              <input
-                type="time"
-                name="endTime"
-                value={form.endTime}
-                onChange={handleChange}
-                required
-              />
-            </div>
+            <ReservationTimeFields
+              startTime={form.startTime}
+              endTime={form.endTime}
+              setStartTime={(v) => setForm((prev) => ({ ...prev, startTime: v }))}
+              setEndTime={(v) => setForm((prev) => ({ ...prev, endTime: v }))}
+              disabled={loading || saving}
+              labelStart="Hora inicio"
+              labelEnd="Hora fin"
+            />
 
             <button className="button" type="submit" disabled={saving}>
               {saving ? 'Creando reserva...' : 'Crear reserva'}
