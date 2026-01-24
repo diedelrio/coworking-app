@@ -29,12 +29,17 @@ function RejectReservationModal({ open, reservation, loading, onClose, onConfirm
 
   if (!open) return null;
 
-  const userLabel = reservation?.user
-    ? `${reservation.user.name || ''} ${reservation.user.lastName || ''}`.trim() ||
-      reservation.user.email
-    : `Usuario #${reservation?.userId}`;
+  // "reservation" puede ser una reserva (ONE) o un grupo (SERIES) del pending-groups
+  const base = reservation?.firstReservation || reservation;
+  const isSeries = reservation?.type === 'SERIES' || Boolean(reservation?.seriesId && reservation?.firstReservation);
 
-  const spaceLabel = reservation?.space?.name || `Espacio #${reservation?.spaceId}`;
+  const userLabel = base?.user
+    ? `${base.user.name || ''} ${base.user.lastName || ''}`.trim() || base.user.email
+    : base
+    ? `Usuario #${base.userId}`
+    : '';
+
+  const spaceLabel = base?.space?.name || (base ? `Espacio #${base.spaceId}` : '');
 
   return (
     <div
@@ -68,7 +73,7 @@ function RejectReservationModal({ open, reservation, loading, onClose, onConfirm
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
           <div>
-            <h3 style={{ margin: 0 }}>Rechazar reserva</h3>
+            <h3 style={{ margin: 0 }}>{isSeries ? 'Rechazar serie' : 'Rechazar reserva'}</h3>
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
               {userLabel} · {spaceLabel}
             </div>
@@ -158,7 +163,7 @@ function RejectReservationModal({ open, reservation, loading, onClose, onConfirm
 }
 
 export default function AdminDashboardWidgets() {
-  const [pending, setPending] = useState([]);
+  const [pending, setPending] = useState([]); // pending groups
   const [loadingPending, setLoadingPending] = useState(true);
 
   const [missingClassify, setMissingClassify] = useState([]);
@@ -174,7 +179,7 @@ export default function AdminDashboardWidgets() {
   const loadPending = async () => {
     setLoadingPending(true);
     try {
-      const res = await api.get('/reservations/pending');
+      const res = await api.get('/reservations/pending-groups');
       setPending(res.data || []);
     } catch (e) {
       console.error(e);
@@ -204,11 +209,16 @@ export default function AdminDashboardWidgets() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const approveReservation = async (id) => {
-    setActionBusyId(id);
+  const approveReservation = async (group) => {
+    const busyKey = group?.type === 'SERIES' ? `S:${group.seriesId}` : `O:${group.reservationId}`;
+    setActionBusyId(busyKey);
     setError('');
     try {
-      await api.patch(`/reservations/${id}/approve`);
+      if (group?.type === 'SERIES') {
+        await api.patch(`/reservations/series/${group.seriesId}/approve`);
+      } else {
+        await api.patch(`/reservations/${group.reservationId}/approve`);
+      }
       await loadPending();
     } catch (e) {
       console.error(e);
@@ -219,21 +229,26 @@ export default function AdminDashboardWidgets() {
   };
 
   // ✅ Abrir modal de rechazo
-  const openRejectModal = (reservation) => {
-    setRejectReservation(reservation);
+  const openRejectModal = (group) => {
+    setRejectReservation(group);
     setRejectOpen(true);
   };
 
   // ✅ Confirmar rechazo (con reason)
   const confirmRejectReservation = async (reason) => {
-    const id = rejectReservation?.id;
-    if (!id) return;
-
-    setActionBusyId(id);
+    if (!rejectReservation) return;
+    const busyKey = rejectReservation?.type === 'SERIES'
+      ? `S:${rejectReservation.seriesId}`
+      : `O:${rejectReservation.reservationId}`;
+    setActionBusyId(busyKey);
     setError('');
 
     try {
-      await api.patch(`/reservations/${id}/reject`, { reason });
+      if (rejectReservation?.type === 'SERIES') {
+        await api.patch(`/reservations/series/${rejectReservation.seriesId}/reject`, { reason });
+      } else {
+        await api.patch(`/reservations/${rejectReservation.reservationId}/reject`, { reason });
+      }
       setRejectOpen(false);
       setRejectReservation(null);
       await loadPending();
@@ -247,7 +262,8 @@ export default function AdminDashboardWidgets() {
 
   const closeRejectModal = () => {
     // si está procesando, no cierres
-    if (actionBusyId && rejectReservation?.id === actionBusyId) return;
+    // si está procesando, no cierres
+    if (actionBusyId) return;
     setRejectOpen(false);
     setRejectReservation(null);
   };
@@ -303,47 +319,80 @@ export default function AdminDashboardWidgets() {
                   <th>Horario</th>
                   <th>Espacio</th>
                   <th>Usuario</th>
+                  <th>Recurrencia</th>
                   <th style={{ width: 220 }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {pending.map((r) => (
-                  <tr key={r.id}>
-                    <td>{formatDate(r.date)}</td>
-                    <td>
-                      {formatTime(r.startTime)} - {formatTime(r.endTime)}
-                    </td>
-                    <td>{r.space?.name || `Espacio #${r.spaceId}`}</td>
-                    <td>
-                      {r.user
-                        ? `${r.user.name || ''} ${r.user.lastName || ''}`.trim() || r.user.email
-                        : `Usuario #${r.userId}`}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          className="pill-button-green"
-                          onClick={() => approveReservation(r.id)}
-                          disabled={actionBusyId === r.id}
-                        >
-                          {actionBusyId === r.id ? 'Procesando...' : 'Aprobar'}
-                        </button>
+                {pending.map((g) => {
+                  const r = g.firstReservation;
+                  const rowKey = g.type === 'SERIES' ? `S:${g.seriesId}` : `O:${g.reservationId}`;
+                  const busy = actionBusyId === rowKey;
 
-                        <button
-                          type="button"
-                          className="pill-button-red"
-                          onClick={() => openRejectModal(r)}
-                          disabled={actionBusyId === r.id}
-                          
-                          title="Rechazar"
-                        >
-                          Rechazar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                  return (
+                    <tr key={rowKey}>
+                      <td>{formatDate(r?.date)}</td>
+                      <td>
+                        {formatTime(r?.startTime)} - {formatTime(r?.endTime)}
+                      </td>
+                      <td>{r?.space?.name || (r ? `Espacio #${r.spaceId}` : '-')}</td>
+                      <td>
+                        {r?.user
+                          ? `${r.user.name || ''} ${r.user.lastName || ''}`.trim() || r.user.email
+                          : r
+                          ? `Usuario #${r.userId}`
+                          : '-'}
+                      </td>
+                      <td>
+                        {g.type === 'SERIES' ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: '4px 10px',
+                              borderRadius: 999,
+                              background: '#eef2ff',
+                              color: '#3730a3',
+                              fontSize: '0.85rem',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title="Reserva recurrente"
+                          >
+                            Recurrente
+                            <span style={{ opacity: 0.8 }}>
+                              {g.pattern ? `${g.pattern} · ` : ''}{g.occurrences}
+                            </span>
+                          </span>
+                        ) : (
+                          <span style={{ color: '#6b7280' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="pill-button-green"
+                            onClick={() => approveReservation(g)}
+                            disabled={busy}
+                          >
+                            {busy ? 'Procesando...' : 'Aprobar'}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="pill-button-red"
+                            onClick={() => openRejectModal(g)}
+                            disabled={busy}
+                            title={g.type === 'SERIES' ? 'Rechazar serie' : 'Rechazar'}
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -354,7 +403,13 @@ export default function AdminDashboardWidgets() {
       <RejectReservationModal
         open={rejectOpen}
         reservation={rejectReservation}
-        loading={actionBusyId && rejectReservation?.id === actionBusyId}
+        loading={(() => {
+          if (!rejectReservation || !actionBusyId) return false;
+          const key = rejectReservation?.type === 'SERIES'
+            ? `S:${rejectReservation.seriesId}`
+            : `O:${rejectReservation.reservationId}`;
+          return actionBusyId === key;
+        })()}
         onClose={closeRejectModal}
         onConfirm={confirmRejectReservation}
       />

@@ -66,7 +66,7 @@ input:focus {
 
 .button {
   border: none;
-  border-radius: 9999px;
+  border-radius: 10px;
   padding: 0.7rem 1.2rem;
   font-size: 0.95rem;
   font-weight: 600;
@@ -144,7 +144,7 @@ input:focus {
   display: inline-flex;
   align-items: center;
   padding: 0.15rem 0.6rem;
-  border-radius: 999px;
+   border-radius: 10px;
   font-size: 0.75rem;
 }
 
@@ -162,14 +162,14 @@ input:focus {
   display: inline-flex;
   align-items: center;
   padding: 0.15rem 0.6rem;
-  border-radius: 999px;
+   border-radius: 10px;
   font-size: 0.75rem;
   background-color: #e0e7ff;
   color: #3730a3;
 }
 
 .btn-small {
-  border-radius: 999px;
+   border-radius: 10px;
   border: none;
   padding: 0.3rem 0.7rem;
   font-size: 0.8rem;
@@ -200,7 +200,7 @@ input:focus {
 .pill-button {
   height: 30px;
   padding: 0 22px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: none;
   background: #4f46e5;
   color: #fff;
@@ -221,7 +221,7 @@ input:focus {
 .pill-button-outline {
   height: 30px;
   padding: 0 18px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid #d1d5db;
   background: #fff;
   color:  rgb(79, 70, 229);
@@ -241,7 +241,7 @@ input:focus {
 .pill-button-green {
   height: 30px;
   padding: 0 22px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: none;
   background: #dcfce7;
   color: #166534;
@@ -255,7 +255,7 @@ input:focus {
 .pill-button-red {
   height: 30px;
   padding: 0 22px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: none;
   background: #fecaca;
   color: #b91c1c;
@@ -315,7 +315,7 @@ input:focus {
 .profile-avatar-circle {
   width: 130px;
   height: 130px;
-  border-radius: 999px;
+   border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -333,7 +333,7 @@ input:focus {
   bottom: 10px;
   width: 34px;
   height: 34px;
-  border-radius: 999px;
+   border-radius: 10px;
   background: #fff;
   display: grid;
   place-items: center;
@@ -365,7 +365,7 @@ input:focus {
   align-items: center;
   justify-content: center;
   padding: 6px 12px;
-  border-radius: 999px;
+   border-radius: 10px;
   font-size: 12px;
   font-weight: 600;
   margin: 12px auto 0 auto;
@@ -521,7 +521,7 @@ input:focus {
 /* ---------- PILL BUTTONS ---------- 
 .pill-button {
   border: none;
-  border-radius: 999px;
+   border-radius: 10px;
   height: 40px;
   padding: 0 16px;
   background: #6366f1;
@@ -537,7 +537,7 @@ input:focus {
 
 .pill-button-outline {
   border: 1px solid rgba(0,0,0,0.14);
-  border-radius: 999px;
+   border-radius: 10px;
   height: 40px;
   padding: 0 16px;
   background: #fff;
@@ -697,7 +697,7 @@ Diego lo borro porque hay dos */
 .dashboard-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+   border-radius: 10px;
   border: none;
   cursor: pointer;
   opacity: 0.45;
@@ -805,7 +805,7 @@ Diego lo borro porque hay dos */
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 999px;
+   border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.12);
   background: rgba(0,0,0,0.02);
   font-size: 13px;
@@ -871,7 +871,7 @@ Diego lo borro porque hay dos */
   display: inline-flex;
   align-items: center;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 10px;
   font-size: 12px;
   font-weight: 800;
   border: 1px solid rgba(0,0,0,0.12);
@@ -888,7 +888,7 @@ Diego lo borro porque hay dos */
 /* Botón cancelar */
 .btn-cancel {
   border: none;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 6px 12px;
   font-weight: 800;
   font-size: 12px;
@@ -1089,7 +1089,7 @@ Diego lo borro porque hay dos */
 .settings-fab {
   width: 44px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: none;
   cursor: pointer;
   background: #4f46e5;
@@ -1151,7 +1151,7 @@ Diego lo borro porque hay dos */
   background: #f3f4f6;
   width: 34px;
   height: 34px;
-  border-radius: 999px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
@@ -1240,7 +1240,7 @@ Diego lo borro porque hay dos */
   background: #eef2ff;
   color: #3730a3;
   padding: .18rem .5rem;
-  border-radius: 999px;
+   border-radius: 10px;
   font-weight: 700;
 }
 
@@ -1445,7 +1445,7 @@ Diego lo borro porque hay dos */
 .badge {
   font-size: 0.75rem;
   padding: 0.25rem 0.6rem;
-  border-radius: 999px;
+   border-radius: 10px;
   font-weight: 600;
   border: 1px solid transparent;
 }
@@ -1466,7 +1466,7 @@ Diego lo borro porque hay dos */
   align-items: center;
   gap: 6px;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+   border-radius: 10px;
   font-size: 0.78rem;
   line-height: 1.2;
   white-space: nowrap;
@@ -1965,7 +1965,7 @@ Diego lo borro porque hay dos */
   padding: 0 18px;
   border: 1px solid #d1d5db;
   background: #fff;
-  border-radius: 999px;
+   border-radius: 10px;
   color: rgb(79, 70, 229);
   font-weight: 300;
   cursor: pointer;
@@ -1995,6 +1995,168 @@ Diego lo borro porque hay dos */
 .reserve-time-hint {
   font-size: 0.85rem;
   color: #6b7280;
+}
+
+/* ------------------------------ Recurrencia ------------------------------ */
+
+.recurrence-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.recurrence-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.recurrence-head .title {
+  font-weight: 800;
+  color: #111827;
+}
+
+.recurrence-head .sub {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.recurrence-body {
+  margin-top: 12px;
+}
+
+.recurrence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .recurrence-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recurrence-end-rule {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.endrule-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.endrule-input {
+  width: 230px;
+  max-width: 100%;
+}
+
+@media (max-width: 720px) {
+  .endrule-option {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .endrule-input {
+    width: 100%;
+  }
+}
+
+.radio-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: #111827;
+}
+
+.recurrence-summary {
+  margin-top: 12px;
+  border-radius: 14px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff; /* azul suave */
+}
+
+.recurrence-summary .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .recurrence-summary .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recurrence-summary .k {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.recurrence-summary .v {
+  font-weight: 800;
+  color: #111827;
+}
+
+.recurrence-summary .hint {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #1f2937;
+}
+
+/* Toggle switch (soft) */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 26px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #e5e7eb;
+  transition: 0.2s;
+   border-radius: 10px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.2s;
+   border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #c7d2fe; /* indigo/azul suave */
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(18px);
 }
 
 .user-reserve-header {
@@ -2216,4 +2378,61 @@ Diego lo borro porque hay dos */
 /* Cuando un campo es full, que no deje padding lateral raro */
 .user-reserve-field.full {
   width: 100%;
+}
+.recurrence-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.recurrence-block h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.recurrence-end-options {
+  display: grid;
+  gap: 12px;
+}
+
+.recurrence-option {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e6e9ef;
+  border-radius: 14px;
+  background: #fafbfc;
+}
+
+.recurrence-option.selected {
+  border-color: #b9ccff;
+  background: #f3f7ff;
+}
+
+.recurrence-option .option-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #2a2f3a;
+}
+
+.recurrence-option .option-content {
+  display: grid;
+  gap: 8px;
+}
+
+.recurrence-option input[type="radio"] {
+  margin-top: 3px;
+}
+
+.recurrence-end-input {
+  width: 100%;
+  height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #e6e9ef;
+  border-radius: 12px;
+  background: white;
 }

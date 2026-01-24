@@ -4,6 +4,7 @@ const { countOverlappingReservations } = require('../services/reservationOccupan
 const { computeReservationStatus } = require('../services/reservationStatus');
 
 const express = require('express');
+const crypto = require('crypto');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
 
@@ -47,6 +48,147 @@ function getWeekRangeFromDate(dateOnly) {
   weekEnd.setDate(weekEnd.getDate() + 7);
 
   return { weekStart, weekEnd };
+}
+
+/* ------------------------------ Recurrencia ------------------------------ */
+
+function safeRandomId() {
+  try {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch (_) {}
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function toDateOnlyYMD(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonthsSameDay(date, months) {
+  const base = new Date(date);
+  const day = base.getDate();
+
+  const d = new Date(base);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+
+  // Clamp al último día del mes
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return d;
+}
+
+function isoWeekday(date) {
+  // JS: 0=Sun..6=Sat  | ISO: 1=Mon..7=Sun
+  const d = date.getDay();
+  return d === 0 ? 7 : d;
+}
+
+function isWeekend(date) {
+  const d = date.getDay();
+  return d === 0 || d === 6;
+}
+
+function ymd(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * MONTHLY ("Mismo día todos los meses") con ajuste a día hábil:
+ * - Se toma el "día del mes" ancla (p.ej. 29) y el "día de semana" ancla (p.ej. jueves).
+ * - Para cada mes:
+ *    1) Se arma una fecha base = min(díaAncla, últimoDíaDelMes)
+ *    2) Se busca el mismo día de semana ancla dentro de la MISMA semana ISO (lun-dom)
+ *       que la fecha base (puede ser hacia adelante o hacia atrás).
+ *    3) Si cae fuera del mes, se retrocede 7 días (semana anterior).
+ *    4) Si cae en fin de semana o feriado/cierre, se retrocede 7 días hasta un día hábil.
+ */
+function addMonthsMonthlyBusinessWeekday({
+  startDate,
+  monthsToAdd,
+  anchorDay,
+  anchorIsoWeekday,
+  closedYMDSet,
+}) {
+  const d = new Date(startDate);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + monthsToAdd);
+
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const baseDay = Math.min(anchorDay, lastDay);
+  let candidate = new Date(year, month, baseDay);
+
+  // Ajuste al mismo weekday ancla dentro de la misma semana ISO (lun-dom)
+  const candIso = isoWeekday(candidate);
+  const diff = anchorIsoWeekday - candIso; // positivo => avanzar, negativo => retroceder
+  candidate = addDays(candidate, diff);
+
+  // Si nos pasamos de mes, retroceder una semana
+  if (candidate.getMonth() !== month) {
+    candidate = addDays(candidate, -7);
+  }
+
+  // Si cae en fin de semana o feriado/cierre, retroceder una semana (mismo weekday)
+  while (isWeekend(candidate) || (closedYMDSet && closedYMDSet.has(ymd(candidate)))) {
+    candidate = addDays(candidate, -7);
+  }
+
+  return candidate;
+}
+
+/**
+ * Genera fechas (Date) para ocurrencias recurrentes.
+ * - pattern: DAILY | WEEKLY | MONTHLY
+ * - endDate: YYYY-MM-DD (inclusive)
+ * - count: cantidad total de ocurrencias (incluye la primera)
+ */
+function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count }) {
+  const start = new Date(`${startYMD}T00:00:00`);
+  if (Number.isNaN(start.getTime())) throw new Error('Fecha inicial inválida');
+
+  let limitCount = count != null ? Number(count) : null;
+  if (limitCount != null) {
+    if (!Number.isInteger(limitCount) || limitCount < 1 || limitCount > 100) {
+      throw new Error('recurrenceCount debe ser un entero entre 1 y 100');
+    }
+  }
+
+  let endDate = null;
+  if (endDateYMD) {
+    endDate = new Date(`${endDateYMD}T00:00:00`);
+    if (Number.isNaN(endDate.getTime())) throw new Error('Fecha fin inválida');
+  }
+
+  const out = [];
+  let current = new Date(start);
+
+  // Siempre incluye la primera
+  for (let i = 0; i < 100; i++) {
+    if (endDate && current > endDate) break;
+    out.push(new Date(current));
+    if (limitCount && out.length >= limitCount) break;
+
+    if (pattern === 'DAILY') current = addDays(current, 1);
+    else if (pattern === 'WEEKLY') current = addDays(current, 7);
+    else if (pattern === 'MONTHLY') current = addMonthsSameDay(current, 1);
+    else throw new Error('Patrón de recurrencia inválido');
+  }
+
+  return out;
 }
 
 /* ------------------------------ Error tipado ------------------------------ */
@@ -355,6 +497,114 @@ router.get('/pending', authRequired, requireAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/reservations/pending-groups
+ * Pendientes agrupadas por seriesId (para que el admin apruebe/rechace toda la serie).
+ * - SERIES: 1 fila por seriesId (usa la primera ocurrencia futura como "padre" visual)
+ * - ONE: reservas no recurrentes
+ */
+router.get('/pending-groups', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const pending = await prisma.reservation.findMany({
+      where: { status: 'PENDING', date: { gte: today } },
+      include: { user: true, space: true },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+
+    const map = new Map();
+
+    for (const r of pending) {
+      const key = r.seriesId ? `S:${r.seriesId}` : `O:${r.id}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          type: r.seriesId ? 'SERIES' : 'ONE',
+          seriesId: r.seriesId || null,
+          reservationId: r.seriesId ? null : r.id,
+          pattern: r.recurrencePattern || null,
+          occurrences: 0,
+          firstReservation: null,
+        });
+      }
+
+      const g = map.get(key);
+      g.occurrences += 1;
+      if (!g.firstReservation) g.firstReservation = r;
+    }
+
+    return res.json(Array.from(map.values()));
+  } catch (err) {
+    console.error('ERROR GET /reservations/pending-groups', err);
+    return res.status(500).json({ message: 'Error al obtener reservas pendientes' });
+  }
+});
+
+/**
+ * PATCH /api/reservations/series/:seriesId/approve
+ * Aprueba TODAS las ocurrencias pendientes de una serie.
+ */
+router.patch('/series/:seriesId/approve', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const { seriesId } = req.params;
+    if (!seriesId) return res.status(400).json({ message: 'seriesId inválido' });
+
+    const result = await prisma.reservation.updateMany({
+      where: { seriesId, status: 'PENDING' },
+      data: { status: 'ACTIVE' },
+    });
+
+    // Enviamos email usando la primera ocurrencia (si existe)
+    const first = await prisma.reservation.findFirst({
+      where: { seriesId },
+      include: { user: true, space: true },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+
+    if (first) {
+      try {
+        await notifyReservationApprovedToUser({
+          reservation: first,
+          user: first.user,
+          space: first.space,
+        });
+      } catch (e) {
+        console.error('No se pudo enviar email de serie aprobada al usuario:', e);
+      }
+    }
+
+    return res.json({ ok: true, seriesId, approvedCount: result.count });
+  } catch (err) {
+    console.error('ERROR PATCH /reservations/series/:seriesId/approve', err);
+    return res.status(500).json({ message: 'Error al aprobar la serie' });
+  }
+});
+
+/**
+ * PATCH /api/reservations/series/:seriesId/reject
+ * Rechaza TODAS las ocurrencias pendientes de una serie.
+ */
+router.patch('/series/:seriesId/reject', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const { seriesId } = req.params;
+    const { reason } = req.body || {};
+    if (!seriesId) return res.status(400).json({ message: 'seriesId inválido' });
+
+    const result = await prisma.reservation.updateMany({
+      where: { seriesId, status: 'PENDING' },
+      data: { status: 'REJECTED' },
+    });
+
+    // (Opcional) email de rechazo por serie. Lo dejamos fuera para no romper servicios.
+    return res.json({ ok: true, seriesId, rejectedCount: result.count, reason: reason || null });
+  } catch (err) {
+    console.error('ERROR PATCH /reservations/series/:seriesId/reject', err);
+    return res.status(500).json({ message: 'Error al rechazar la serie' });
+  }
+});
+
+/**
  * PATCH /api/reservations/:id/approve
  */
 router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
@@ -522,6 +772,11 @@ router.post('/', authRequired, async (req, res) => {
       attendees,
       purpose,
       notes,
+      // recurrencia
+      recurrenceEnabled,
+      recurrencePattern,
+      recurrenceEndDate,
+      recurrenceCount,
     } = req.body || {};
 
     if (!actorId) {
@@ -536,15 +791,94 @@ router.post('/', authRequired, async (req, res) => {
         .json({ ok: false, error: 'Unauthorized: missing target user id' });
     }
 
-    // Valida reglas y construye DateTimes
-    const { dateOnly, startDateTime, endDateTime, space } =
-      await validateAndBuildReservation({
-        userId: targetUserId,
-        spaceId,
-        date,
-        startTime,
-        endTime,
+    // Prepara ocurrencias (si aplica)
+    const isRecurring = Boolean(recurrenceEnabled);
+    const pattern = (recurrencePattern || 'WEEKLY').toString().toUpperCase();
+    const hasEndDate = Boolean(recurrenceEndDate);
+    const hasCount = recurrenceCount != null && recurrenceCount !== '';
+
+    if (isRecurring) {
+      if (hasEndDate && hasCount) {
+        throw new ReservationValidationError(
+          'Solo puedes elegir una regla de fin (fecha o cantidad)',
+          'RECURRENCE_END_RULE'
+        );
+      }
+      if (!hasEndDate && !hasCount) {
+        throw new ReservationValidationError(
+          'Debes elegir una regla de fin para la recurrencia',
+          'RECURRENCE_END_RULE'
+        );
+      }
+    }
+
+    // ---- Ocurrencias (con ajuste de feriados/cierres para MONTHLY) ----
+    let occurrenceDates;
+
+    if (!isRecurring) {
+      occurrenceDates = [new Date(`${date}T00:00:00`)];
+    } else if (pattern !== 'MONTHLY') {
+      occurrenceDates = generateOccurrenceDates({
+        startYMD: date,
+        pattern,
+        endDateYMD: hasEndDate ? recurrenceEndDate : null,
+        count: hasCount ? Number(recurrenceCount) : null,
       });
+    } else {
+      // MONTHLY: “último <weekday>” del mes cuando falta el día o cae en finde/feriado.
+      const startDate = new Date(`${date}T00:00:00`);
+      const anchorDay = startDate.getDate();
+      const anchorIsoWeekday = isoWeekday(startDate);
+
+      // rango estimado para traer cierres/feriados
+      let rangeEnd = null;
+      if (hasEndDate) {
+        rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
+      } else if (hasCount) {
+        // aprox: (count-1) meses adelante, +35d de margen por ajustes
+        const tmp = addMonthsSameDay(startDate, Math.max(0, Number(recurrenceCount) - 1));
+        rangeEnd = addDays(tmp, 35);
+      } else {
+        rangeEnd = addDays(addMonthsSameDay(startDate, 12), 35);
+      }
+
+      const closures = await prisma.officeClosure.findMany({
+        where: {
+          date: {
+            gte: startDate,
+            lte: rangeEnd,
+          },
+        },
+        select: { date: true },
+      });
+
+      const closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
+
+      // generar ocurrencias
+      const out = [];
+      const limitCount = hasCount ? Math.max(1, Number(recurrenceCount)) : null;
+      const endDateObj = hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null;
+
+      for (let i = 0; i < 100; i++) {
+        if (limitCount && out.length >= limitCount) break;
+
+        const occ =
+          i === 0
+            ? startDate
+            : addMonthsMonthlyBusinessWeekday({
+                startDate,
+                monthsToAdd: i,
+                anchorDay,
+                anchorIsoWeekday,
+                closedYMDSet,
+              });
+
+        if (endDateObj && occ > endDateObj) break;
+        out.push(new Date(occ));
+      }
+
+      occurrenceDates = out;
+    }
 
     // Traer user para decidir PENDING/ACTIVE
     const user = await prisma.user.findUnique({
@@ -558,108 +892,161 @@ router.post('/', authRequired, async (req, res) => {
 
     const status = computeReservationStatus({ actorRole, user });
 
-    // ----- attendees (solo shared) -----
-    const shared = isSharedSpaceType(space.type);
+    // attendees (solo shared)
     let requestedAttendees = 1;
-
-    if (shared) {
-      requestedAttendees = Number(attendees ?? 1);
-      if (!Number.isInteger(requestedAttendees) || requestedAttendees < 1) {
-        return res.status(400).json({
-          ok: false,
-          code: 'INVALID_ATTENDEES',
-          message: 'attendees debe ser un entero >= 1',
-        });
-      }
-    }
-
-    const cap = effectiveCapacity(space);
-
-    // ----- Validación de disponibilidad -----
-    const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
-
-    if (shared) {
-      // SUM(attendees) solapados (ACTIVE/PENDING)
-      const agg = await prisma.reservation.aggregate({
-        where: {
-          spaceId: space.id,
-          status: { in: ['ACTIVE', 'PENDING'] },
-          AND: [
-            { startTime: { gte: dayStart, lt: dayEnd } },
-            { startTime: { lt: endDateTime } },
-            { endTime: { gt: startDateTime } },
-          ],
-        },
-        _sum: { attendees: true },
+    const rawAtt = Number(attendees ?? 1);
+    if (!Number.isInteger(rawAtt) || rawAtt < 1) {
+      return res.status(400).json({
+        ok: false,
+        code: 'INVALID_ATTENDEES',
+        message: 'attendees debe ser un entero >= 1',
       });
+    }
+    requestedAttendees = rawAtt;
 
-      const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+    // ----- Validar fuera de transacción (mejor rendimiento) -----
+    const seriesId = isRecurring ? safeRandomId() : null;
+    const preparedRows = [];
 
-      if (occupiedAttendees + requestedAttendees > cap) {
-        return res.status(409).json({
-          ok: false,
-          code: 'CAPACITY_FULL',
-          message: `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
-          meta: {
-            occupiedAttendees,
-            requestedAttendees,
-            capacity: cap,
-          },
-        });
-      }
-    } else {
-      // Unitarios: basta con 1 solapamiento
-      const occupied = await countOverlappingReservations({
-        spaceId: space.id,
-        date,
+    for (let i = 0; i < occurrenceDates.length; i++) {
+      const occDate = occurrenceDates[i];
+      const occYMD = toDateOnlyYMD(occDate);
+
+      const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
+        userId: targetUserId,
+        spaceId,
+        date: occYMD,
         startTime,
         endTime,
       });
 
-      if (occupied > 0) {
-        return res.status(409).json({
-          ok: false,
-          code: 'SPACE_UNAVAILABLE',
-          message: `El espacio ${space.name} ya está reservado en ese horario.`,
+      const shared = isSharedSpaceType(space.type);
+      const cap = effectiveCapacity(space);
+      const occAttendees = shared ? requestedAttendees : 1;
+
+      // Validación de disponibilidad (fuera de tx)
+      const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
+
+      if (shared) {
+        const agg = await prisma.reservation.aggregate({
+          where: {
+            spaceId: space.id,
+            status: { in: ['ACTIVE', 'PENDING'] },
+            AND: [
+              { startTime: { gte: dayStart, lt: dayEnd } },
+              { startTime: { lt: endDateTime } },
+              { endTime: { gt: startDateTime } },
+            ],
+          },
+          _sum: { attendees: true },
         });
+
+        const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+        if (occupiedAttendees + occAttendees > cap) {
+          throw new ReservationValidationError(
+            `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
+            'CAPACITY_FULL',
+            { occurrenceIndex: i + 1, date: occYMD }
+          );
+        }
+      } else {
+        const overlapping = await prisma.reservation.findFirst({
+          where: {
+            spaceId: space.id,
+            status: { in: ['ACTIVE', 'PENDING'] },
+            date: dateOnly,
+            startTime: { lt: endDateTime },
+            endTime: { gt: startDateTime },
+          },
+          select: { id: true },
+        });
+
+        if (overlapping) {
+          throw new ReservationValidationError(
+            `El espacio ${space.name} ya está reservado en ese horario.`,
+            'SPACE_UNAVAILABLE',
+            { occurrenceIndex: i + 1, date: occYMD }
+          );
+        }
       }
-    }
 
-    // ----- Pricing snapshot -----
-    // CREATE: hourlyRateSnapshot se congela desde Space.hourlyRate
-    const pricing = buildPricingSnapshot({
-      startTime,
-      endTime,
-      spaceHourlyRate: space.hourlyRate,
-      hourlyRateSnapshot: null,
-      shared,
-      attendees: shared ? requestedAttendees : 1,
-    });
+      const pricing = buildPricingSnapshot({
+        startTime,
+        endTime,
+        spaceHourlyRate: space.hourlyRate,
+        hourlyRateSnapshot: null,
+        shared,
+        attendees: occAttendees,
+      });
 
-    const reservation = await prisma.reservation.create({
-      data: {
+      preparedRows.push({
         userId: targetUserId,
         spaceId: Number(spaceId),
         date: dateOnly,
         startTime: startDateTime,
         endTime: endDateTime,
         status,
+        attendees: occAttendees,
 
-        attendees: shared ? requestedAttendees : 1,
+        // recurrencia
+        seriesId,
+        recurrencePattern: isRecurring ? pattern : null,
+        recurrenceEndDate: isRecurring && hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null,
+        recurrenceCount: isRecurring && hasCount ? Number(recurrenceCount) : null,
 
         // snapshot + cálculo
         hourlyRateSnapshot: pricing.hourlyRateSnapshot,
         durationMinutes: pricing.durationMinutes,
         totalAmount: pricing.totalAmount,
 
-        // opcionales mock
         purpose: purpose ? String(purpose).trim() : null,
         notes: notes ? String(notes).trim() : null,
-      },
-      include: { user: true, space: true },
-    });
+      });
+    }
 
-    return res.status(201).json(reservation);
+    // ----- Crear en transacción corta (createMany) -----
+    await prisma.$transaction(
+      async (tx) => {
+        if (preparedRows.length === 1) {
+          // createMany no devuelve el registro; para single usamos create.
+          await tx.reservation.create({ data: preparedRows[0] });
+        } else {
+          await tx.reservation.createMany({ data: preparedRows });
+        }
+      },
+      { timeout: 20000, maxWait: 20000 }
+    );
+
+    // Recuperar reservas creadas (con include) para respuesta
+    const createdReservations = isRecurring
+      ? await prisma.reservation.findMany({
+          where: { seriesId },
+          orderBy: { startTime: 'asc' },
+          include: { user: true, space: true },
+        })
+      : await prisma.reservation.findMany({
+          where: {
+            userId: targetUserId,
+            spaceId: Number(spaceId),
+            date: preparedRows[0].date,
+            startTime: preparedRows[0].startTime,
+            endTime: preparedRows[0].endTime,
+          },
+          take: 1,
+          include: { user: true, space: true },
+        });
+
+    // Si es recurrente devolvemos resumen + primera
+    if (isRecurring) {
+      return res.status(201).json({
+        ok: true,
+        seriesId,
+        createdCount: createdReservations.length,
+        first: createdReservations[0],
+      });
+    }
+
+    return res.status(201).json(createdReservations[0]);
   } catch (err) {
     if (err instanceof ReservationValidationError) {
       return res.status(400).json({
@@ -812,6 +1199,8 @@ router.put('/:id', authRequired, async (req, res) => {
       attendees,
       purpose,
       notes,
+      // recurrencia
+      applyTo, // ONE | SERIES
     } = req.body || {};
 
     // 1) Traer reserva actual
@@ -856,6 +1245,158 @@ router.put('/:id', authRequired, async (req, res) => {
     const targetDate = date ?? existingDateYMD;
     const targetStartTime = startTime ?? toHHMM(existing.startTime);
     const targetEndTime = endTime ?? toHHMM(existing.endTime);
+
+    const scope = (applyTo || 'ONE').toString().toUpperCase();
+
+    // ------------------------------
+    // Edición serie recurrente
+    // ------------------------------
+    if (existing.seriesId && scope === 'SERIES') {
+      // Por simplicidad (y para evitar efectos inesperados), no permitimos mover la fecha de toda la serie.
+      if (date && date !== existingDateYMD) {
+        return res.status(400).json({
+          ok: false,
+          code: 'RECURRENCE_SERIES_DATE_NOT_SUPPORTED',
+          message: 'Para editar toda la serie, la fecha debe mantenerse. Cambios de fecha por serie no están soportados.',
+        });
+      }
+
+      const now = new Date();
+
+      const updatedSeries = await prisma.$transaction(async (tx) => {
+        const seriesReservations = await tx.reservation.findMany({
+          where: {
+            seriesId: existing.seriesId,
+            status: { in: ['ACTIVE', 'PENDING'] },
+            startTime: { gte: existing.startTime },
+          },
+          include: { space: true },
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+        });
+
+        const out = [];
+
+        for (const r of seriesReservations) {
+          // Mantener fecha por ocurrencia
+          const ymd = toDateOnlyYMD(new Date(r.date));
+
+          const nextStart = startTime ?? toHHMM(r.startTime);
+          const nextEnd = endTime ?? toHHMM(r.endTime);
+
+          // Validar reglas (excluye la propia ocurrencia)
+          const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
+            userId: r.userId,
+            spaceId: r.spaceId,
+            date: ymd,
+            startTime: nextStart,
+            endTime: nextEnd,
+            excludeReservationId: r.id,
+          });
+
+          if (startDateTime <= now) {
+            throw new ReservationValidationError(
+              'No se puede editar una reserva que ya comenzó o está en el pasado.',
+              'PAST_RESERVATION',
+              { id: r.id, date: ymd }
+            );
+          }
+
+          const shared = isSharedSpaceType(space.type);
+          const cap = effectiveCapacity(space);
+          const occAttendees = shared
+            ? Number(attendees ?? r.attendees ?? 1)
+            : 1;
+
+          if (shared) {
+            if (!Number.isInteger(occAttendees) || occAttendees < 1) {
+              throw new ReservationValidationError('attendees debe ser un entero >= 1', 'INVALID_ATTENDEES', {
+                id: r.id,
+                date: ymd,
+              });
+            }
+
+            const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
+            const agg = await tx.reservation.aggregate({
+              where: {
+                id: { not: r.id },
+                spaceId: r.spaceId,
+                status: { in: ['ACTIVE', 'PENDING'] },
+                AND: [
+                  { startTime: { gte: dayStart, lt: dayEnd } },
+                  { startTime: { lt: endDateTime } },
+                  { endTime: { gt: startDateTime } },
+                ],
+              },
+              _sum: { attendees: true },
+            });
+            const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+            if (occupiedAttendees + occAttendees > cap) {
+              throw new ReservationValidationError(
+                `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
+                'CAPACITY_FULL',
+                { id: r.id, date: ymd }
+              );
+            }
+          } else {
+            const overlapping = await tx.reservation.findFirst({
+              where: {
+                id: { not: r.id },
+                spaceId: r.spaceId,
+                status: { in: ['ACTIVE', 'PENDING'] },
+                date: dateOnly,
+                startTime: { lt: endDateTime },
+                endTime: { gt: startDateTime },
+              },
+              select: { id: true },
+            });
+            if (overlapping) {
+              throw new ReservationValidationError(
+                `El espacio ${space.name} ya está reservado en ese horario.`,
+                'SPACE_UNAVAILABLE',
+                { id: r.id, date: ymd }
+              );
+            }
+          }
+
+          const pricing = buildPricingSnapshot({
+            startTime: nextStart,
+            endTime: nextEnd,
+            spaceHourlyRate: null,
+            hourlyRateSnapshot: r.hourlyRateSnapshot,
+            shared,
+            attendees: shared ? occAttendees : 1,
+          });
+
+          const updated = await tx.reservation.update({
+            where: { id: r.id },
+            data: {
+              // No cambiamos date ni spaceId en edición por serie (solo horario + info)
+              startTime: startDateTime,
+              endTime: endDateTime,
+              attendees: shared ? occAttendees : 1,
+              hourlyRateSnapshot: pricing.hourlyRateSnapshot,
+              durationMinutes: pricing.durationMinutes,
+              totalAmount: pricing.totalAmount,
+              purpose:
+                purpose !== undefined ? (purpose ? String(purpose).trim() : null) : r.purpose,
+              notes: notes !== undefined ? (notes ? String(notes).trim() : null) : r.notes,
+            },
+            include: { user: true, space: true },
+          });
+
+          out.push(updated);
+        }
+
+        return out;
+      });
+
+      return res.json({
+        ok: true,
+        seriesId: existing.seriesId,
+        updatedCount: updatedSeries.length,
+        first: updatedSeries[0] ?? null,
+      });
+    }
 
     // 5) Validar reglas base y obtener space / datetimes
     const { dateOnly, startDateTime, endDateTime, space } =

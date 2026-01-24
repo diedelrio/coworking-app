@@ -67,6 +67,20 @@ export default function UserNewReservation() {
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
 
+  // recurrencia
+  const [recurring, setRecurring] = useState(false);
+  const [repeat, setRepeat] = useState("WEEKLY"); // DAILY | WEEKLY | MONTHLY
+  const [endRule, setEndRule] = useState("DATE"); // DATE | COUNT
+  const [repeatEndDate, setRepeatEndDate] = useState("");
+  const [repeatCount, setRepeatCount] = useState(4);
+
+  const [loadedSeriesId, setLoadedSeriesId] = useState(null);
+
+  // ---- edición de recurrencias (aplicar cambios) ----
+  const [showApplyScopeModal, setShowApplyScopeModal] = useState(false);
+  const [applyScope, setApplyScope] = useState("ONE"); // ONE | SERIES
+  const [pendingSubmitMode, setPendingSubmitMode] = useState(null); // UPDATE
+
   // pricing snapshot para UI (en edit se congela)
   const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
 
@@ -75,7 +89,10 @@ export default function UserNewReservation() {
     [spaces, spaceId]
   );
 
-  const shared = useMemo(() => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false), [selectedSpace]);
+  const shared = useMemo(
+    () => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false),
+    [selectedSpace]
+  );
 
   // duration + total (UI)
   const durationMinutes = useMemo(() => {
@@ -86,7 +103,6 @@ export default function UserNewReservation() {
   const durationHoursLabel = useMemo(() => {
     if (durationMinutes <= 0) return "—";
     const hours = durationMinutes / 60;
-    // 3.5 como en mock, sin demasiados decimales
     const pretty = Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 10) / 10);
     return `${pretty} horas`;
   }, [durationMinutes]);
@@ -100,11 +116,43 @@ export default function UserNewReservation() {
           : 0;
 
     const hours = Math.max(0, durationMinutes) / 60;
-    // ✅ Si es compartido, multiplica por attendees
     const qty = shared ? Math.max(1, Number(attendees || 1)) : 1;
-
     return rate * hours * qty;
   }, [hourlyRateSnapshot, selectedSpace, durationMinutes, attendees, shared]);
+
+  // ---- styles inline para dejar la UI alineada aunque el CSS global varíe ----
+  const recurStyles = useMemo(
+    () => ({
+      grid: {
+        display: "grid",
+        gridTemplateColumns: "1.2fr 1fr",
+        gap: 24,
+        alignItems: "start",
+      },
+      blockTitle: { margin: 0, fontSize: 13, fontWeight: 800 },
+      optionList: { display: "grid", gap: 12, marginTop: 10 },
+      optionCard: (selected) => ({
+        display: "grid",
+        gridTemplateColumns: "24px 1fr",
+        gap: 10,
+        padding: 12,
+        borderRadius: 14,
+        border: selected ? "1px solid #b9ccff" : "1px solid #e6e9ef",
+        background: selected ? "#f3f7ff" : "#fafbfc",
+      }),
+      optionTitle: { fontWeight: 700, fontSize: 13, color: "#2a2f3a", marginBottom: 8 },
+      input: {
+        width: "100%",
+        height: 40,
+        padding: "8px 10px",
+        borderRadius: 12,
+        border: "1px solid #e6e9ef",
+        background: "#fff",
+      },
+      labelMuted: { color: "#5b6472", fontSize: 12, marginTop: 4 },
+    }),
+    []
+  );
 
   // cargar spaces
   useEffect(() => {
@@ -112,8 +160,6 @@ export default function UserNewReservation() {
       try {
         setLoadingSpaces(true);
         setSpacesError("");
-        // Ajustá si tu backend usa otro endpoint. En tu captura fallaba la carga.
-        // Probá primero este:
         const res = await api.get("/spaces/active");
         setSpaces(Array.isArray(res.data) ? res.data : []);
       } catch (e) {
@@ -143,7 +189,22 @@ export default function UserNewReservation() {
         setPurpose(r.purpose ?? "");
         setNotes(r.notes ?? "");
 
-        // ✅ congelar precio aplicado
+        // recurrencia
+        setLoadedSeriesId(r.seriesId ?? null);
+        setRecurring(Boolean(r.seriesId));
+        setRepeat((r.recurrencePattern || "WEEKLY").toUpperCase());
+        if (r.recurrenceEndDate) {
+          setEndRule("DATE");
+          setRepeatEndDate(toYMD(r.recurrenceEndDate));
+        } else if (r.recurrenceCount) {
+          setEndRule("COUNT");
+          setRepeatCount(Number(r.recurrenceCount) || 1);
+        } else {
+          setEndRule("DATE");
+          setRepeatEndDate("");
+        }
+
+        // congelar precio aplicado
         setHourlyRateSnapshot(r.hourlyRateSnapshot ?? null);
       } catch (e) {
         console.error(e);
@@ -151,6 +212,38 @@ export default function UserNewReservation() {
       }
     })();
   }, [editId]);
+
+  // defaults recurrencia al cambiar fecha (solo create)
+  useEffect(() => {
+    if (editId) return;
+    if (!recurring) return;
+    if (endRule !== "DATE") return;
+    if (repeatEndDate) return;
+
+    const d = new Date(`${date}T00:00:00`);
+    d.setMonth(d.getMonth() + 1);
+    setRepeatEndDate(toYMD(d));
+  }, [editId, recurring, endRule, repeatEndDate, date]);
+
+  const recurrenceSummary = useMemo(() => {
+    if (!recurring) return null;
+
+    const patternLabel =
+      repeat === "DAILY"
+        ? "Diaria"
+        : repeat === "MONTHLY"
+          ? "Mismo día todos los meses"
+          : "Mismo día todas las semanas";
+
+    const endLabel =
+      endRule === "COUNT"
+        ? `${Math.max(1, Number(repeatCount || 1))} ocurrencias`
+        : repeatEndDate
+          ? `hasta ${repeatEndDate}`
+          : "(sin fin)";
+
+    return { patternLabel, endLabel };
+  }, [recurring, repeat, endRule, repeatCount, repeatEndDate]);
 
   // en create: al elegir espacio, setear snapshot SOLO para UI
   useEffect(() => {
@@ -174,8 +267,32 @@ export default function UserNewReservation() {
     if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
     if (minutesBetween(startTime, endTime) <= 0) return setFormError("La hora fin debe ser mayor a inicio.");
 
+    // En edición de una reserva recurrente: preguntar alcance (ONE vs SERIES)
+    if (editId && loadedSeriesId) {
+      setPendingSubmitMode("UPDATE");
+      setApplyScope("ONE");
+      setShowApplyScopeModal(true);
+      return;
+    }
+
+    await doSubmit("ONE");
+  }
+
+  async function doSubmit(scope) {
     try {
       setSaving(true);
+
+      if (recurring) {
+        if (!repeat) return setFormError("Seleccioná un patrón de recurrencia.");
+        if (endRule === "DATE") {
+          if (!repeatEndDate) return setFormError("Seleccioná una fecha de fin para la recurrencia.");
+        } else {
+          const n = Number(repeatCount || 0);
+          if (!Number.isInteger(n) || n < 1 || n > 100) {
+            return setFormError("La cantidad de ocurrencias debe ser un número entre 1 y 100.");
+          }
+        }
+      }
 
       const payload = {
         spaceId: Number(spaceId),
@@ -187,7 +304,18 @@ export default function UserNewReservation() {
         notes: notes ? String(notes).trim() : null,
       };
 
+      if (recurring) {
+        payload.recurrenceEnabled = true;
+        payload.recurrencePattern = repeat; // DAILY | WEEKLY | MONTHLY
+        if (endRule === "DATE") {
+          payload.recurrenceEndDate = repeatEndDate;
+        } else {
+          payload.recurrenceCount = Math.max(1, Number(repeatCount || 1));
+        }
+      }
+
       if (editId) {
+        if (loadedSeriesId) payload.applyTo = scope; // ONE | SERIES
         await api.put(`/reservations/${editId}`, payload);
         setSuccess("Reserva actualizada.");
       } else {
@@ -213,6 +341,19 @@ export default function UserNewReservation() {
     }
   }
 
+  function onConfirmApplyScope() {
+    setShowApplyScopeModal(false);
+    if (pendingSubmitMode === "UPDATE") {
+      doSubmit(applyScope);
+    }
+    setPendingSubmitMode(null);
+  }
+
+  function onCancelApplyScope() {
+    setShowApplyScopeModal(false);
+    setPendingSubmitMode(null);
+  }
+
   return (
     <div>
       <Header user={user} />
@@ -232,7 +373,6 @@ export default function UserNewReservation() {
               </div>
             </div>
           </div>
-
 
           {spacesError ? (
             <div className="form-error" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
@@ -269,9 +409,7 @@ export default function UserNewReservation() {
                   onChange={(e) => setSpaceId(e.target.value)}
                   disabled={loadingSpaces || saving}
                 >
-                  <option value="">
-                    {loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}
-                  </option>
+                  <option value="">{loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}</option>
                   {spaces.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} • {formatEUR(s.hourlyRate)} / hora • {s.capacity} persona(s)
@@ -279,7 +417,6 @@ export default function UserNewReservation() {
                   ))}
                 </select>
 
-                {/* Card info espacio (condicional) */}
                 {selectedSpace ? (
                   <div className="space-info-card">
                     <div className="space-info-row">
@@ -296,12 +433,7 @@ export default function UserNewReservation() {
               {/* Fecha */}
               <div className="user-reserve-field full">
                 <label>Fecha *</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  disabled={saving}
-                />
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving} />
               </div>
 
               {/* Hora inicio / fin */}
@@ -313,7 +445,124 @@ export default function UserNewReservation() {
                 disabled={saving}
               />
 
-              {/* Duración + Total (condicional si hay rango válido) */}
+              {/* Recurrencia */}
+              <div className="user-reserve-field full">
+                <div className="recurrence-card">
+                  <div className="recurrence-head">
+                    <div>
+                      <div className="title">Haz recurrente tu reserva</div>
+                      <div className="sub">Configura una cita recurrente y programada para esta reserva</div>
+                    </div>
+                    <label className="toggle-switch" title="Activar recurrencia">
+                      <input
+                        type="checkbox"
+                        checked={recurring}
+                        onChange={(e) => setRecurring(e.target.checked)}
+                        disabled={saving}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+
+                  {recurring ? (
+                    <div className="recurrence-body">
+                      <div style={recurStyles.grid}>
+                        {/* Izquierda: Repetir */}
+                        <div>
+                          <div style={recurStyles.blockTitle}>Repetir</div>
+                          <div style={recurStyles.labelMuted}>Elige el patrón de recurrencia</div>
+                          <div style={{ marginTop: 10 }}>
+                            <select
+                              value={repeat}
+                              onChange={(e) => setRepeat(e.target.value)}
+                              disabled={saving}
+                              style={recurStyles.input}
+                            >
+                              <option value="DAILY">Diaria</option>
+                              <option value="WEEKLY">Mismo día todas las semanas</option>
+                              <option value="MONTHLY">Mismo día todos los meses</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Derecha: Regla de fin */}
+                        <div>
+                          <div style={recurStyles.blockTitle}>Regla de fin</div>
+                          <div style={recurStyles.labelMuted}>Define cuándo finaliza la recurrencia</div>
+
+                          <div style={recurStyles.optionList}>
+                            <div style={recurStyles.optionCard(endRule === "DATE")}>
+                              <input
+                                type="radio"
+                                name="endRule"
+                                checked={endRule === "DATE"}
+                                onChange={() => setEndRule("DATE")}
+                                disabled={saving}
+                                style={{ marginTop: 3 }}
+                              />
+                              <div>
+                                <div style={recurStyles.optionTitle}>Hasta una fecha</div>
+                                <input
+                                  type="date"
+                                  value={repeatEndDate}
+                                  onChange={(e) => setRepeatEndDate(e.target.value)}
+                                  disabled={saving || endRule !== "DATE"}
+                                  style={recurStyles.input}
+                                />
+                              </div>
+                            </div>
+
+                            <div style={recurStyles.optionCard(endRule === "COUNT")}>
+                              <input
+                                type="radio"
+                                name="endRule"
+                                checked={endRule === "COUNT"}
+                                onChange={() => setEndRule("COUNT")}
+                                disabled={saving}
+                                style={{ marginTop: 3 }}
+                              />
+                              <div>
+                                <div style={recurStyles.optionTitle}>Cantidad de ocurrencias</div>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={repeatCount}
+                                  onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
+                                  disabled={saving || endRule !== "COUNT"}
+                                  style={recurStyles.input}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {recurrenceSummary ? (
+                        <div className="recurrence-summary">
+                          <div className="row">
+                            <div>
+                              <div className="k">Patrón</div>
+                              <div className="v">{recurrenceSummary.patternLabel}</div>
+                            </div>
+                            <div>
+                              <div className="k">Inicio</div>
+                              <div className="v">{date}</div>
+                            </div>
+                            <div>
+                              <div className="k">Fin</div>
+                              <div className="v">{recurrenceSummary.endLabel}</div>
+                            </div>
+                          </div>
+                          <div className="hint">Esta reserva se repetirá según la configuración seleccionada.</div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Duración + Total */}
               {durationMinutes > 0 ? (
                 <div className="user-reserve-field full">
                   <div className="pricing-summary">
@@ -380,6 +629,128 @@ export default function UserNewReservation() {
             </div>
           </div>
         </div>
+
+        {/* Modal: aplicar cambios a reserva recurrente */}
+        {showApplyScopeModal ? (
+          <div
+            onClick={onCancelApplyScope}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={(ev) => ev.stopPropagation()}
+              style={{
+                width: "min(520px, 100%)",
+                background: "#fff",
+                borderRadius: 16,
+                boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+                padding: 18,
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>Aplicar cambios</div>
+                <div style={{ color: "#5b6472", fontSize: 13 }}>
+                  Esta reserva es recurrente. ¿Querés aplicar los cambios solo a esta cita o a la serie?
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: 12,
+                    borderRadius: 12,
+                    border: applyScope === "ONE" ? "1px solid #7aa7ff" : "1px solid #e6e9ef",
+                    background: applyScope === "ONE" ? "#f3f7ff" : "#fafbfc",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="applyScope"
+                    value="ONE"
+                    checked={applyScope === "ONE"}
+                    onChange={() => setApplyScope("ONE")}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Solo esta cita</div>
+                    <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
+                      Modifica únicamente la reserva seleccionada.
+                    </div>
+                  </div>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: 12,
+                    borderRadius: 12,
+                    border: applyScope === "SERIES" ? "1px solid #7aa7ff" : "1px solid #e6e9ef",
+                    background: applyScope === "SERIES" ? "#f3f7ff" : "#fafbfc",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="applyScope"
+                    value="SERIES"
+                    checked={applyScope === "SERIES"}
+                    onChange={() => setApplyScope("SERIES")}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Esta y las siguientes</div>
+                    <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
+                      Aplica el cambio a la serie a partir de esta ocurrencia.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+                <button
+                  type="button"
+                  onClick={onCancelApplyScope}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #e6e9ef",
+                    background: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={onConfirmApplyScope}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #7aa7ff",
+                    background: "#5b86ff",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                  }}
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

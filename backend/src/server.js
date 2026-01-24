@@ -5,6 +5,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const spacesRoutes = require('./routes/spaces');
 const reservationsRoutes = require('./routes/reservations');
+const officeClosuresRoutes = require('./routes/officeClosures');
 const usersRoutes = require('./routes/users');
 const publicRoutes = require('./routes/public');
 
@@ -24,6 +25,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/spaces', spacesRoutes);
 app.use('/api/reservations', reservationsRoutes);
+app.use('/api/office-closures', officeClosuresRoutes);
 app.use('/api/users', usersRoutes); 
 app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);

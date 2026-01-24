@@ -60,6 +60,13 @@ model Reservation {
   status    ReservationStatus @default(ACTIVE)
   createdAt DateTime          @default(now())
   attendees Int               @default(1)
+
+  // ✅ Recurrencia
+  // Si seriesId es null => reserva no recurrente.
+  seriesId           String?
+  recurrencePattern  String?  // DAILY | WEEKLY | MONTHLY
+  recurrenceEndDate  DateTime?
+  recurrenceCount    Int?
   // ✅ NUEVOS (snapshot + cálculo)
   hourlyRateSnapshot Decimal @default(0.00) @db.Decimal(10, 2)
   durationMinutes    Int     @default(0)
@@ -117,6 +124,17 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+// ✅ Cierres del coworking (feriados / mantenimiento / etc.)
+// Si la tabla está vacía, se interpreta que NO hay cierres.
+model OfficeClosure {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([date])
 }
 
 enum ReservationStatus {

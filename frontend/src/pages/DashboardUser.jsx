@@ -359,6 +359,24 @@ export default function DashboardUser() {
               </div>
 
               <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                {detailRes.seriesId ? (
+                  <div style={{ opacity: 0.85 }}>
+                    Recurrencia:{' '}
+                    <b>
+                      {String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'DAILY'
+                        ? 'Diaria'
+                        : String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'MONTHLY'
+                          ? 'Mismo día todos los meses'
+                          : 'Mismo día todas las semanas'}
+                    </b>
+                    {detailRes.recurrenceCount ? (
+                      <span> • Fin: <b>{detailRes.recurrenceCount} ocurrencias</b></span>
+                    ) : detailRes.recurrenceEndDate ? (
+                      <span> • Fin: <b>{String(detailRes.recurrenceEndDate).slice(0, 10)}</b></span>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div style={{ opacity: 0.85 }}>
                   Participantes: <b>{detailRes.attendees ?? 1}</b>
                 </div>

@@ -157,3 +157,14 @@ model PasswordResetToken {
   @@index([userId])
   @@index([tokenHash])
 }
+
+// ✅ Cierres del coworking (feriados / mantenimiento / etc.)
+// Si la tabla está vacía, se interpreta que NO hay cierres.
+model OfficeClosure {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
