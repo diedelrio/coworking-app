@@ -227,19 +227,19 @@ export default function DashboardUser() {
 
           {/* KPIs (mock) */}
           <div className="dashboard-kpis">
-            <div className="user-card">
+            <div className="user-card card-accent card-accent--grey">
               <div className="kpi-title">Reservas totales</div>
               <div className="kpi-value">{totalCount}</div>
               <div className="kpi-sub">Incluye canceladas y rechazadas.</div>
             </div>
 
-            <div className="user-card">
+            <div className="user-card card-accent card-accent--blue">
               <div className="kpi-title">Próximas</div>
               <div className="kpi-value">{upcomingCount}</div>
               <div className="kpi-sub">Activas o pendientes desde hoy.</div>
             </div>
 
-            <div className="user-card">
+            <div className="user-card card-accent card-accent--green">
               <div className="kpi-title">Hoy</div>
               <div className="kpi-value">{todayCount}</div>
               <div className="kpi-sub">Reservas activas o pendientes para hoy.</div>
@@ -279,15 +279,16 @@ export default function DashboardUser() {
             ) : (
               <div className="upcoming-list">
                 {upcomingTop.map((r) => (
-                  <div key={r.id} className="user-card" style={{ padding: 14 }}>
+                  <div
+                    key={r.id}
+                    className={`user-card upcoming-card card-accent ${isToday(r) ? 'card-accent--green' : 'card-accent--blue'}`}
+                    style={{ padding: 14 }}
+                  >
                     <div className="upcoming-card-top">
-                      <div style={{ width: "100%" }}>
-                        {/* Título + estado en la misma línea */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-                          <div className="upcoming-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span>{r?.space?.name || `Espacio #${r.spaceId}`}</span>
-                            <span className={`status-pill status-${r.status}`}>{statusLabel(r.status)}</span>
-                          </div>
+                      <div className="upcoming-info">
+                        <div className="upcoming-title" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span>{r?.space?.name || `Espacio #${r.spaceId}`}</span>
+                          <span className={`status-pill status-${r.status}`}>{statusLabel(r.status)}</span>
                         </div>
 
                         <div className="upcoming-meta">
@@ -299,8 +300,8 @@ export default function DashboardUser() {
                           {r.totalAmount != null ? <span>💶 {formatEUR(r.totalAmount)}</span> : null}
                         </div>
                       </div>
-                    </div>
-                    <div className="upcoming-actions">
+
+                      <div className="upcoming-actions upcoming-actions--inline">
                       <button
                         className="pill-button-outline"
                         type="button"
@@ -329,6 +330,7 @@ export default function DashboardUser() {
                       >
                         Cancelar
                       </button>
+                    </div>
                     </div>
                   </div>
                 ))}
