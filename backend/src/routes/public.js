@@ -21,6 +21,8 @@ router.get('/settings', async (_req, res) => {
       'MAX_DAYS_UPCOMING_BOOKING',
       'RESERVATION_STEP_MINUTES',
       'HALF_DAY_MINUTES',
+      'RESERVATION_MIN_MINUTES',
+      'MIN_HOURS_BEFORE',
     ];
 
     const rows = await prisma.setting.findMany({

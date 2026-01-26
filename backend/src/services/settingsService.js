@@ -65,6 +65,7 @@ async function getReservationRules() {
     'OFFICE_CLOSE_HOUR',
     'RESERVATION_MIN_MINUTES',
     'RESERVATION_STEP_MINUTES',
+    'MIN_HOURS_BEFORE',
   ];
 
   const m = await getActiveSettingsMap(keys);
@@ -74,12 +75,14 @@ async function getReservationRules() {
   const closeHour = toTyped(m.OFFICE_CLOSE_HOUR?.value, m.OFFICE_CLOSE_HOUR?.valueType, 18);
   const minMinutes = toTyped(m.RESERVATION_MIN_MINUTES?.value, m.RESERVATION_MIN_MINUTES?.valueType, 60);
   const stepMinutes = toTyped(m.RESERVATION_STEP_MINUTES?.value, m.RESERVATION_STEP_MINUTES?.valueType, 30);
+  const minMinutesBefore = toTyped(m.MIN_HOURS_BEFORE?.value, m.MIN_HOURS_BEFORE?.valueType, 0);
 
   return {
     openHour: Number(openHour),
     closeHour: Number(closeHour),
     minMinutes: Number(minMinutes),
     stepMinutes: Number(stepMinutes),
+    minMinutesBefore: Number(minMinutesBefore),
   };
 }
 

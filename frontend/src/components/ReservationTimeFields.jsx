@@ -1,272 +1,137 @@
-import { useEffect, useMemo, useState } from "react";
-import api from "../api/axiosClient";
+import { useMemo, useState, useEffect } from "react";
+import { hhmmToMinutes, minutesToHHMM, pickClosestEndOption } from "../utils/timeUtils";
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-/**
- * Parse settings that represent an HOUR or TIME.
- * Accepts:
- * - "9" / "09"  => 9:00 (hours)
- * - "09:00"      => 09:00
- * - "09:00:00"   => 09:00
- */
-function toMinutesFromHour(v, fallbackMinutes) {
-  if (v === null || v === undefined || v === "") return fallbackMinutes;
-  const s = String(v).trim();
-  // "9" or "09" -> hours
-  if (/^\d{1,2}$/.test(s)) return Number(s) * 60;
-  // "09:00" or "9:00"
-  if (/^\d{1,2}:\d{2}$/.test(s)) {
-    const [h, m] = s.split(":").map(Number);
-    return h * 60 + m;
-  }
-  // "09:00:00"
-  if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) {
-    const [h, m] = s.split(":").slice(0, 2).map(Number);
-    return h * 60 + m;
-  }
-  return fallbackMinutes;
-}
-
-/**
- * Parse settings that represent MINUTES.
- * Accepts numeric or numeric strings (e.g. "30", 30).
- */
-function toIntMinutes(v, fallbackMinutes) {
-  if (v === null || v === undefined || v === "") return fallbackMinutes;
-  const num = Number(String(v).trim());
-  if (Number.isNaN(num)) return fallbackMinutes;
-  return Math.floor(num);
-}
-
-function toHHMM(totalMin) {
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${pad2(h)}:${pad2(m)}`;
-}
-
-function minutesBetween(startHHMM, endHHMM) {
-  const [sh, sm] = (startHHMM || "0:0").split(":").map(Number);
-  const [eh, em] = (endHHMM || "0:0").split(":").map(Number);
-  return eh * 60 + em - (sh * 60 + sm);
-}
-
-function buildOptions(openMin, closeMin, stepMin, minValueMin = openMin, maxValueMin = closeMin) {
-  const out = [];
-  for (let t = minValueMin; t <= maxValueMin; t += stepMin) out.push(toHHMM(t));
-  return out;
-}
-
-/**
- * Reusable time controls for reservations (User + Admin).
- * - Uses public settings: OFFICE_OPEN_HOUR, OFFICE_CLOSE_HOUR, RESERVATION_STEP_MINUTES, HALF_DAY_MINUTES
- * - Supports manual selection, half-day, full-day
- */
 export default function ReservationTimeFields({
   startTime,
   endTime,
   setStartTime,
   setEndTime,
   disabled = false,
-  labelStart = "Hora de Inicio *",
-  labelEnd = "Hora de Fin *",
+  startOptions = [],
+  endOptions = [],
+  error = "",
+  warning = "",
+  halfDayMinutes = 300,
 }) {
-  const [settings, setSettings] = useState(null);
-  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [mode, setMode] = useState("MANUAL"); // MANUAL | HALF | FULL
 
-  const [mode, setMode] = useState("MANUAL"); // MANUAL | HALF_DAY | FULL_DAY
+  // Si cambian opciones y el valor actual no existe, corregimos (defensivo)
+  useEffect(() => {
+    if (!startOptions?.length) return;
+    if (startTime && startOptions.includes(startTime)) return;
+    setStartTime(startOptions[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startOptions]);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await api.get("/public/settings");
-        if (!mounted) return;
-        setSettings(res.data?.settings || {});
-      } catch (e) {
-        // fallback (safe defaults)
-        if (!mounted) return;
-        setSettings({});
-      } finally {
-        if (mounted) setLoadingSettings(false);
+    if (!endOptions?.length) return;
+    if (endTime && endOptions.includes(endTime)) return;
+    setEndTime(endOptions[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endOptions]);
+
+  const modeBtn = (active) => ({
+    padding: "8px 14px",
+    borderRadius: 999,
+    border: "1px solid #d6dbe6",
+    background: active ? "#5b86ff" : "#fff",
+    color: active ? "#fff" : "#2a2f3a",
+    fontWeight: 700,
+    fontSize: 12,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.6 : 1,
+  });
+
+  const handleMode = (next) => {
+    if (disabled) return;
+    setMode(next);
+
+    if (!startOptions?.length) return;
+
+    if (next === "FULL") {
+      const st = startOptions[0];
+      setStartTime(st);
+      // en full day: queremos el último end posible
+      if (endOptions?.length) {
+        setEndTime(endOptions[endOptions.length - 1]);
       }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+      return;
+    }
 
-  const cfg = useMemo(() => {
-    const openMin = toMinutesFromHour(settings?.OFFICE_OPEN_HOUR, 9 * 60);
-    const closeMin = toMinutesFromHour(settings?.OFFICE_CLOSE_HOUR, 18 * 60);
-    const stepMin = toIntMinutes(settings?.RESERVATION_STEP_MINUTES, 30);
-    const halfDayMin = toIntMinutes(settings?.HALF_DAY_MINUTES, 4 * 60);
+    if (next === "HALF") {
+      // medio día: fin = start + halfDayMinutes (si existe), sino el más cercano posible
+      const st = startTime && startOptions.includes(startTime) ? startTime : startOptions[0];
+      setStartTime(st);
 
-    // Ensure sensible bounds
-    const safeOpen = Math.max(0, openMin);
-    const safeClose = Math.max(safeOpen + stepMin, closeMin);
-    const safeStep = Math.max(5, stepMin);
-    const safeHalf = Math.max(safeStep, Math.min(halfDayMin, safeClose - safeOpen));
+      if (endOptions?.length) {
+        const target = minutesToHHMM(hhmmToMinutes(st) + Number(halfDayMinutes || 300));
+        const picked = pickClosestEndOption(endOptions, target);
+        setEndTime(picked || endOptions[0]);
+      }
+      return;
+    }
 
-    return { openMin: safeOpen, closeMin: safeClose, stepMin: safeStep, halfDayMin: safeHalf };
-  }, [settings]);
-
-  const halfDayStartOptions = useMemo(() => {
-    const morning = cfg.openMin;
-    const afternoon = cfg.closeMin - cfg.halfDayMin;
-    // If halfDayMin equals full day, afternoon==open; keep unique.
-    const opts = Array.from(new Set([morning, afternoon])).sort((a, b) => a - b);
-    return opts.map(toHHMM);
-  }, [cfg]);
-
-  const manualStartOptions = useMemo(() => {
-    // start must allow at least one step to end
-    return buildOptions(cfg.openMin, cfg.closeMin, cfg.stepMin, cfg.openMin, cfg.closeMin - cfg.stepMin);
-  }, [cfg]);
-
-  const manualEndOptions = useMemo(() => {
-    const sMin = toMinutesFromHour(startTime, cfg.openMin);
-    const minEnd = Math.min(cfg.closeMin, sMin + cfg.stepMin);
-    return buildOptions(cfg.openMin, cfg.closeMin, cfg.stepMin, minEnd, cfg.closeMin);
-  }, [cfg, startTime]);
-
-  // Keep endTime valid when in manual mode and startTime changes
-  useEffect(() => {
-    if (loadingSettings) return;
-    if (mode !== "MANUAL") return;
-
-    const dur = minutesBetween(startTime, endTime);
-    if (dur >= cfg.stepMin) return;
-
-    const sMin = toMinutesFromHour(startTime, cfg.openMin);
-    const nextEnd = Math.min(cfg.closeMin, sMin + cfg.stepMin);
-    setEndTime(toHHMM(nextEnd));
-  }, [startTime, endTime, mode, loadingSettings, cfg, setEndTime]);
-
-  // Mode handlers
-  function activateManual() {
-    setMode("MANUAL");
-  }
-
-  function activateFullDay() {
-    setMode("FULL_DAY");
-    setStartTime(toHHMM(cfg.openMin));
-    setEndTime(toHHMM(cfg.closeMin));
-  }
-
-  function activateHalfDay() {
-    setMode("HALF_DAY");
-    // default: morning slot
-    const start = halfDayStartOptions[0] || toHHMM(cfg.openMin);
-    setStartTime(start);
-    const sMin = toMinutesFromHour(start, cfg.openMin);
-    setEndTime(toHHMM(Math.min(cfg.closeMin, sMin + cfg.halfDayMin)));
-  }
-
-  // When half-day start changes, keep end synced
-  useEffect(() => {
-    if (loadingSettings) return;
-    if (mode !== "HALF_DAY") return;
-    const sMin = toMinutesFromHour(startTime, cfg.openMin);
-    setEndTime(toHHMM(Math.min(cfg.closeMin, sMin + cfg.halfDayMin)));
-  }, [mode, startTime, loadingSettings, cfg, setEndTime]);
-
-  // If user manually changes times while not in MANUAL, switch to MANUAL
-  function onManualStartChange(v) {
-    if (mode !== "MANUAL") setMode("MANUAL");
-    setStartTime(v);
-  }
-  function onManualEndChange(v) {
-    if (mode !== "MANUAL") setMode("MANUAL");
-    setEndTime(v);
-  }
-
-  const isDisabled = disabled || loadingSettings;
+    // MANUAL: no toca horas
+  };
 
   return (
-    <div className="reserve-time-block">
-      <div className="reserve-time-toggles">
-        <button
-          type="button"
-          className={`reserve-toggle ${mode === "MANUAL" ? "active" : ""}`}
-          onClick={activateManual}
-          disabled={disabled}
-          title="Elegir horario manualmente"
-        >
+    <div className="user-reserve-field full">
+      <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+        <button type="button" onClick={() => handleMode("MANUAL")} style={modeBtn(mode === "MANUAL")}>
           Manual
         </button>
-        <button
-          type="button"
-          className={`reserve-toggle ${mode === "HALF_DAY" ? "active" : ""}`}
-          onClick={activateHalfDay}
-          disabled={disabled}
-          title="Reserva de medio día"
-        >
+        <button type="button" onClick={() => handleMode("HALF")} style={modeBtn(mode === "HALF")}>
           Medio día
         </button>
-        <button
-          type="button"
-          className={`reserve-toggle ${mode === "FULL_DAY" ? "active" : ""}`}
-          onClick={activateFullDay}
-          disabled={disabled}
-          title="Reserva de día completo"
-        >
+        <button type="button" onClick={() => handleMode("FULL")} style={modeBtn(mode === "FULL")}>
           Día completo
         </button>
       </div>
 
-      <div className="reserve-time-grid">
-        <div className="user-reserve-field">
-          <label>{labelStart}</label>
-
-          {mode === "FULL_DAY" ? (
-            <input type="time" value={toHHMM(cfg.openMin)} disabled />
-          ) : (
+      <div className="reserve-time-block">
+        <div className="reserve-time-grid">
+          <div className="user-reserve-field">
+            <label>Hora de Inicio *</label>
             <select
-              value={startTime}
+              value={startTime || ""}
               onChange={(e) => {
-                const v = e.target.value;
-                if (mode === "HALF_DAY") {
-                  setStartTime(v);
-                } else {
-                  onManualStartChange(v);
-                }
+                setMode("MANUAL");
+                setStartTime(e.target.value);
               }}
-              disabled={isDisabled}
+              disabled={disabled || !startOptions?.length}
             >
-              {(mode === "HALF_DAY" ? halfDayStartOptions : manualStartOptions).map((t) => (
+              {!startOptions?.length ? <option value="">—</option> : null}
+              {startOptions.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
             </select>
-          )}
-        </div>
+          </div>
 
-        <div className="user-reserve-field">
-          <label>{labelEnd}</label>
-
-          {mode === "MANUAL" ? (
-            <select value={endTime} onChange={(e) => onManualEndChange(e.target.value)} disabled={isDisabled}>
-              {manualEndOptions.map((t) => (
+          <div className="user-reserve-field">
+            <label>Hora de Fin *</label>
+            <select
+              value={endTime || ""}
+              onChange={(e) => {
+                setMode("MANUAL");
+                setEndTime(e.target.value);
+              }}
+              disabled={disabled || !endOptions?.length}
+            >
+              {!endOptions?.length ? <option value="">—</option> : null}
+              {endOptions.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
             </select>
-          ) : (
-            <input type="time" value={endTime || ""} disabled />
-          )}
+          </div>
         </div>
+
+        {error ? <div className="form-error" style={{ marginTop: 10 }}>{error}</div> : null}
+        {warning ? <div className="reserve-time-hint">{warning}</div> : null}
       </div>
-
-      {mode === "HALF_DAY" && (
-        <div className="reserve-time-hint">
-          Podés elegir turno mañana ({toHHMM(cfg.openMin)}) o tarde ({toHHMM(cfg.closeMin - cfg.halfDayMin)}).
-        </div>
-      )}
     </div>
   );
 }

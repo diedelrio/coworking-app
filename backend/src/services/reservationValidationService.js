@@ -50,8 +50,8 @@ function getReservationDurationHours(startTime, endTime) {
  */
 function getDefaultTypeRules(spaceType) {
   const base = {
-    maxHoursPerDayPerUser: 8,
-    maxHoursPerWeekPerUser: 20,
+    maxHoursPerDayPerUser: 9,
+    maxHoursPerWeekPerUser: 45,
     maxOverlappingSpacesPerUser: 1,
     maxSpacesPerDayPerUser: 1,
   };
@@ -67,7 +67,7 @@ function getDefaultTypeRules(spaceType) {
     case 'OFFICE_ROOM':
       return {
         ...base,
-        maxHoursPerDayPerUser: 8,
+        maxHoursPerDayPerUser: 9,
         maxHoursPerWeekPerUser: 30,
         maxSpacesPerDayPerUser: 1,
       };
@@ -186,6 +186,9 @@ async function validateAndBuildReservation({
     (sum, r) => sum + getReservationDurationHours(r.startTime, r.endTime),
     0
   );
+  console.log('usedDayHours:', usedDayHours);
+  console.log('newReservationHours:', newReservationHours);
+  console.log('typeRules.maxHoursPerDayPerUser:', typeRules.maxHoursPerDayPerUser);
 
   if (usedDayHours + newReservationHours > typeRules.maxHoursPerDayPerUser) {
     throw new ReservationValidationError(

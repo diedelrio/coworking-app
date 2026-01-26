@@ -4,6 +4,12 @@ import api from "../api/axiosClient";
 import Header from "../components/Header";
 import ReservationTimeFields from "../components/ReservationTimeFields";
 import { getCurrentUser } from "../utils/auth";
+import {
+  buildStartTimeOptions,
+  buildEndTimeOptions,
+  minutesBetween,
+} from "../utils/timeUtils";
+
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -29,12 +35,6 @@ function toYMD(dateLike) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function minutesBetween(startHHMM, endHHMM) {
-  const [sh, sm] = (startHHMM || "0:0").split(":").map(Number);
-  const [eh, em] = (endHHMM || "0:0").split(":").map(Number);
-  return eh * 60 + em - (sh * 60 + sm);
-}
-
 function formatEUR(value) {
   const num = Number(value || 0);
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(num);
@@ -57,6 +57,17 @@ export default function UserNewReservation() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // settings (para combos de horas)
+  const [settings, setSettings] = useState(null);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+
+  // time options + flags UX
+  const [startTimeOptions, setStartTimeOptions] = useState([]);
+  const [endTimeOptions, setEndTimeOptions] = useState([]);
+  const [timeError, setTimeError] = useState("");
+  const [timeWarning, setTimeWarning] = useState("");
+  const [timeEditable, setTimeEditable] = useState(true);
 
   // form
   const [spaceId, setSpaceId] = useState("");
@@ -83,6 +94,9 @@ export default function UserNewReservation() {
 
   // pricing snapshot para UI (en edit se congela)
   const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
+
+  // para edición: la hora original define desde dónde se pinta el combo
+  const [originalStartTime, setOriginalStartTime] = useState(null);
 
   const selectedSpace = useMemo(
     () => spaces.find((s) => String(s.id) === String(spaceId)) || null,
@@ -171,6 +185,28 @@ export default function UserNewReservation() {
     })();
   }, []);
 
+  // cargar settings públicos (horarios + reglas)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingSettings(true);
+        const res = await api.get("/public/settings");
+        // backend suele devolver { settings: {...} }
+        const s = res?.data?.settings || res?.data || {};
+        if (mounted) setSettings(s);
+      } catch (e) {
+        console.error(e);
+        if (mounted) setSettings({});
+      } finally {
+        if (mounted) setLoadingSettings(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   // cargar reserva si edit
   useEffect(() => {
     if (!editId) return;
@@ -183,8 +219,14 @@ export default function UserNewReservation() {
 
         setSpaceId(String(r.spaceId));
         setDate(toYMD(r.date));
-        setStartTime(toHHMM(r.startTime));
+
+        const st = toHHMM(r.startTime);
+        setStartTime(st);
         setEndTime(toHHMM(r.endTime));
+
+        // ✅ base para pintar el combo en edición
+        setOriginalStartTime(st);
+
         setAttendees(Number(r.attendees ?? 1));
         setPurpose(r.purpose ?? "");
         setNotes(r.notes ?? "");
@@ -258,6 +300,56 @@ export default function UserNewReservation() {
     if (!shared) setAttendees(1);
   }, [shared, selectedSpace]);
 
+  // ===== construir combos de horas (inicio/fin) =====
+  useEffect(() => {
+    if (!settings || !date) return;
+
+    setTimeError("");
+    setTimeWarning("");
+    setTimeEditable(true);
+
+    const result = buildStartTimeOptions({
+      mode: editId ? "edit" : "create",
+      selectedDateYMD: date,
+      now: new Date(),
+      settings,
+      originalStartTime: editId ? originalStartTime : null,
+    });
+
+    setStartTimeOptions(result.options || []);
+    setTimeEditable(!!result.editable);
+
+    if (result.error) setTimeError(result.error);
+    if (result.warning) setTimeWarning(result.warning);
+
+    // Ajuste automático si el valor actual no es válido
+    if (result.options?.length) {
+      if (!result.options.includes(startTime)) {
+        setStartTime(result.options[0]);
+      }
+    } else {
+      // no hay opciones: limpiamos para evitar submit accidental
+      setStartTime("");
+      setEndTime("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, date, editId, originalStartTime]);
+
+  useEffect(() => {
+    if (!settings || !startTime) {
+      setEndTimeOptions([]);
+      return;
+    }
+
+    const opts = buildEndTimeOptions({ startTime, settings });
+    setEndTimeOptions(opts);
+
+    if (opts.length && !opts.includes(endTime)) {
+      setEndTime(opts[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, startTime]);
+
   async function submit() {
     setSuccess("");
     setFormError("");
@@ -265,7 +357,15 @@ export default function UserNewReservation() {
     if (!spaceId) return setFormError("Seleccioná un espacio.");
     if (!date) return setFormError("Seleccioná una fecha.");
     if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
-    if (minutesBetween(startTime, endTime) <= 0) return setFormError("La hora fin debe ser mayor a inicio.");
+
+    if (timeError) return setFormError(timeError);
+    if (editId && !timeEditable) {
+      return setFormError("Esta reserva ya no puede modificarse por la regla de antelación.");
+    }
+
+    if (minutesBetween(startTime, endTime) <= 0) {
+      return setFormError("La hora fin debe ser mayor a inicio.");
+    }
 
     // En edición de una reserva recurrente: preguntar alcance (ONE vs SERIES)
     if (editId && loadedSeriesId) {
@@ -354,6 +454,9 @@ export default function UserNewReservation() {
     setPendingSubmitMode(null);
   }
 
+  const timeFieldsDisabled =
+    saving || loadingSettings || (editId && !timeEditable);
+
   return (
     <div>
       <Header user={user} />
@@ -433,7 +536,12 @@ export default function UserNewReservation() {
               {/* Fecha */}
               <div className="user-reserve-field full">
                 <label>Fecha *</label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving} />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={saving || (editId && !timeEditable)}
+                />
               </div>
 
               {/* Hora inicio / fin */}
@@ -442,7 +550,13 @@ export default function UserNewReservation() {
                 endTime={endTime}
                 setStartTime={setStartTime}
                 setEndTime={setEndTime}
-                disabled={saving}
+                disabled={timeFieldsDisabled}
+                // ✅ nuevos props (ver patch del componente)
+                startOptions={startTimeOptions}
+                endOptions={endTimeOptions}
+                error={timeError}
+                warning={timeWarning}
+                halfDayMinutes={settings?.HALF_DAY_MINUTES}
               />
 
               {/* Recurrencia */}
@@ -458,7 +572,7 @@ export default function UserNewReservation() {
                         type="checkbox"
                         checked={recurring}
                         onChange={(e) => setRecurring(e.target.checked)}
-                        disabled={saving}
+                        disabled={saving || (editId && !timeEditable)}
                       />
                       <span className="toggle-slider" />
                     </label>
@@ -475,7 +589,7 @@ export default function UserNewReservation() {
                             <select
                               value={repeat}
                               onChange={(e) => setRepeat(e.target.value)}
-                              disabled={saving}
+                              disabled={saving || (editId && !timeEditable)}
                               style={recurStyles.input}
                             >
                               <option value="DAILY">Diaria</option>
@@ -497,7 +611,7 @@ export default function UserNewReservation() {
                                 name="endRule"
                                 checked={endRule === "DATE"}
                                 onChange={() => setEndRule("DATE")}
-                                disabled={saving}
+                                disabled={saving || (editId && !timeEditable)}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -506,7 +620,7 @@ export default function UserNewReservation() {
                                   type="date"
                                   value={repeatEndDate}
                                   onChange={(e) => setRepeatEndDate(e.target.value)}
-                                  disabled={saving || endRule !== "DATE"}
+                                  disabled={saving || endRule !== "DATE" || (editId && !timeEditable)}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -518,7 +632,7 @@ export default function UserNewReservation() {
                                 name="endRule"
                                 checked={endRule === "COUNT"}
                                 onChange={() => setEndRule("COUNT")}
-                                disabled={saving}
+                                disabled={saving || (editId && !timeEditable)}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -529,7 +643,7 @@ export default function UserNewReservation() {
                                   max={100}
                                   value={repeatCount}
                                   onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
-                                  disabled={saving || endRule !== "COUNT"}
+                                  disabled={saving || endRule !== "COUNT" || (editId && !timeEditable)}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -586,7 +700,7 @@ export default function UserNewReservation() {
                   min={1}
                   value={attendees}
                   onChange={(e) => setAttendees(Number(e.target.value || 1))}
-                  disabled={saving || !shared}
+                  disabled={saving || !shared || (editId && !timeEditable)}
                 />
                 <div className="user-reserve-help">
                   {shared
@@ -602,7 +716,7 @@ export default function UserNewReservation() {
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   placeholder="ej. Reunión de equipo, Presentación a cliente"
-                  disabled={saving}
+                  disabled={saving || (editId && !timeEditable)}
                 />
               </div>
 
@@ -613,7 +727,7 @@ export default function UserNewReservation() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Algún requerimiento especial o nota..."
-                  disabled={saving}
+                  disabled={saving || (editId && !timeEditable)}
                 />
               </div>
             </div>
@@ -623,7 +737,11 @@ export default function UserNewReservation() {
               <button className="pill-button-outline" onClick={() => navigate("/user")} disabled={saving}>
                 Cancelar
               </button>
-              <button className="pill-button" onClick={submit} disabled={saving || loadingSpaces}>
+              <button
+                className="pill-button"
+                onClick={submit}
+                disabled={saving || loadingSpaces || loadingSettings || !!timeError || (editId && !timeEditable)}
+              >
                 {saving ? "Guardando..." : editId ? "Guardar cambios" : "Crear Reserva"}
               </button>
             </div>
