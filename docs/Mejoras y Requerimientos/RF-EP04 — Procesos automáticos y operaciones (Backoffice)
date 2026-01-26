@@ -7,3 +7,34 @@ Reglas de negocio:
 Criterios de aceptación:
     Reservas que cumplan condición quedan en estado “PASSED/PAST” (o el enum actual).
     No modifica reservas futuras ni canceladas.
+
+RF-OPER-01 — Proceso manual: pasar reservas activas a COMPLETED
+Descripción: Un proceso manual que debe permitir seleccionar reservas en estado ACTIVE actualizar el estado de reservas a “COMPLETED”. Este proceso se deja como workarround por si falla el automático.
+Se debera generar una opcion nueva en dashboard del administrador para ejecutar este proceso. Se agregara una opción en la barra sidebard "Operaciones" y luego en el cuerpo de la pagina cada proceso que generemos.
+Reglas de negocio:
+    Frecuencia: a pedido del administrador.
+    Filtro: solo reservas en estado ACTIVE y a su vez con opciones de filtro por:
+        fecha/hora de fin
+        usuario
+        espacio reservado
+    Criterio de “COMPLETED”: reservas cuya fecha/hora de fin ya ocurrió (según timezone del sistema).
+
+Criterios de aceptación:
+    Reservas que cumplan condición quedan en estado “PASSED/PAST” (o el enum actual).
+    No modifica reservas futuras ni canceladas.
+
+RF-OPER-02 - Proceso manual de facturación 
+Descripción: Un proceso manual que permita generar facturas para reservas completadas COMPLETED o PENALIZED que aún no tengan liquidación generada.
+Se debera generar una opcion nueva en dashboard del administrador para ejecutar este proceso. Se agregara la opcion dentro de la pagina de la opcion de "Operaciones" creada en la historia RF-OPER-01. 
+Reglas de negocio:
+    Frecuencia: a pedido del administrador.
+    Filtro: solo reservas en estado COMPLETED o PENALIZED y a su vez con opciones de filtro por:
+       usuario
+    Si no se filtra por usuario, se consideran todas las reservas y se genera una liquidación por cada usuario con reservas que cumplan el criterio.
+    Criterio de facturación: reservas que no tengan factura generada.
+
+Criterios de aceptación:
+    Se genera liquidación para todas las reservas que cumplan condición.
+    No modifica reservas futuras ni canceladas.
+    Si no hay reservas que cumplan condición, no se genera ninguna liquidación.
+     

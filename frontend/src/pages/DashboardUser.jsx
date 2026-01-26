@@ -317,7 +317,8 @@ export default function DashboardUser() {
                         className="pill-button-outline"
                         type="button"
                         disabled={!canEdit(r)}
-                        onClick={() => navigate(`/user/reservar?edit=${r.id}`)}
+                        // Desde el dashboard, el CTA "Editar" debe abrir directamente en modo edición
+                        onClick={() => navigate(`/user/reservar?edit=${r.id}&mode=edit`)}
                       >
                         Editar
                       </button>

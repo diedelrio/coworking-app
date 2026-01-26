@@ -51,6 +51,12 @@ export default function UserReservations() {
   }, []);
 
   function handleEditReservation(id) {
+    // Desde calendario: si es editable, abrimos en modo edición.
+    navigate(`/user/reservar?edit=${encodeURIComponent(id)}&mode=edit`);
+  }
+
+  function handleViewDetails(id) {
+    // Desde lista: siempre abrimos en modo detalle (la pantalla decide si permite edición).
     navigate(`/user/reservar?edit=${encodeURIComponent(id)}`);
   }
 
@@ -113,6 +119,7 @@ export default function UserReservations() {
           onCancelled={async () => {
             await fetchReservations();
           }}
+          onViewDetails={handleViewDetails}
         />
       </>
     )}

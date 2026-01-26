@@ -1,0 +1,123 @@
+🐞 BUG-0003 — Experiencia de Usuario: Formulario de Nueva Reserva
+
+Tipo: Bug / UX
+Prioridad: Media
+Área: Frontend (posible impacto en Backend si requiere ajuste de validaciones o consultas)
+Módulo: Nueva Reserva — Usuario
+
+📌 Descripción
+
+Al intentar crear una nueva reserva, se detectan los siguientes problemas de experiencia de usuario y comportamiento del formulario:
+
+1️⃣ Reserva fuera del horario de atención
+
+Cuando el usuario intenta crear una reserva fuera del horario de atención del coworking:
+
+El sistema muestra el mensaje:
+
+"Ya no es posible reservar para hoy. Seleccioná una fecha futura."
+
+Los combos de horas aparecen deshabilitados (grises), pero permanecen habilitadas las opciones:
+
+Manual
+
+Medio día
+
+Día completo
+
+Esto genera inconsistencia en el estado del formulario y confusión para el usuario.
+
+2️⃣ Cambio de opción Manual → Medio día / Día completo
+
+Si el usuario:
+
+Selecciona la opción Manual
+
+Define una hora de inicio y fin
+
+Luego cambia a Medio día
+
+El sistema recalcula el medio día tomando como referencia la hora de inicio seleccionada en Manual, en lugar de usar los horarios predefinidos de medio día (por ejemplo 09–14 o 14–18).
+
+3️⃣ Falta de opción para editar reservas futuras
+
+En el listado de reservas del usuario:
+
+No existe un botón u opción para editar una reserva ya creada que aún no ha ocurrido.
+
+Esto limita la capacidad del usuario para gestionar sus propias reservas.
+
+🔁 Pasos para reproducir
+
+Ingresar como usuario.
+
+Acceder al Dashboard de Usuario.
+
+Caso 1 y 2:
+
+Seleccionar Nueva Reserva fuera del horario de atención.
+
+Probar las distintas combinaciones descriptas (manual / medio día / día completo).
+
+Caso 3:
+
+Acceder al listado de reservas.
+
+Verificar que no existe opción para editar reservas futuras.
+
+❌ Resultado actual
+
+El formulario queda en un estado inconsistente cuando se intenta reservar fuera de horario.
+
+El cálculo de horarios de medio día y día completo depende incorrectamente de selecciones previas en modo manual.
+
+No es posible editar reservas futuras desde el listado.
+
+✅ Resultado esperado
+Para reservas fuera del horario de atención
+
+Al abrir el formulario, el sistema debe setear automáticamente el primer día laboral siguiente.
+
+Si el usuario selecciona manualmente la fecha del día actual:
+
+Mostrar la advertencia correspondiente.
+
+Poner en readonly todos los campos del formulario, excepto la fecha, para permitir seleccionar otra.
+
+Para cambio de tipo de reserva
+
+Al cambiar de Manual → Medio día / Día completo, el sistema debe:
+
+Resetear las horas y usar los valores predefinidos.
+
+Medio día:
+
+El usuario solo puede elegir 09:00 o 14:00 como hora de inicio.
+
+La hora de fin se setea automáticamente.
+
+Día completo:
+
+El sistema setea automáticamente las horas de inicio y fin correspondientes al horario completo del coworking.
+
+Para edición de reservas
+
+En el listado de reservas, agregar un botón Editar para cada reserva futura.
+
+Al hacer click en Editar, se debe abrir el formulario de Nueva Reserva con los datos precargados para su modificación.
+
+📎 Notas técnicas / posibles causas
+
+Falta de reseteo de estado al cambiar el tipo de reserva.
+
+Validaciones de horario aplicadas parcialmente solo a combos de horas.
+
+Falta de reutilización del formulario de creación en modo edición.
+
+📊 Impacto
+
+Genera confusión en el usuario.
+
+Puede provocar errores en la creación de reservas.
+
+Limita la autonomía del usuario para gestionar y corregir sus propias reservas.

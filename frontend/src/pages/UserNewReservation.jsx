@@ -35,6 +35,19 @@ function toYMD(dateLike) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+
+function nextBusinessDayYMD(ymd) {
+  const d = new Date(`${ymd}T00:00:00`);
+  // 0=Sun,6=Sat
+  do {
+    d.setDate(d.getDate() + 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  return toYMD(d);
+}
+
+function isValidHHMM(v) {
+  return typeof v === "string" && /^\d{2}:\d{2}$/.test(v);
+}
 function formatEUR(value) {
   const num = Number(value || 0);
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(num);
@@ -49,6 +62,18 @@ export default function UserNewReservation() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const editId = params.get("edit");
+  const modeParam = params.get("mode"); // "edit" | null
+  // Desde la lista (Ver detalles) abrimos en modo lectura por defecto.
+  const [detailMode, setDetailMode] = useState(() => Boolean(editId) && modeParam !== "edit");
+
+  useEffect(() => {
+    setDetailMode(Boolean(editId) && modeParam !== "edit");
+  }, [editId, modeParam]);
+
+  const qDate = params.get("date");
+  const qStart = params.get("start");
+  const qEnd = params.get("end");
+  const hasPrefillParams = Boolean(qDate || qStart || qEnd);
 
   const [spaces, setSpaces] = useState([]);
   const [loadingSpaces, setLoadingSpaces] = useState(true);
@@ -68,6 +93,28 @@ export default function UserNewReservation() {
   const [timeError, setTimeError] = useState("");
   const [timeWarning, setTimeWarning] = useState("");
   const [timeEditable, setTimeEditable] = useState(true);
+
+  // Meta de la reserva cargada (para decidir si se puede editar desde "detalles")
+  const [loadedStatus, setLoadedStatus] = useState(null);
+  const [loadedStartISO, setLoadedStartISO] = useState(null);
+
+  const [createLocked, setCreateLocked] = useState(false);
+  const [autoShiftedToNextDay, setAutoShiftedToNextDay] = useState(false);
+
+  const isLoadedFuture = useMemo(() => {
+    if (!loadedStartISO) return false;
+    const t = new Date(loadedStartISO).getTime();
+    return Number.isFinite(t) && t > Date.now();
+  }, [loadedStartISO]);
+
+  // Para habilitar edición desde "detalle" SOLO depende de reglas de negocio de la reserva cargada.
+  // No lo atamos a `timeEditable` porque ese flag está pensado para bloquear la creación cuando
+  // el usuario elige HOY y ya no hay horarios; en modo detalle queremos poder abrir y, si corresponde,
+  // habilitar edición.
+  const canEditLoadedReservation = Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
+  const readOnly = Boolean(editId) ? (detailMode || !canEditLoadedReservation) : false;
+  const showEnableEdit = Boolean(editId) && detailMode && canEditLoadedReservation;
+  const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
 
   // form
   const [spaceId, setSpaceId] = useState("");
@@ -207,6 +254,17 @@ export default function UserNewReservation() {
     };
   }, []);
 
+  // ✅ Prefill desde calendario (BUG-0004): /user/reservar?date=YYYY-MM-DD&start=HH:MM&end=HH:MM
+  useEffect(() => {
+    if (editId) return;
+    if (!hasPrefillParams) return;
+
+    if (qDate) setDate(qDate);
+    if (isValidHHMM(qStart)) setStartTime(qStart);
+    if (isValidHHMM(qEnd)) setEndTime(qEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
+
   // cargar reserva si edit
   useEffect(() => {
     if (!editId) return;
@@ -223,6 +281,16 @@ export default function UserNewReservation() {
         const st = toHHMM(r.startTime);
         setStartTime(st);
         setEndTime(toHHMM(r.endTime));
+
+        // ✅ Para reglas de edición desde "detalle"
+        setLoadedStatus(r.status ?? null);
+        // Construimos un datetime local (suficiente para comparar contra Date.now())
+        const ymd = toYMD(r.date);
+        if (st && /^\d{2}:\d{2}$/.test(st)) {
+          setLoadedStartISO(`${ymd}T${st}:00`);
+        } else {
+          setLoadedStartISO(`${ymd}T00:00:00`);
+        }
 
         // ✅ base para pintar el combo en edición
         setOriginalStartTime(st);
@@ -335,6 +403,42 @@ export default function UserNewReservation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, date, editId, originalStartTime]);
 
+  // ✅ BUG-0003 (1): si al abrir el formulario es imposible reservar hoy (fuera de horario),
+  // setear automáticamente el próximo día laboral (solo en create y si NO vino una fecha por query).
+  useEffect(() => {
+    if (editId) return;
+    if (!settings) return;
+    if (hasPrefillParams && qDate) return;
+    if (autoShiftedToNextDay) return;
+
+    const today = toYMD(new Date());
+    if (date !== today) return;
+
+    const result = buildStartTimeOptions({
+      mode: "create",
+      selectedDateYMD: date,
+      now: new Date(),
+      settings,
+    });
+
+    if (!result?.options?.length && result?.error && String(result.error).includes("Ya no es posible reservar para hoy")) {
+      setDate(nextBusinessDayYMD(today));
+      setAutoShiftedToNextDay(true);
+    }
+  }, [editId, settings, date, hasPrefillParams, qDate, autoShiftedToNextDay]);
+
+  // ✅ BUG-0003 (1): si el usuario selecciona manualmente HOY y ya no hay horarios,
+  // dejar en readonly todo excepto la fecha (para que pueda elegir otra).
+  useEffect(() => {
+    if (editId) {
+      setCreateLocked(false);
+      return;
+    }
+    const today = toYMD(new Date());
+    const lock = date === today && !timeEditable && !!timeError;
+    setCreateLocked(lock);
+  }, [editId, date, timeEditable, timeError]);
+
   useEffect(() => {
     if (!settings || !startTime) {
       setEndTimeOptions([]);
@@ -359,8 +463,12 @@ export default function UserNewReservation() {
     if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
 
     if (timeError) return setFormError(timeError);
-    if (editId && !timeEditable) {
-      return setFormError("Esta reserva ya no puede modificarse por la regla de antelación.");
+    if (readOnly) {
+      return setFormError(
+        detailMode
+          ? "Esta reserva está en modo solo lectura. Tocá \"Editar\" para habilitar cambios (si está permitido)."
+          : "Esta reserva no puede modificarse por las reglas de negocio."
+      );
     }
 
     if (minutesBetween(startTime, endTime) <= 0) {
@@ -455,7 +563,7 @@ export default function UserNewReservation() {
   }
 
   const timeFieldsDisabled =
-    saving || loadingSettings || (editId && !timeEditable);
+    saving || loadingSettings || readOnly || (!editId && createLocked) || (!editId && !timeEditable && !!timeError);
 
   return (
     <div>
@@ -471,8 +579,8 @@ export default function UserNewReservation() {
               </button>
 
               <div className="user-reserve-title">
-                <h1>{editId ? "Editar Reserva" : "Nueva Reserva"}</h1>
-                <p>Crea una nueva reserva de espacio de coworking</p>
+                <h1>{editId ? (readOnly ? "Detalle de Reserva" : "Editar Reserva") : "Nueva Reserva"}</h1>
+                <p>{editId ? "Consulta el detalle de tu reserva" : "Crea una nueva reserva de espacio de coworking"}</p>
               </div>
             </div>
           </div>
@@ -490,7 +598,37 @@ export default function UserNewReservation() {
             </div>
           ) : null}
 
-          {success ? (
+                    {editId ? (
+            <div className="admin-card" style={{ maxWidth: 860, margin: "0 auto 12px", padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontWeight: 900 }}>{detailMode ? "Modo detalle" : "Modo edición"}</div>
+                  {showNotEditableHint ? (
+                    <div style={{ opacity: 0.8, fontSize: 13 }}>
+                      Esta reserva no se puede editar (solo reservas <b>ACTIVAS</b> y <b>futuras</b>).
+                    </div>
+                  ) : (
+                    <div style={{ opacity: 0.8, fontSize: 13 }}>
+                      {detailMode ? "Podés habilitar la edición si la reserva cumple las reglas de negocio." : "Estás editando esta reserva."}
+                    </div>
+                  )}
+                </div>
+
+                {showEnableEdit ? (
+                  <button
+                    type="button"
+                    className="pill-button"
+                    onClick={() => setDetailMode(false)}
+                    disabled={saving}
+                  >
+                    Habilitar edición
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+{success ? (
             <div className="success" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
               {success}
             </div>
@@ -500,7 +638,7 @@ export default function UserNewReservation() {
           <div className="user-reserve-card">
             <div className="user-reserve-card-head">
               <div className="title">Detalles de la Reserva</div>
-              <p className="sub">Completa la información a continuación para crear tu reserva</p>
+              <p className="sub">{editId ? (detailMode ? "Revisa la información de la reserva seleccionada." : "Modificá los datos de tu reserva.") : "Completa la información a continuación para crear tu reserva"}</p>
             </div>
 
             <div className="user-reserve-grid">
@@ -510,7 +648,7 @@ export default function UserNewReservation() {
                 <select
                   value={spaceId}
                   onChange={(e) => setSpaceId(e.target.value)}
-                  disabled={loadingSpaces || saving}
+                  disabled={loadingSpaces || saving || createLocked || readOnly}
                 >
                   <option value="">{loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}</option>
                   {spaces.map((s) => (
@@ -540,7 +678,7 @@ export default function UserNewReservation() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  disabled={saving || (editId && !timeEditable)}
+                  disabled={saving || readOnly}
                 />
               </div>
 
@@ -554,8 +692,9 @@ export default function UserNewReservation() {
                 // ✅ nuevos props (ver patch del componente)
                 startOptions={startTimeOptions}
                 endOptions={endTimeOptions}
-                error={timeError}
-                warning={timeWarning}
+                // En modo detalle (solo lectura) NO mostramos errores/advertencias de edición/creación.
+                error={readOnly ? "" : timeError}
+                warning={readOnly ? "" : timeWarning}
                 halfDayMinutes={settings?.HALF_DAY_MINUTES}
               />
 
@@ -572,7 +711,7 @@ export default function UserNewReservation() {
                         type="checkbox"
                         checked={recurring}
                         onChange={(e) => setRecurring(e.target.checked)}
-                        disabled={saving || (editId && !timeEditable)}
+                        disabled={saving || readOnly}
                       />
                       <span className="toggle-slider" />
                     </label>
@@ -589,7 +728,7 @@ export default function UserNewReservation() {
                             <select
                               value={repeat}
                               onChange={(e) => setRepeat(e.target.value)}
-                              disabled={saving || (editId && !timeEditable)}
+                              disabled={saving || readOnly}
                               style={recurStyles.input}
                             >
                               <option value="DAILY">Diaria</option>
@@ -611,7 +750,7 @@ export default function UserNewReservation() {
                                 name="endRule"
                                 checked={endRule === "DATE"}
                                 onChange={() => setEndRule("DATE")}
-                                disabled={saving || (editId && !timeEditable)}
+                                disabled={saving || readOnly}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -620,7 +759,7 @@ export default function UserNewReservation() {
                                   type="date"
                                   value={repeatEndDate}
                                   onChange={(e) => setRepeatEndDate(e.target.value)}
-                                  disabled={saving || endRule !== "DATE" || (editId && !timeEditable)}
+                                  disabled={saving || endRule !== "DATE" || readOnly}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -632,7 +771,7 @@ export default function UserNewReservation() {
                                 name="endRule"
                                 checked={endRule === "COUNT"}
                                 onChange={() => setEndRule("COUNT")}
-                                disabled={saving || (editId && !timeEditable)}
+                                disabled={saving || readOnly}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -643,7 +782,7 @@ export default function UserNewReservation() {
                                   max={100}
                                   value={repeatCount}
                                   onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
-                                  disabled={saving || endRule !== "COUNT" || (editId && !timeEditable)}
+                                  disabled={saving || endRule !== "COUNT" || readOnly}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -700,7 +839,7 @@ export default function UserNewReservation() {
                   min={1}
                   value={attendees}
                   onChange={(e) => setAttendees(Number(e.target.value || 1))}
-                  disabled={saving || !shared || (editId && !timeEditable)}
+                  disabled={saving || !shared || readOnly || createLocked}
                 />
                 <div className="user-reserve-help">
                   {shared
@@ -716,7 +855,7 @@ export default function UserNewReservation() {
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   placeholder="ej. Reunión de equipo, Presentación a cliente"
-                  disabled={saving || (editId && !timeEditable)}
+                  disabled={saving || readOnly}
                 />
               </div>
 
@@ -727,7 +866,7 @@ export default function UserNewReservation() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Algún requerimiento especial o nota..."
-                  disabled={saving || (editId && !timeEditable)}
+                  disabled={saving || readOnly}
                 />
               </div>
             </div>
@@ -735,16 +874,34 @@ export default function UserNewReservation() {
             {/* Footer botones */}
             <div className="user-reserve-footer">
               <button className="pill-button-outline" onClick={() => navigate("/user")} disabled={saving}>
-                Cancelar
+                {editId ? "Volver" : "Cancelar"}
               </button>
-              <button
-                className="pill-button"
-                onClick={submit}
-                disabled={saving || loadingSpaces || loadingSettings || !!timeError || (editId && !timeEditable)}
-              >
-                {saving ? "Guardando..." : editId ? "Guardar cambios" : "Crear Reserva"}
-              </button>
+
+              {showEnableEdit ? (
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => {
+                    setFormError("");
+                    setDetailMode(false);
+                  }}
+                  disabled={saving}
+                >
+                  Editar
+                </button>
+              ) : null}
+
+              {!readOnly ? (
+                <button
+                  className="pill-button"
+                  onClick={submit}
+                  disabled={saving || loadingSpaces || loadingSettings || !!timeError || readOnly || createLocked}
+                >
+                  {saving ? "Guardando..." : editId ? "Guardar cambios" : "Crear Reserva"}
+                </button>
+              ) : null}
             </div>
+
           </div>
         </div>
 

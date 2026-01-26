@@ -885,6 +885,20 @@ Diego lo borro porque hay dos */
 .status-PENDING { background: rgba(234,179,8,0.12); border-color: rgba(234,179,8,0.25); color: #854d0e; }
 .status-APPROVED { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.25); color: #1e40af; }
 
+/* Botón editar */
+.btn-edit {
+  border: 1px solid rgba(59,130,246,0.35);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(59,130,246,0.10);
+  color: #1e40af;
+}
+
+.btn-edit:hover { background: rgba(59,130,246,0.16); }
+
 /* Botón cancelar */
 .btn-cancel {
   border: none;

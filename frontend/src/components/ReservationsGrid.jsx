@@ -26,6 +26,7 @@ export default function ReservationsGrid({
   defaultStatus = 'ACTIVE',
   showStatusFilter = true,
   onCancelled, // opcional para refrescar afuera
+  onViewDetails, // (id) => void (siempre visible)
 }) {
   const [statusFilter, setStatusFilter] = useState(defaultStatus);
   const [cancellingId, setCancellingId] = useState(null);
@@ -106,7 +107,7 @@ export default function ReservationsGrid({
                 <th>Fecha</th>
                 <th>Franja</th>
                 <th>Estado</th>
-                <th style={{ width: 120 }} />
+                <th style={{ width: 220 }} />
               </tr>
             </thead>
 
@@ -128,16 +129,26 @@ export default function ReservationsGrid({
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      {r.status === 'ACTIVE' ? (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                         <button
                           type="button"
-                          className="btn-cancel"
-                          onClick={() => cancelReservation(r.id)}
-                          disabled={cancellingId === r.id}
+                          className="btn-edit"
+                          onClick={() => onViewDetails?.(r.id)}
                         >
-                          {cancellingId === r.id ? 'Cancelando…' : 'Cancelar'}
+                          Ver detalles
                         </button>
-                      ) : null}
+
+                        {r.status === 'ACTIVE' ? (
+                          <button
+                            type="button"
+                            className="btn-cancel"
+                            onClick={() => cancelReservation(r.id)}
+                            disabled={cancellingId === r.id}
+                          >
+                            {cancellingId === r.id ? 'Cancelando…' : 'Cancelar'}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );

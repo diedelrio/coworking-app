@@ -1,0 +1,68 @@
+🐞 BUG-0004 — Navegación desde calendario a Nueva Reserva
+
+Tipo: Bug / UX
+Prioridad: Media
+Área: Frontend
+Módulo: Mis Reservas / Calendario diario / Nueva Reserva Usuario
+
+📌 Descripción
+
+En la pantalla Mis Reservas, cuando el usuario consulta un día específico desde el calendario mensual, se abre un modal de detalle del día donde se muestran las franjas horarias disponibles.
+
+Actualmente, al hacer click sobre una franja horaria disponible, el sistema no navega correctamente al formulario de Nueva Reserva con los datos seleccionados.
+
+Esto rompe el flujo esperado de creación de reservas desde el calendario.
+
+🔁 Pasos para reproducir
+
+Ingresar como usuario.
+
+Acceder a Mis Reservas.
+
+Seleccionar un día en el calendario mensual.
+
+En el modal “Detalle del día”, hacer click sobre una franja horaria marcada como Disponible (por ejemplo 09:00 – 10:00).
+
+❌ Resultado actual
+
+El click sobre una franja disponible no redirige (o no lo hace correctamente) al formulario de Nueva Reserva.
+
+En caso de navegar, el formulario no tiene precargados:
+
+La fecha seleccionada.
+
+La hora de inicio.
+
+La hora de fin correspondientes a la franja clickeada.
+
+✅ Resultado esperado
+
+Al hacer click en una franja horaria Disponible, el sistema debe:
+
+Navegar automáticamente al formulario de Nueva Reserva.
+
+Setear y precargar:
+
+📅 Fecha seleccionada.
+
+⏰ Hora de inicio.
+
+⏰ Hora de fin.
+
+El formulario debe abrirse en estado listo para confirmar o ajustar la reserva, sin necesidad de volver a seleccionar manualmente estos datos.
+
+📎 Notas técnicas / posibles causas
+
+El evento onClick de la franja no está disparando la navegación.
+
+Falta pasar parámetros (query params o state) al formulario de Nueva Reserva.
+
+El formulario no está interpretando correctamente los datos provenientes del calendario.
+
+📊 Impacto
+
+El usuario no puede crear reservas de forma rápida desde el calendario.
+
+Se pierde una funcionalidad clave de UX orientada a la navegación contextual.
+
+Incrementa fricción y pasos innecesarios en el flujo de reserva.

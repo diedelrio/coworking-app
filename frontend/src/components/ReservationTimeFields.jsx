@@ -15,13 +15,23 @@ export default function ReservationTimeFields({
 }) {
   const [mode, setMode] = useState("MANUAL"); // MANUAL | HALF | FULL
 
+  const halfDayStarts = useMemo(() => {
+    if (!Array.isArray(startOptions) || startOptions.length === 0) return [];
+    const open = startOptions[0];
+    const afternoon = minutesToHHMM(hhmmToMinutes(open) + Number(halfDayMinutes || 300));
+    const allowed = [open, afternoon].filter((t) => startOptions.includes(t));
+    // evitar duplicados
+    return Array.from(new Set(allowed));
+  }, [startOptions, halfDayMinutes]);
+
   // Si cambian opciones y el valor actual no existe, corregimos (defensivo)
   useEffect(() => {
     if (!startOptions?.length) return;
-    if (startTime && startOptions.includes(startTime)) return;
-    setStartTime(startOptions[0]);
+    const allowed = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
+    if (startTime && allowed.includes(startTime)) return;
+    setStartTime(allowed[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startOptions]);
+  }, [startOptions, mode, halfDayStarts]);
 
   useEffect(() => {
     if (!endOptions?.length) return;
@@ -42,37 +52,38 @@ export default function ReservationTimeFields({
     opacity: disabled ? 0.6 : 1,
   });
 
+  const applyHalfDay = (st) => {
+    if (!endOptions?.length) return;
+    const target = minutesToHHMM(hhmmToMinutes(st) + Number(halfDayMinutes || 300));
+    const picked = pickClosestEndOption(endOptions, target);
+    setEndTime(picked || endOptions[0]);
+  };
+
   const handleMode = (next) => {
     if (disabled) return;
-    setMode(next);
-
     if (!startOptions?.length) return;
 
+    setMode(next);
+
+    // ✅ BUG-0003 (2): al cambiar de Manual → Medio día / Día completo, resetear horas y usar valores predefinidos
     if (next === "FULL") {
       const st = startOptions[0];
       setStartTime(st);
-      // en full day: queremos el último end posible
-      if (endOptions?.length) {
-        setEndTime(endOptions[endOptions.length - 1]);
-      }
+      if (endOptions?.length) setEndTime(endOptions[endOptions.length - 1]);
       return;
     }
 
     if (next === "HALF") {
-      // medio día: fin = start + halfDayMinutes (si existe), sino el más cercano posible
-      const st = startTime && startOptions.includes(startTime) ? startTime : startOptions[0];
+      const st = halfDayStarts.length ? halfDayStarts[0] : startOptions[0];
       setStartTime(st);
-
-      if (endOptions?.length) {
-        const target = minutesToHHMM(hhmmToMinutes(st) + Number(halfDayMinutes || 300));
-        const picked = pickClosestEndOption(endOptions, target);
-        setEndTime(picked || endOptions[0]);
-      }
+      applyHalfDay(st);
       return;
     }
 
     // MANUAL: no toca horas
   };
+
+  const startSelectOptions = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
 
   return (
     <div className="user-reserve-field full">
@@ -95,18 +106,29 @@ export default function ReservationTimeFields({
             <select
               value={startTime || ""}
               onChange={(e) => {
+                const v = e.target.value;
+                if (mode === "HALF") {
+                  setStartTime(v);
+                  applyHalfDay(v);
+                  return;
+                }
                 setMode("MANUAL");
-                setStartTime(e.target.value);
+                setStartTime(v);
               }}
-              disabled={disabled || !startOptions?.length}
+              disabled={disabled || !startSelectOptions?.length}
             >
-              {!startOptions?.length ? <option value="">—</option> : null}
-              {startOptions.map((t) => (
+              {!startSelectOptions?.length ? <option value="">—</option> : null}
+              {startSelectOptions.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
             </select>
+            {mode === "HALF" ? (
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+                En medio día solo podés elegir {startSelectOptions.join(" o ")}.
+              </div>
+            ) : null}
           </div>
 
           <div className="user-reserve-field">
@@ -117,7 +139,7 @@ export default function ReservationTimeFields({
                 setMode("MANUAL");
                 setEndTime(e.target.value);
               }}
-              disabled={disabled || !endOptions?.length}
+              disabled={disabled || !endOptions?.length || mode === "HALF" || mode === "FULL"}
             >
               {!endOptions?.length ? <option value="">—</option> : null}
               {endOptions.map((t) => (
@@ -126,10 +148,19 @@ export default function ReservationTimeFields({
                 </option>
               ))}
             </select>
+            {mode === "HALF" || mode === "FULL" ? (
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+                La hora de fin se calcula automáticamente en {mode === "FULL" ? "día completo" : "medio día"}.
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {error ? <div className="form-error" style={{ marginTop: 10 }}>{error}</div> : null}
+        {error ? (
+          <div className="form-error" style={{ marginTop: 10 }}>
+            {error}
+          </div>
+        ) : null}
         {warning ? <div className="reserve-time-hint">{warning}</div> : null}
       </div>
     </div>
