@@ -15,8 +15,10 @@ import AdminUsers from './pages/AdminUsers';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminEmailTemplates from './pages/AdminEmailTemplates';
+import AdminOperations from './pages/AdminOperations';
 import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
+
 
 function App() {
   return (
@@ -82,6 +84,14 @@ function App() {
         element={
           <ProtectedRoute roles={['ADMIN']}>
             <AdminEmailTemplates />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/operaciones"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminOperations />
           </ProtectedRoute>
         }
       />

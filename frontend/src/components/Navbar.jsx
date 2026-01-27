@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { FaHome, FaUserAlt, FaCog, FaChartBar } from 'react-icons/fa';
+import { FaHome, FaUserAlt, FaCog, FaChartBar, FaWrench } from 'react-icons/fa';
 import { MdOutlineMarkEmailRead } from "react-icons/md";
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
@@ -64,6 +64,7 @@ export default function Navbar({ collapsed, onToggle }) {
   const isSettings = path === '/admin/settings';
   const isEmailTemplates = path === '/admin/email-templates';
   const isUsers = path === '/admin/usuarios';
+  const isOperations = path.startsWith('/admin/operaciones');
   const isReports =
     path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
 
@@ -139,6 +140,15 @@ export default function Navbar({ collapsed, onToggle }) {
         label="Email Templates"
         collapsed={collapsed}
         active={isEmailTemplates}
+      />
+
+      {/* Operaciones */}
+      <NavItem
+        to="/admin/operaciones"
+        icon={<FaWrench />}
+        label="Operaciones"
+        collapsed={collapsed}
+        active={isOperations}
       />
 
       {/* Usuarios */}

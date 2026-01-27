@@ -49,5 +49,6 @@ Si no se aplica filtro por usuario:
 
 Criterios de aceptación
     Se genera una liquidación para todas las reservas que cumplan la condición.
+    ✅ Al generar la liquidación, el sistema debe actualizar automáticamente el estado de cada reserva incluida a **INVOICED** (según el diagrama de estados: COMPLETED → INVOICED y PENALIZED → INVOICED).
     No se modifican reservas futuras ni canceladas.
     Si no existen reservas que cumplan el criterio, el sistema no genera liquidaciones y muestra un mensaje informativo al administrador.

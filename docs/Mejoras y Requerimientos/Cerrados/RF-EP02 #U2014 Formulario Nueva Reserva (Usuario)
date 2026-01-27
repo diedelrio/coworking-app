@@ -1,0 +1,70 @@
+RF-RES-U-01 — Reemplazar horas por combos generados dinámicamente
+Descripción: Reemplazar inputs libres de hora por combos seleccionables (Hora inicio / Hora fin).
+Reglas de negocio:
+    Las opciones se generan a partir de:
+        OFFICE_OPEN_HOUR
+        OFFICE_CLOSE_HOUR
+        RESERVATION_STEP_MINUTES
+    La hora fin mínima seleccionable debe ser: horaInicio + RESERVATION_MIN_MINUTES
+    Al cambiar la hora de inicio, se recalculan las opciones válidas de hora fin.
+
+Criterios de aceptación:
+    No se puede seleccionar una hora fuera de rango laboral.
+    No se puede seleccionar fin < inicio + mínimo.
+    Ejemplo esperado (si mínimo = 60 min):
+        9:00 → fin mínimo 10:00; 9:30 → 10:30; etc.
+
+RF-RES-U-02 — Toggles “Medio día” y “Día completo” (mutuamente excluyentes)
+Descripción: Agregar entre Fecha y Horas dos toggles:
+    Reservar medio día
+    Reservar día completo
+    Por defecto ambos OFF y no pueden estar ambos ON.
+
+Comportamiento:
+    Ambos OFF: usuario elige Hora inicio y Hora fin normalmente.
+    Medio día ON: usuario elige solo Hora inicio y el sistema completa Hora fin para “medio día”.
+    Día completo ON: el sistema completa automáticamente Hora inicio y Hora fin y bloquea selección manual.
+    Si el usuario enciende uno, el otro se apaga automáticamente.
+
+Criterios de aceptación:
+    Nunca quedan ambos toggles en ON.
+    Medio día bloquea/oculta hora fin (o la deja readonly) y la completa automáticamente.
+    Día completo bloquea ambos combos y completa inicio/fin.
+
+Nota de definición pendiente (se puede dejar como parámetro): qué significa “medio día” (ej. 4h) y “día completo” (ej. open→close). 
+Si ya está definido en el proyecto, se implementa con esa regla.
+
+RF-RES-U-03 — Recurrencia de reservas (creación y edición)
+Descripción: Permitir convertir una reserva en recurrente desde el formulario.
+UI requerida (card):
+    Título: “Haz recurrente tu reserva”
+    Subtítulo: “Configura una cita recurrente y programada para esta reserva”
+    Toggle para activar recurrencia (OFF por defecto)
+    Combobox “Repetir”:
+        Diaria
+        Mismo día todas las semanas
+        Mismo día todos los meses
+    “Regla de Fin”:
+        Opción: “Selecciona fecha de fin” + datepicker habilitado si se activa
+        Opción: “Selecciona cantidad de ocurrencias” + numérico min 1 max 100
+    Subcard azul suave con resumen: patrón, inicio, fin (fecha o cantidad) y leyenda final “Esta reserva se repetirá…”
+
+Reglas de negocio:
+    Solo una regla de fin activa a la vez (fecha fin o cantidad ocurrencias).
+    Al guardar, se generan ocurrencias según patrón y regla de fin.
+    Edición: si el usuario modifica una reserva recurrente, se debe preguntar:
+        “Cambiar solo esta ocurrencia” o
+        “Cambiar toda la serie”
+
+Criterios de aceptación:
+    Toggle OFF → no se guarda info de recurrencia.
+    Toggle ON → requiere patrón + regla de fin válida.
+    Se genera la cantidad correcta de ocurrencias.
+    En edición, siempre aparece el prompt “una o todas” cuando aplique.
+
+Adicional, detalle de comportamiento:
+                     | MedioDia | DiaEntero | Comportamiento
+      Ambas off      |   off    |    off    | Permite que el usuario seleccione la hora de inicio y hora de fin con las reglas definidas en general.
+      Medio día on   |    on    |    off    | Solo permite elegir la hora de inicio y completa automáticamente la de fin completando el medio día.
+      Dia Entero on  |   off    |     on    | No permite seleccionar hora y completa automáticamente inicio y fin.
+      Ambas on       |    on    |     on    | No permitido, se enciendo una apaga la otra si esta encendida.

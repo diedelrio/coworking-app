@@ -8,75 +8,92 @@ datasource db {
 }
 
 model User {
-  id                  Int                  @id @default(autoincrement())
-  name                String
-  lastName            String
-  phone               String?
-  email               String               @unique
-  password            String
-  role                Role                 @default(CLIENT)
-  active              Boolean              @default(true)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  classify            UserClassify?
-  maternalLastName    String?
+  id               Int           @id @default(autoincrement())
+  name             String
+  lastName         String
+  phone            String?
+  email            String        @unique
+  password         String
+  role             Role          @default(CLIENT)
+  active           Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  classify         UserClassify?
+  maternalLastName String?
+
   passwordResetTokens PasswordResetToken[]
   reservations        Reservation[]
   settingHistories    SettingHistory[]
-  history             UserHistory[]
+  history             UserHistory[]        @relation("UserHistory_User")
+  historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
+  Liquidation         Liquidation[]
 }
 
 model UserHistory {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  field     String
-  oldValue  String?
-  newValue  String?
-  changedBy Int?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  field           String
+  oldValue        String?
+  newValue        String?
+  changedByUserId Int?
+  createdAt       DateTime @default(now())
+
+  user      User  @relation("UserHistory_User", fields: [userId], references: [id])
+  changedBy User? @relation("UserHistory_ChangedBy", fields: [changedByUserId], references: [id])
+
+  @@index([userId])
+  @@index([changedByUserId])
 }
 
 model Space {
-  id           Int           @id @default(autoincrement())
-  name         String
-  type         SpaceType
-  capacity     Int
-  description  String?
-  active       Boolean       @default(true)
-  // ✅ NUEVO
-  hourlyRate   Decimal       @default(0.00) @db.Decimal(10, 2)
-  imageUrl     String?
+  id          Int       @id @default(autoincrement())
+  name        String
+  type        SpaceType
+  capacity    Int
+  description String?
+  active      Boolean   @default(true)
+
+  hourlyRate Decimal @default(0.00) @db.Decimal(10, 2)
+  imageUrl   String?
+
   reservations Reservation[]
 }
 
 model Reservation {
-  id        Int               @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   date      DateTime
   startTime DateTime
   endTime   DateTime
   userId    Int
   spaceId   Int
-  status    ReservationStatus @default(ACTIVE)
-  createdAt DateTime          @default(now())
-  attendees Int               @default(1)
 
+  status            ReservationStatus @default(PENDING)
+  createdAt         DateTime          @default(now())
+  attendees         Int               @default(1)
   // ✅ Recurrencia
   // Si seriesId es null => reserva no recurrente.
-  seriesId           String?
-  recurrencePattern  String?  // DAILY | WEEKLY | MONTHLY
-  recurrenceEndDate  DateTime?
-  recurrenceCount    Int?
-  // ✅ NUEVOS (snapshot + cálculo)
+  seriesId          String?
+  recurrencePattern String? // DAILY | WEEKLY | MONTHLY
+  recurrenceEndDate DateTime?
+  recurrenceCount   Int?
+
+  // snapshot + cálculo
   hourlyRateSnapshot Decimal @default(0.00) @db.Decimal(10, 2)
   durationMinutes    Int     @default(0)
   totalAmount        Decimal @default(0.00) @db.Decimal(10, 2)
-  // ✅ NUEVOS (mock)
+
   purpose String?
   notes   String?
 
-  space     Space             @relation(fields: [spaceId], references: [id])
-  user      User              @relation(fields: [userId], references: [id])
+  space Space @relation(fields: [spaceId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  liquidationItem LiquidationItem?
+
+  @@index([userId])
+  @@index([spaceId])
+  @@index([status])
+  @@index([date])
 }
 
 model Setting {
@@ -88,7 +105,8 @@ model Setting {
   description String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
-  history     SettingHistory[]
+
+  history SettingHistory[]
 }
 
 model SettingHistory {
@@ -99,8 +117,12 @@ model SettingHistory {
   action          SettingAction
   changedByUserId Int?
   createdAt       DateTime      @default(now())
-  changedBy       User?         @relation(fields: [changedByUserId], references: [id])
-  setting         Setting       @relation(fields: [settingId], references: [id])
+
+  changedBy User?   @relation(fields: [changedByUserId], references: [id])
+  setting   Setting @relation(fields: [settingId], references: [id])
+
+  @@index([settingId])
+  @@index([changedByUserId])
 }
 
 model EmailTemplate {
@@ -120,28 +142,50 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
 }
 
-// ✅ Cierres del coworking (feriados / mantenimiento / etc.)
-// Si la tabla está vacía, se interpreta que NO hay cierres.
-model OfficeClosure {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @unique
-  reason    String?
-  createdAt DateTime @default(now())
+model Liquidation {
+  id        Int               @id @default(autoincrement())
+  userId    Int
+  total     Decimal           @db.Decimal(10, 2)
+  status    LiquidationStatus @default(GENERATED)
+  createdAt DateTime          @default(now())
 
-  @@index([date])
+  user  User              @relation(fields: [userId], references: [id])
+  items LiquidationItem[]
+
+  @@index([userId])
+}
+
+model LiquidationItem {
+  id            Int     @id @default(autoincrement())
+  liquidationId Int
+  reservationId Int     @unique
+  amount        Decimal @db.Decimal(10, 2)
+
+  liquidation Liquidation @relation(fields: [liquidationId], references: [id])
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+}
+
+enum LiquidationStatus {
+  GENERATED
+  PAID
+  CANCELLED
 }
 
 enum ReservationStatus {
-  ACTIVE
   PENDING
+  ACTIVE
   CANCELLED
   REJECTED
+  COMPLETED
+  PENALIZED
+  INVOICED
 }
 
 enum Role {

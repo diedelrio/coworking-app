@@ -11,6 +11,7 @@ const publicRoutes = require('./routes/public');
 
 const settingsRouter = require('./routes/settings');
 const adminEmailTemplates = require('./routes/adminEmailTemplates');
+const adminOperations = require('./routes/adminOperations');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -29,7 +30,12 @@ app.use('/api/office-closures', officeClosuresRoutes);
 app.use('/api/users', usersRoutes); 
 app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);
+app.use('/api/admin/operations', adminOperations);
 app.use('/api/public', publicRoutes);
+
+// ✅ Backoffice jobs
+const { startAutoCompleteJob } = require('./jobs/autoCompleteReservations');
+startAutoCompleteJob();
 
 
 const { bootstrapMasterAdmin } = require("./utils/bootstrapAdmin");
