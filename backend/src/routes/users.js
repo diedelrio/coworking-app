@@ -300,7 +300,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
           field,
           oldValue: oldValue !== null ? String(oldValue) : null,
           newValue: newValue !== null ? String(newValue) : null,
-          changedBy: req.user.userId, // ✅ coherente con tu auth
+          changedByUserId: req.user.userId, // ✅ coherente con tu auth
         });
       }
     });
