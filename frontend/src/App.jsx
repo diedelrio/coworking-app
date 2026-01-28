@@ -9,6 +9,7 @@ import UserReservations from './pages/UserReservations';
 import UserNewReservation from './pages/UserNewReservation';
 import AdminSettings from './pages/AdminSettings';
 import AdminNewReservation from './pages/AdminNewReservation';
+import AdminReservationDetails from './pages/AdminReservationDetails';
 import AdminSpaces from './pages/AdminSpaces';
 import AdminNewUser from './pages/AdminNewUser';
 import AdminUsers from './pages/AdminUsers';
@@ -119,6 +120,15 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/reservas/:id"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminReservationDetails />
+          </ProtectedRoute>
+        }
+      />
+
       <Route
         path="/admin/usuarios/nuevo"
         element={

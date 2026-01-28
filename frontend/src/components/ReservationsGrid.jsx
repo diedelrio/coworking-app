@@ -120,7 +120,16 @@ export default function ReservationsGrid({
 
                 return (
                   <tr key={r.id}>
-                    <td className="cell-strong">{r.space?.name || 'Espacio'}</td>
+                    <td className="cell-strong">
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        {r.space?.name || 'Espacio'}
+                        {typeof r.notes === 'string' && r.notes.trim() ? (
+                          <span title="Tiene notas" aria-label="Tiene notas" style={{ fontSize: 14 }}>
+                            📝
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
                     <td>{date}</td>
                     <td>{start} - {end}</td>
                     <td>

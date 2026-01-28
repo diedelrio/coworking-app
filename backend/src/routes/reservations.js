@@ -155,8 +155,12 @@ function addMonthsMonthlyBusinessWeekday({
  * - pattern: DAILY | WEEKLY | MONTHLY
  * - endDate: YYYY-MM-DD (inclusive)
  * - count: cantidad total de ocurrencias (incluye la primera)
+ *
+ * DAILY:
+ *  - Solo lun-vie
+ *  - Excluye cierres/feriados (OfficeClosures)
  */
-function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count }) {
+function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count, closedYMDSet }) {
   const start = new Date(`${startYMD}T00:00:00`);
   if (Number.isNaN(start.getTime())) throw new Error('Fecha inicial inválida');
 
@@ -175,6 +179,15 @@ function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count }) {
 
   const out = [];
   let current = new Date(start);
+  
+
+  // DAILY: solo días hábiles (lun-vie) y excluye feriados/cierres.
+  // Si la fecha inicial cae en finde o cierre, se corre al próximo día hábil.
+  if (pattern === 'DAILY') {
+    while (isWeekend(current) || (closedYMDSet && closedYMDSet.has(ymd(current)))) {
+      current = addDays(current, 1);
+    }
+  }
 
   // Siempre incluye la primera
   for (let i = 0; i < 100; i++) {
@@ -182,14 +195,19 @@ function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count }) {
     out.push(new Date(current));
     if (limitCount && out.length >= limitCount) break;
 
-    if (pattern === 'DAILY') current = addDays(current, 1);
-    else if (pattern === 'WEEKLY') current = addDays(current, 7);
+    if (pattern === 'DAILY') {
+      // avanzar al próximo día hábil
+      do {
+        current = addDays(current, 1);
+      } while (isWeekend(current) || (closedYMDSet && closedYMDSet.has(ymd(current))));
+    } else if (pattern === 'WEEKLY') current = addDays(current, 7);
     else if (pattern === 'MONTHLY') current = addMonthsSameDay(current, 1);
     else throw new Error('Patrón de recurrencia inválido');
   }
 
   return out;
 }
+
 
 /* ------------------------------ Error tipado ------------------------------ */
 
@@ -1151,7 +1169,7 @@ router.get('/:id', authRequired, async (req, res) => {
 
     const reservation = await prisma.reservation.findUnique({
       where: { id },
-      include: { space: true },
+      include: { space: true, user: true },
     });
 
     if (!reservation) {

@@ -9,7 +9,6 @@ import { aggregateSharedSlots, occupyingReservations } from '../utils/reservatio
 import AdminDayResourcesCalendar from '../components/AdminDayResourcesCalendar';
 
 
-
 const SPACE_TYPES = [
   { value: 'FIX_DESK', label: 'Puesto fijo' },
   { value: 'FLEX_DESK', label: 'Puesto flex' },
@@ -367,7 +366,7 @@ async function fetchCalendarReservations() {
         <div style={{ marginBottom: '1.5rem' }}>
           <AdminDashboardWidgets />
         </div>
-        
+
         {/* Tabla de reservas (hoy en adelante) */}
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
           <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>

@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axiosClient';
 
+function hasNotes(str) {
+  return typeof str === 'string' && str.trim().length > 0;
+}
+
 function formatDate(dateStr) {
   try {
     const d = new Date(dateStr);
@@ -335,7 +339,16 @@ export default function AdminDashboardWidgets() {
                       <td>
                         {formatTime(r?.startTime)} - {formatTime(r?.endTime)}
                       </td>
-                      <td>{r?.space?.name || (r ? `Espacio #${r.spaceId}` : '-')}</td>
+                      <td>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          {r?.space?.name || (r ? `Espacio #${r.spaceId}` : '-')}
+                          {hasNotes(r?.notes) ? (
+                            <span title="Tiene notas" aria-label="Tiene notas" style={{ fontSize: 14 }}>
+                              📝
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
                       <td>
                         {r?.user
                           ? `${r.user.name || ''} ${r.user.lastName || ''}`.trim() || r.user.email
@@ -369,7 +382,24 @@ export default function AdminDashboardWidgets() {
                         )}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <Link
+                            className="pill-button-outline"
+                            to={
+                              /*g.type === 'SERIES'
+                                ? `/admin/reservas/${g.reservationId}?type=SERIES&seriesId=${encodeURIComponent(
+                                    g.seriesId
+                                  )}&pattern=${encodeURIComponent(g.pattern || '')}&occurrences=${encodeURIComponent(
+                                    String(g.occurrences || '')
+                                  )}`
+                                : `/admin/reservas/${g.reservationId}`*/
+                              `/admin/reservas/${r.id}`
+                            }
+                            title="Ver detalle"
+                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                          >
+                            Detalle
+                          </Link>
                           <button
                             type="button"
                             className="pill-button-green"
