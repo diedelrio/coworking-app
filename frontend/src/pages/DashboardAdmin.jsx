@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { FiEye, FiEdit2, FiX, FiFileText } from 'react-icons/fi';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import { getCurrentUser } from '../utils/auth';
@@ -28,12 +29,19 @@ export default function DashboardAdmin() {
   const [savingSpace, setSavingSpace] = useState(false);
 
   const [reservations, setReservations] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // ACTIVE | CANCELLED | ALL
+
   const [loadingReservations, setLoadingReservations] = useState(false);
 
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const [error, setError] = useState('');
+
+  // Modal cancelación (admin)
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [canceling, setCanceling] = useState(false);
 
   // Calendario rápido por espacio (día)
   const [calendarSpaceId, setCalendarSpaceId] = useState('ALL');
@@ -46,6 +54,10 @@ export default function DashboardAdmin() {
   // Paginación reservas futuras
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
 
   // Formulario espacios
   const [editingId, setEditingId] = useState(null);
@@ -102,17 +114,22 @@ async function fetchSpaces() {
           return d >= today;
         })
         .sort((a, b) => {
-          const spaceA = a.space?.name || '';
-          const spaceB = b.space?.name || '';
-          const cmpSpace = spaceA.localeCompare(spaceB);
-          if (cmpSpace !== 0) return cmpSpace;
-
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
           const cmpDate = dateA - dateB;
           if (cmpDate !== 0) return cmpDate;
 
-          return new Date(a.startTime) - new Date(b.startTime);
+          const startA = new Date(a.startTime);
+          const startB = new Date(b.startTime);
+          const cmpStart = startA - startB;
+          if (cmpStart !== 0) return cmpStart;
+
+          const spaceA = a.space?.name || '';
+          const spaceB = b.space?.name || '';
+          const cmpSpace = spaceA.localeCompare(spaceB);
+          if (cmpSpace !== 0) return cmpSpace;
+
+          return 0;
         });
 
       setReservations(upcoming);
@@ -156,17 +173,26 @@ async function fetchCalendarReservations() {
   }
 }
 
-  async function handleCancelReservation(id) {
-  if (!window.confirm('¿Seguro que quieres cancelar esta reserva?')) return;
-
-  try {
-    await api.delete(`/reservations/${id}`);
-    await fetchReservations(); // recarga la tabla
-  } catch (err) {
-    console.error(err);
-    setError('Error al cancelar la reserva');
+  function handleCancelReservation(reservation) {
+    setCancelTarget(reservation);
+    setCancelModalOpen(true);
   }
-}
+
+  async function confirmCancelReservation() {
+    if (!cancelTarget?.id) return;
+    try {
+      setCanceling(true);
+      await api.delete(`/reservations/${cancelTarget.id}`);
+      setCancelModalOpen(false);
+      setCancelTarget(null);
+      await fetchReservations();
+    } catch (err) {
+      console.error(err);
+      setError('Error al cancelar la reserva');
+    } finally {
+      setCanceling(false);
+    }
+  }
 
   async function fetchUsers() {
     try {
@@ -287,10 +313,17 @@ async function fetchCalendarReservations() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(reservations.length / pageSize));
+  const filteredReservations = reservations.filter((r) => {
+    if (statusFilter === 'ALL') return true;
+    if (statusFilter === 'CANCELLED') return r.status === 'CANCELLED';
+    // ACTIVE (por defecto): todo lo que no esté cancelado
+    return r.status !== 'CANCELLED';
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredReservations.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const startIndex = (safePage - 1) * pageSize;
-  const pageItems = reservations.slice(startIndex, startIndex + pageSize);
+  const pageItems = filteredReservations.slice(startIndex, startIndex + pageSize);
 
   return (
     <Layout user={user}>
@@ -342,7 +375,7 @@ async function fetchCalendarReservations() {
               to="/admin/reservas/nueva"
               style={{
                 padding: '0.6rem 1.2rem',
-                borderRadius: '999px',
+                borderRadius: '10px',
                 background: '#4f46e5',
                 color: 'white',
                 fontSize: '0.9rem',
@@ -371,11 +404,48 @@ async function fetchCalendarReservations() {
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
           <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>
             Reservas desde hoy
+          
           </h2>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', color: '#374151' }}>
+              Estado:
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {[
+                  { value: 'ACTIVE', label: 'Activas' },
+                  { value: 'CANCELLED', label: 'Canceladas' },
+                  { value: 'ALL', label: 'Todas' },
+                ].map((opt) => {
+                  const active = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setStatusFilter(opt.value)}
+                      aria-pressed={active}
+                      style={{
+                        padding: '0.35rem 0.65rem',
+                        borderRadius: '999px',
+                        border: `1px solid ${active ? '#4f46e5' : '#e5e7eb'}`,
+                        background: active ? '#4f46e5' : '#ffffff',
+                        color: active ? '#ffffff' : '#374151',
+                        fontWeight: active ? 600 : 500,
+                        cursor: 'pointer',
+                        lineHeight: 1.2,
+                      }}
+                      title={`Filtrar: ${opt.label}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </label>
+          </div>
 
           {loadingReservations ? (
             <p>Cargando reservas...</p>
-          ) : reservations.length === 0 ? (
+          ) : filteredReservations.length === 0 ? (
             <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
               No hay reservas próximas registradas.
             </p>
@@ -389,6 +459,7 @@ async function fetchCalendarReservations() {
                     <th>Franja</th>
                     <th>Usuario</th>
                     <th>Estado</th>
+                    <th>Notas</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -428,18 +499,55 @@ async function fetchCalendarReservations() {
                             <span className="badge green">Activa</span>
                           )}
                         </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {r.notes && String(r.notes).trim() ? (
+                            <span title="Tiene notas" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <FiFileText />
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>—</span>
+                          )}
+                        </td>
                         <td>
                           {r.status !== 'CANCELLED' ? (
-                            <button
-                              className="btn-small btn-danger"
-                              onClick={() => handleCancelReservation(r.id)}
-                            >
-                              Cancelar
-                            </button>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                              <Link
+                                to={`/admin/reservas/nueva?edit=${r.id}`}
+                                title="Ver detalles"
+                                aria-label="Ver detalles"
+                                style={{ display: 'inline-flex', padding: 6, borderRadius: 8 }}
+                              >
+                                <FiEye />
+                              </Link>
+
+                              <Link
+                                to={`/admin/reservas/nueva?edit=${r.id}&mode=edit`}
+                                title="Editar"
+                                aria-label="Editar"
+                                style={{ display: 'inline-flex', padding: 6, borderRadius: 8 }}
+                              >
+                                <FiEdit2 />
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => handleCancelReservation(r)}
+                                title="Cancelar"
+                                aria-label="Cancelar"
+                                style={{
+                                  display: 'inline-flex',
+                                  padding: 6,
+                                  borderRadius: 8,
+                                  border: 'none',
+                                  background: 'transparent',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <FiX />
+                              </button>
+                            </div>
                           ) : (
-                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                              —
-                            </span>
+                            <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>—</span>
                           )}
                         </td>
                       </tr>
@@ -565,7 +673,75 @@ async function fetchCalendarReservations() {
           )}
         </div>
         ESTA ES LA PRIMERA VERSION DE USUARIOS, LA DEJO DE BACKUP POR UNOS DÍAS 20251215*/}
-      </div>
+      
+      {/* Modal confirmación cancelación */}
+      {cancelModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 9999,
+          }}
+          onClick={() => {
+            if (!canceling) {
+              setCancelModalOpen(false);
+              setCancelTarget(null);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              background: '#fff',
+              borderRadius: 14,
+              padding: 18,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Confirmar cancelación</h3>
+            <p style={{ marginTop: 0, color: '#4b5563', fontSize: '0.95rem' }}>
+              ¿Seguro que querés cancelar esta reserva?
+            </p>
+
+            <div style={{ fontSize: '0.9rem', color: '#111827', marginBottom: 14 }}>
+              <div><strong>Espacio:</strong> {cancelTarget?.space?.name || '—'}</div>
+              <div><strong>Usuario:</strong> {cancelTarget?.user?.name || cancelTarget?.user?.email || '—'}</div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-small"
+                disabled={canceling}
+                onClick={() => {
+                  setCancelModalOpen(false);
+                  setCancelTarget(null);
+                }}
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                className="btn-small btn-danger"
+                disabled={canceling}
+                onClick={confirmCancelReservation}
+              >
+                {canceling ? 'Cancelando...' : 'Cancelar reserva'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+</div>
     </Layout>
   );
 }

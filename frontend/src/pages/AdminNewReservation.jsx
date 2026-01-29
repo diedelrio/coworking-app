@@ -10,7 +10,8 @@ import {
   minutesBetween,
 } from "../utils/timeUtils";
 
-const CREATE_USER_PATH = "/admin/users/new"; // <-- ajusta si tu ruta real es otra (ej: /admin/usuarios/nuevo)
+const CREATE_USER_PATH = "/admin/usuarios/nuevo"; 
+
 
 function pad2(n) {
   return String(n).padStart(2, "0");
