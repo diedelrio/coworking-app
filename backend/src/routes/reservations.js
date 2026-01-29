@@ -860,15 +860,18 @@ router.post('/', authRequired, async (req, res) => {
         rangeEnd = addDays(addMonthsSameDay(startDate, 12), 35);
       }
 
-      const closures = await prisma.officeClosure.findMany({
-        where: {
-          date: {
-            gte: startDate,
-            lte: rangeEnd,
-          },
+const closures = prisma.officeClosure
+  ? await prisma.officeClosure.findMany({
+      where: {
+        date: {
+          gte: startDate,
+          lte: rangeEnd,
         },
-        select: { date: true },
-      });
+      },
+      select: { date: true },
+    })
+  : [];
+
 
       const closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
 

@@ -223,3 +223,12 @@ enum UserClassify {
   REGULAR
   BAD
 }
+
+
+model OfficeClosure {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
