@@ -50,6 +50,10 @@ router.post('/login', async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(400).json({ message: 'Credenciales inválidas' });
 
+    if (user.active === false) {
+      return res.status(403).json({ message: 'Tu cuenta aún no fue activada. Revisa tu email.' });
+    }
+
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ message: 'Credenciales inválidas' });
 
@@ -78,6 +82,161 @@ router.post('/login', async (req, res) => {
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
+
+/**
+ * Activación de cuenta
+ * - tokens de 60 minutos (configurable via ACTIVATE_TOKEN_TTL_MINUTES)
+ * - si token expiró: frontend ofrece generar nuevo
+ */
+
+function getActivationTtlMinutes() {
+  const n = Number(process.env.ACTIVATE_TOKEN_TTL_MINUTES || 60);
+  return Number.isFinite(n) && n > 0 ? n : 60;
+}
+
+async function createActivationTokenForUser(userId) {
+  // invalidar tokens previos
+  await prisma.activationToken.updateMany({
+    where: { userId, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + getActivationTtlMinutes() * 60 * 1000);
+
+  await prisma.activationToken.create({
+    data: { userId, tokenHash, expiresAt },
+  });
+
+  return { token, expiresAt };
+}
+
+async function sendActivationEmail({ user, token }) {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const activationLink = `${frontendUrl}/activate?token=${token}`;
+  const ttlMinutes = getActivationTtlMinutes();
+
+  try {
+    const tpl = await getEmailTemplateByKey('CREATE_NEW_USER_BATCH');
+    const { subject, body } = renderEmailTemplate(tpl, {
+      name: user.name || '',
+      activationLink,
+      ttlMinutes,
+    });
+
+    await sendMail({ to: user.email, subject, text: body });
+  } catch (e) {
+    // fallback simple
+    await sendMail({
+      to: user.email,
+      subject: 'Activá tu cuenta',
+      text: `Hola ${user.name || ''}\n\nActivá tu cuenta aquí: ${activationLink}\n\nEste link vence en ${ttlMinutes} minutos.`,
+    });
+  }
+}
+
+// GET /api/auth/activate/validate?token=...
+router.get('/activate/validate', async (req, res) => {
+  try {
+    const token = typeof req.query?.token === 'string' ? req.query.token.trim() : '';
+    if (!token) return res.status(400).json({ message: 'Token requerido' });
+
+    const tokenHash = hashToken(token);
+    const at = await prisma.activationToken.findFirst({
+      where: { tokenHash, usedAt: null },
+      include: { user: true },
+    });
+
+    if (!at || !at.user) return res.status(400).json({ message: 'Token inválido' });
+
+    if (at.expiresAt <= new Date()) {
+      return res.status(410).json({
+        code: 'TOKEN_EXPIRED',
+        message: 'Token expirado',
+        email: at.user.email,
+      });
+    }
+
+    if (at.user.active) {
+      return res.json({ status: 'already_active', email: at.user.email });
+    }
+
+    return res.json({ status: 'ok', email: at.user.email, name: at.user.name });
+  } catch (err) {
+    console.error('ERROR GET /auth/activate/validate', err);
+    return res.status(500).json({ message: 'Error validando token' });
+  }
+});
+
+// POST /api/auth/activate/complete { token, password }
+router.post('/activate/complete', async (req, res) => {
+  try {
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+    if (!token || !password) return res.status(400).json({ message: 'Token y contraseña son obligatorios' });
+    if (password.length < 8) return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+
+    const tokenHash = hashToken(token);
+    const at = await prisma.activationToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      include: { user: true },
+    });
+
+    if (!at || !at.user) {
+      return res.status(400).json({ message: 'Token inválido o expirado' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: at.userId },
+        data: { active: true, password: passwordHash },
+      });
+
+      await tx.activationToken.updateMany({
+        where: { userId: at.userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+    });
+
+    return res.json({ message: 'Cuenta activada correctamente' });
+  } catch (err) {
+    console.error('ERROR POST /auth/activate/complete', err);
+    return res.status(500).json({ message: 'Error activando cuenta' });
+  }
+});
+
+// POST /api/auth/activate/resend { email }
+router.post('/activate/resend', async (req, res) => {
+  try {
+    const emailRaw = req.body?.email;
+    const email = typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : '';
+    if (!email) return res.status(400).json({ message: 'Email requerido' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.json({ message: 'Si el email existe, enviaremos un nuevo enlace.' });
+    }
+    if (user.active) {
+      return res.json({ message: 'La cuenta ya está activa. Puedes iniciar sesión.' });
+    }
+
+    const { token } = await createActivationTokenForUser(user.id);
+    try {
+      await sendActivationEmail({ user, token });
+    } catch (mailErr) {
+      console.error('ERROR sending activation email (resend)', mailErr);
+    }
+
+    return res.json({ message: 'Te enviamos un nuevo enlace de activación.' });
+  } catch (err) {
+    console.error('ERROR POST /auth/activate/resend', err);
+    return res.status(500).json({ message: 'Error reenviando activación' });
+  }
+});
 
 // helper: respuesta genérica para evitar enumeración de emails
 function genericForgotResponse(res) {

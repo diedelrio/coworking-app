@@ -1,6 +1,11 @@
 const express = require('express');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { sendMail } = require('../services/emailService');
+const { getEmailTemplateByKey, renderEmailTemplate } = require('../services/emailTemplateService');
+const { parseDelimitedText } = require('../utils/delimitedParser');
 
 const router = express.Router();
 
@@ -280,6 +285,245 @@ router.post('/liquidations/generate', authRequired, requireAdmin, async (req, re
   } catch (err) {
     console.error('liquidations/generate error:', err);
     return res.status(500).json({ message: 'Error generando liquidaciones' });
+  }
+});
+
+// -----------------------------
+// Alta masiva de usuarios (Batch)
+// -----------------------------
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function normalizeEmail(e) {
+  return typeof e === 'string' ? e.trim().toLowerCase() : '';
+}
+
+function getActivationTtlMinutes() {
+  const n = Number(process.env.ACTIVATE_TOKEN_TTL_MINUTES || 60);
+  return Number.isFinite(n) && n > 0 ? n : 60;
+}
+
+async function createActivationTokenForUser(userId) {
+  await prisma.activationToken.updateMany({
+    where: { userId, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + getActivationTtlMinutes() * 60 * 1000);
+
+  await prisma.activationToken.create({
+    data: { userId, tokenHash, expiresAt },
+  });
+
+  return { token, expiresAt };
+}
+
+async function sendActivationEmail({ user, token }) {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const activationLink = `${frontendUrl}/activate?token=${token}`;
+  const ttlMinutes = getActivationTtlMinutes();
+
+  try {
+    const tpl = await getEmailTemplateByKey('CREATE_NEW_USER_BATCH');
+    const { subject, body } = renderEmailTemplate(tpl, { name: user.name || '', activationLink, ttlMinutes });
+    await sendMail({ to: user.email, subject, text: body });
+  } catch (e) {
+    await sendMail({
+      to: user.email,
+      subject: 'Activá tu cuenta',
+      text: `Hola ${user.name || ''}\n\nActivá tu cuenta aquí: ${activationLink}\n\nEste link vence en ${ttlMinutes} minutos.`,
+    });
+  }
+}
+
+function normalizeUserRow(raw) {
+  const name = (raw.name || raw.nombre || '').trim();
+  const lastName = (raw.lastname || raw.apellido || raw['last_name'] || '').trim();
+  const email = normalizeEmail(raw.email || raw.mail);
+  const phone = (raw.phone || raw.telefono || raw.tel || '').trim() || null;
+  const roleRaw = String(raw.role || '').trim().toUpperCase();
+  const role = roleRaw === 'ADMIN' ? 'ADMIN' : 'CLIENT';
+
+  return { name, lastName, email, phone, role };
+}
+
+function validateUserRow(model) {
+  const errors = [];
+  if (!model.name) errors.push('name requerido');
+  if (!model.lastName) errors.push('lastname requerido');
+  if (!model.email) errors.push('email requerido');
+  if (model.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(model.email)) errors.push('email inválido');
+  if (model.role !== 'CLIENT') errors.push('role no permitido (solo CLIENT)');
+  return errors;
+}
+
+/**
+ * POST /api/admin/operations/users-batch/preview
+ * Body: { fileName, content }
+ */
+router.post('/users-batch/preview', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : null;
+    const content = typeof req.body?.content === 'string' ? req.body.content : '';
+
+    const parsed = parseDelimitedText(content);
+    if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+    const { separator, headers, rows } = parsed;
+
+    const validRows = [];
+    const invalidRows = [];
+
+    const seenEmails = new Set();
+    for (const r of rows) {
+      const model = normalizeUserRow(r.raw);
+      const errors = validateUserRow(model);
+
+      if (model.email) {
+        if (seenEmails.has(model.email)) errors.push('email duplicado en archivo');
+        else seenEmails.add(model.email);
+      }
+
+      if (errors.length) {
+        invalidRows.push({ rowNumber: r.rowNumber, raw: r.raw, normalized: model, errors });
+      } else {
+        validRows.push({ rowNumber: r.rowNumber, raw: r.raw, normalized: model });
+      }
+    }
+
+    return res.json({
+      fileMeta: { fileName, separator, headers, total: rows.length },
+      validRows,
+      invalidRows,
+    });
+  } catch (err) {
+    console.error('users-batch/preview error:', err);
+    return res.status(500).json({ message: 'Error generando preview' });
+  }
+});
+
+/**
+ * POST /api/admin/operations/users-batch/execute
+ * Body: { fileMeta, validRows, options }
+ */
+router.post('/users-batch/execute', authRequired, requireAdmin, async (req, res) => {
+  const adminUserId = req.user?.userId;
+  if (!adminUserId) return res.status(401).json({ message: 'No autorizado' });
+
+  const fileMeta = req.body?.fileMeta || {};
+  const options = req.body?.options || {};
+  const onExistingEmail = String(options.onExistingEmail || 'ERROR').toUpperCase(); // ERROR | SKIP
+  const rows = Array.isArray(req.body?.validRows) ? req.body.validRows : [];
+
+  if (!rows.length) return res.status(400).json({ message: 'No hay registros válidos para procesar' });
+
+  const processRun = await prisma.processRun.create({
+    data: {
+      processName: 'Alta masiva de usuarios',
+      processCode: 'USER_BATCH_IMPORT',
+      executedByUserId: adminUserId,
+      inputFileName: typeof fileMeta.fileName === 'string' ? fileMeta.fileName : null,
+      inputFileType: 'csv',
+      totalRecords: rows.length,
+      status: 'RUNNING',
+    },
+  });
+
+  const successRows = [];
+  const errorRows = [];
+  let successCount = 0;
+  let errorCount = 0;
+  let skippedCount = 0;
+
+  try {
+    for (const r of rows) {
+      const rowNumber = r.rowNumber;
+      const raw = r.raw || {};
+      const model = r.normalized || normalizeUserRow(raw);
+
+      try {
+        const existing = await prisma.user.findUnique({ where: { email: model.email } });
+        if (existing) {
+          if (onExistingEmail === 'SKIP') {
+            skippedCount++;
+            successRows.push({ rowNumber, raw, normalized: model, observacion: 'SKIP - email ya existía' });
+            continue;
+          }
+          throw new Error('Email ya existe');
+        }
+
+        const tempPassword = crypto.randomBytes(24).toString('hex');
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+        const user = await prisma.user.create({
+          data: {
+            name: model.name,
+            lastName: model.lastName,
+            phone: model.phone,
+            email: model.email,
+            password: passwordHash,
+            role: 'CLIENT',
+            active: false,
+          },
+        });
+
+        const { token } = await createActivationTokenForUser(user.id);
+
+        try {
+          await sendActivationEmail({ user, token });
+        } catch (mailErr) {
+          console.error('users-batch: email error:', mailErr);
+          // no frenamos el usuario creado; marcamos como éxito con warning
+          successCount++;
+          successRows.push({ rowNumber, raw, normalized: model, observacion: 'OK - usuario creado; error enviando mail' });
+          continue;
+        }
+
+        successCount++;
+        successRows.push({ rowNumber, raw, normalized: model, observacion: 'OK - usuario creado; mail enviado' });
+      } catch (e) {
+        errorCount++;
+        errorRows.push({ rowNumber, raw, normalized: model, observacion: `ERROR - ${e.message}` });
+      }
+    }
+
+    const status = errorCount === 0 ? 'SUCCESS' : successCount > 0 ? 'PARTIAL' : 'ERROR';
+    await prisma.processRun.update({
+      where: { id: processRun.id },
+      data: {
+        finishedAt: new Date(),
+        status,
+        successRecords: successCount,
+        errorRecords: errorCount,
+        skippedRecords: skippedCount,
+        resultSummary: `Usuarios: ok=${successCount} err=${errorCount} skip=${skippedCount}`,
+      },
+    });
+
+    return res.json({
+      processRunId: processRun.id,
+      summary: { created: successCount, errors: errorCount, skipped: skippedCount, total: rows.length },
+      successRows,
+      errorRows,
+    });
+  } catch (err) {
+    console.error('users-batch/execute fatal error:', err);
+    await prisma.processRun.update({
+      where: { id: processRun.id },
+      data: {
+        finishedAt: new Date(),
+        status: 'ERROR',
+        errorSummary: String(err.message || err),
+        successRecords: successCount,
+        errorRecords: errorCount,
+        skippedRecords: skippedCount,
+      },
+    });
+    return res.status(500).json({ message: 'Error ejecutando alta masiva' });
   }
 });
 

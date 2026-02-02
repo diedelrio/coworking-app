@@ -1,0 +1,13 @@
+
+RF-ADM-REP-01 — Maquetar sección Reportes: reporte típico de reservas + filtros
+Descripción: Crear una pantalla base de “Reporte de Reservas” (maquetación + filtros típicos), conectable al menú Reportes.
+Fltros sugeridos (mínimos):
+    Rango de fechas (desde/hasta)
+    Espacio (uno/todos)
+    Usuario (uno/todos)
+    Estado (activa/pasada/cancelada/pendiente)
+    Tipo de espacio (si aplica)
+
+Criterios de aceptación:
+    Se visualiza la pantalla con filtros y tabla/listado.
+    Puede quedar “mock” sin exportación, pero con estructura lista para conectar backend.

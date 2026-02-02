@@ -4,7 +4,7 @@ import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 
 import api from "../api/axiosClient";
-import { aggregateSharedSlots, occupyingReservations } from "../utils/reservationsCalendar";
+import { occupyingReservations } from "../utils/reservationsCalendar";
 
 function toHHmmss(v, fallback) {
   if (!v) return fallback;
@@ -32,14 +32,32 @@ function localYMD(value) {
   return fmtYMD(d);
 }
 
-function colorByType(type) {
-  const t = String(type || "").toUpperCase();
-  if (t === "MEETING") return { bg: "#e0f2fe", fg: "#075985" };
-  if (t === "OFFICE") return { bg: "#ede9fe", fg: "#5b21b6" };
-  if (t === "FIX") return { bg: "#dcfce7", fg: "#166534" };
-  if (t === "FLEX") return { bg: "#fff7ed", fg: "#9a3412" };
-  if (t === "SHARED_TABLE") return { bg: "#fefce8", fg: "#854d0e" };
-  return { bg: "#f3f4f6", fg: "#374151" };
+// Nombre + inicial del apellido: "Diego D."
+function shortUserName(user) {
+  if (!user) return "";
+  const first = (user.name || user.firstName || "").trim();
+  const last = (user.lastName || user.lastname || "").trim();
+  const lastInitial = last ? `${last.charAt(0)}.` : "";
+  const out = `${first} ${lastInitial}`.trim();
+  return out || (user.email || "");
+}
+
+// Paleta suave y consistente por espacio (no por tipo):
+// la idea es que cada recurso tenga "su" color y que todas las reservas en esa columna compartan identidad visual.
+const SPACE_PALETTE = [
+  { bg: "#e0f2fe", fg: "#075985" }, // sky
+  { bg: "#ede9fe", fg: "#5b21b6" }, // violet
+  { bg: "#dcfce7", fg: "#166534" }, // green
+  { bg: "#fff7ed", fg: "#9a3412" }, // orange
+  { bg: "#fefce8", fg: "#854d0e" }, // yellow
+  { bg: "#ffe4e6", fg: "#9f1239" }, // rose
+  { bg: "#ecfccb", fg: "#3f6212" }, // lime
+  { bg: "#e0e7ff", fg: "#3730a3" }, // indigo
+];
+
+function colorBySpaceId(spaceId) {
+  const n = Number(String(spaceId).replace(/\D/g, "")) || 0;
+  return SPACE_PALETTE[n % SPACE_PALETTE.length];
 }
 
 export default function AdminDayResourcesCalendar() {
@@ -99,7 +117,9 @@ export default function AdminDayResourcesCalendar() {
 
   const resources = useMemo(() => {
     const list =
-      spaceId === "ALL" ? spaces : spaces.filter((s) => String(s.id) === String(spaceId));
+      spaceId === "ALL"
+        ? spaces
+        : spaces.filter((s) => String(s.id) === String(spaceId));
 
     return list.map((s) => ({
       id: String(s.id),
@@ -115,39 +135,42 @@ export default function AdminDayResourcesCalendar() {
       return { ...r, space: sp || r.space };
     });
 
+    // ✅ IMPORTANTE: en Admin queremos ver cada reserva individual (con el nombre del usuario)
+    // y que FullCalendar las disponga una al lado de la otra cuando hay solapamientos.
     const occ = occupyingReservations(hydrated);
-    const agg = aggregateSharedSlots(occ);
 
-    return agg
-      .map((ev) => {
-        const sp = ev.space || {};
-        const type = sp.type || ev.spaceType;
-        const { bg, fg } = colorByType(type);
+    return occ
+      .map((r) => {
+        const sp = r.space || {};
+        const { bg, fg } = colorBySpaceId(r.spaceId || sp.id);
 
-        // start/end: si vienen ISO, usalos tal cual (FullCalendar los interpreta bien)
-        const start = ev.startTime;
-        const end = ev.endTime;
-
-        // resourceId debe ser string y debe existir en resources
-        const resourceId = String(ev.spaceId || sp.id || ev.reservation?.spaceId || "");
-
-        const title =
-          ev.kind === "AGG"
-            ? `${sp.name || "Espacio"} · ${ev.count}/${ev.capacity}`
-            : `${sp.name || "Espacio"}`;
-
+        const start = r.startTime;
+        const end = r.endTime;
+        const resourceId = String(r.spaceId || sp.id || "");
         if (!resourceId || !start || !end) return null;
 
+        const userShort = shortUserName(r.user);
+
         return {
-          id: ev.kind === "AGG" ? ev.key : String(ev.id),
-          title,
+          id: String(r.id),
+          title: userShort || "Reserva",
           start,
           end,
           resourceId,
           backgroundColor: bg,
           borderColor: fg,
           textColor: fg,
-          classNames: ev.isFull ? ["event-full", "fc-event-soft"] : ["fc-event-soft"],
+          classNames: ["fc-event-soft"],
+          extendedProps: {
+            userNameShort: userShort || "",
+            // dejamos email/fullName guardado por si después querés tooltip o modal
+            userEmail: r.user?.email || "",
+            userFullName: `${(r.user?.name || r.user?.firstName || "").trim()} ${(r.user?.lastName || r.user?.lastname || "").trim()}`.trim(),
+            spaceName: sp.name || "",
+            status: r.status || "",
+            isShared: ["FLEX", "SHARED_TABLE"].includes(String(sp.type || "").toUpperCase()),
+            capacity: Number(sp.capacity) || 1,
+          },
         };
       })
       .filter(Boolean);
@@ -169,7 +192,7 @@ export default function AdminDayResourcesCalendar() {
             Calendario (día)
           </h2>
           <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-            Vista por espacio. FLEX/Mesa compartida muestran ocupación (x/y). FULL aplica textura.
+            Vista por espacio. Se muestra el nombre (apellido abreviado) en cada reserva. Cuando hay solapamientos, se renderizan una al lado de la otra.
           </div>
         </div>
 
@@ -231,6 +254,9 @@ export default function AdminDayResourcesCalendar() {
               height="auto"
               nowIndicator={true}
               allDaySlot={false}
+              // ✅ evita superposición visual: eventos solapados se muestran en columnas lado a lado
+              slotEventOverlap={false}
+              eventMaxStack={12}
               slotMinTime={slotMinTime}
               slotMaxTime={slotMaxTime}
               slotDuration="00:30:00"
@@ -246,6 +272,27 @@ export default function AdminDayResourcesCalendar() {
                 if (next !== date) setDate(next);
               }}
               eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
+              eventContent={(arg) => {
+  const ep = arg.event.extendedProps || {};
+  const name = ep.userNameShort || arg.event.title || "";
+
+  return (
+    <div
+      style={{
+        fontSize: "0.88rem",
+        fontWeight: 700,
+        lineHeight: 1.1,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+      title={ep.userFullName || name} // tooltip opcional
+    >
+      {name}
+    </div>
+  );
+}}
+
             />
           </div>
         )}
