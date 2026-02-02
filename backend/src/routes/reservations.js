@@ -276,6 +276,29 @@ async function validateAndBuildReservation({
     throw new ReservationValidationError('Fecha u horas inválidas');
   }
 
+  // ✅ Bloqueo por cierres del coworking (OfficeClosure)
+  // Se evalúa por fecha (día completo). Si hay cierre activo, no se permite reservar.
+  try {
+    const closure = await prisma.officeClosure.findFirst({
+      where: { date: dateOnly, active: true },
+      select: { reason: true },
+    });
+    if (closure) {
+      const ymd = toDateOnlyYMD(dateOnly);
+      throw new ReservationValidationError(
+        closure.reason
+          ? `El coworking está cerrado el ${ymd}. Motivo: ${closure.reason}`
+          : `El coworking está cerrado el ${ymd}.`,
+        'OFFICE_CLOSED',
+        { date: ymd, reason: closure.reason || null }
+      );
+    }
+  } catch (e) {
+    if (e instanceof ReservationValidationError) throw e;
+    // Si algo falla consultando cierres, no bloqueamos la reserva, pero lo logueamos.
+    console.warn('[office-closures] No se pudo validar cierres:', e?.message || e);
+  }
+
   if (endDateTime <= startDateTime) {
     throw new ReservationValidationError(
       'La hora de fin debe ser posterior a la de inicio'
@@ -836,11 +859,41 @@ router.post('/', authRequired, async (req, res) => {
     if (!isRecurring) {
       occurrenceDates = [new Date(`${date}T00:00:00`)];
     } else if (pattern !== 'MONTHLY') {
+      // DAILY: excluir cierres/feriados (OfficeClosure)
+      let closedYMDSet = null;
+      if (pattern === 'DAILY') {
+        try {
+          const startDate = new Date(`${date}T00:00:00`);
+          let rangeEnd = null;
+          if (hasEndDate) rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
+          else if (hasCount) {
+            // aprox: count días hábiles pueden estirarse por finde/cierres; damos margen
+            rangeEnd = addDays(startDate, Math.max(0, Number(recurrenceCount) - 1) + 60);
+          } else {
+            rangeEnd = addDays(startDate, 120);
+          }
+
+          const closures = await prisma.officeClosure.findMany({
+            where: {
+              active: true,
+              date: { gte: startDate, lte: rangeEnd },
+            },
+            select: { date: true },
+          });
+
+          closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
+        } catch (e) {
+          console.warn('[office-closures] No se pudo cargar cierres para DAILY recurrence:', e?.message || e);
+          closedYMDSet = null;
+        }
+      }
+
       occurrenceDates = generateOccurrenceDates({
         startYMD: date,
         pattern,
         endDateYMD: hasEndDate ? recurrenceEndDate : null,
         count: hasCount ? Number(recurrenceCount) : null,
+        closedYMDSet,
       });
     } else {
       // MONTHLY: “último <weekday>” del mes cuando falta el día o cae en finde/feriado.
@@ -867,6 +920,7 @@ const closures = prisma.officeClosure
           gte: startDate,
           lte: rangeEnd,
         },
+        active: true,
       },
       select: { date: true },
     })

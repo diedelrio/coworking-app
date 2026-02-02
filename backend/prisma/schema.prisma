@@ -196,6 +196,23 @@ model ProcessRun {
   @@index([executedAt])
 }
 
+model OfficeClosure {
+  id        Int      @id @default(autoincrement())
+  /**
+   * Fecha (solo día) normalizada a 00:00.
+   * Se usa para bloquear disponibilidad y reglas de recurrencia (MONTHLY/DAILY).
+   */
+  date      DateTime
+  reason    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+  @@index([active])
+  @@index([date])
+}
+
 model Liquidation {
   id        Int               @id @default(autoincrement())
   userId    Int
@@ -276,13 +293,4 @@ enum UserClassify {
   GOOD
   REGULAR
   BAD
-}
-
-
-model OfficeClosure {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @unique
-  reason    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
