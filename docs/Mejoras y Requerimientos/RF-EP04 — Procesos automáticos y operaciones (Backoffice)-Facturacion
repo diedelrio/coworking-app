@@ -1,0 +1,18 @@
+RF-OPER-02 — Proceso manual de facturación
+Descripción
+Un proceso manual que permita generar liquidaciones/facturas para reservas en estado COMPLETED o PENALIZED que aún no tengan una liquidación generada.
+Este proceso se incorporará dentro de la sección “Operaciones” creada en el requerimiento RF-OPER-01.
+
+Reglas de negocio
+Frecuencia: a demanda del administrador.
+Filtro: solo reservas en estado COMPLETED o PENALIZED, con opciones de filtrado por:
+    usuario
+Si no se aplica filtro por usuario:
+    se consideran todas las reservas que cumplan el criterio,
+    se genera una liquidación por cada usuario con reservas pendientes de facturación.
+    Criterio de facturación: reservas que no tengan factura/liquidación generada.
+
+Criterios de aceptación
+    Se genera una liquidación para todas las reservas que cumplan la condición.
+    No se modifican reservas futuras ni canceladas.
+    Si no existen reservas que cumplan el criterio, el sistema no genera liquidaciones y muestra un mensaje informativo al administrador.

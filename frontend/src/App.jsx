@@ -15,6 +15,7 @@ import AdminNewUser from './pages/AdminNewUser';
 import AdminUsers from './pages/AdminUsers';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ActivateAccount from './pages/ActivateAccount';
 import AdminEmailTemplates from './pages/AdminEmailTemplates';
 import AdminOperations from './pages/AdminOperations';
 import UserProfile from './pages/UserProfile';
@@ -28,6 +29,7 @@ function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/activate" element={<ActivateAccount />} />
 
       {/* RUTAS USUARIO */}
       <Route

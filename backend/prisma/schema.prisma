@@ -22,11 +22,14 @@ model User {
   maternalLastName String?
 
   passwordResetTokens PasswordResetToken[]
+  activationTokens    ActivationToken[]
   reservations        Reservation[]
   settingHistories    SettingHistory[]
   history             UserHistory[]        @relation("UserHistory_User")
   historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
   Liquidation         Liquidation[]
+
+  processRunsExecuted  ProcessRun[]        @relation("ProcessRun_ExecutedBy")
 }
 
 model UserHistory {
@@ -149,6 +152,50 @@ model PasswordResetToken {
   @@index([tokenHash])
 }
 
+model ActivationToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model ProcessRun {
+  id               Int              @id @default(autoincrement())
+  processName      String
+  processCode      String
+  executedByUserId Int
+  executedByUser   User             @relation("ProcessRun_ExecutedBy", fields: [executedByUserId], references: [id])
+
+  executedAt   DateTime         @default(now())
+  finishedAt   DateTime?
+  status       ProcessRunStatus @default(RUNNING)
+
+  inputFileName String?
+  inputFileType String?
+
+  totalRecords   Int @default(0)
+  successRecords Int @default(0)
+  errorRecords   Int @default(0)
+  skippedRecords Int @default(0)
+
+  resultSummary String?
+  errorSummary  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([processCode])
+  @@index([executedAt])
+}
+
 model Liquidation {
   id        Int               @id @default(autoincrement())
   userId    Int
@@ -186,6 +233,13 @@ enum ReservationStatus {
   COMPLETED
   PENALIZED
   INVOICED
+}
+
+enum ProcessRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  ERROR
 }
 
 enum Role {

@@ -1,0 +1,331 @@
+EP-CAM — Segmentación de Usuarios y Campañas
+Fase 1 — Tags de Segmentación en Usuarios
+RF-CAM-UG-01 — Gestión de Tags (CRUD)
+
+Objetivo: permitir crear y administrar tags reutilizables para segmentación.
+
+Actor: Admin
+Ubicación: Admin → Operaciones (o Admin → Usuarios → Tags)
+
+Descripción:
+
+El admin puede:
+
+Crear tag (code + name)
+
+Editar tag (name, opcional color)
+
+Desactivar/eliminar tag (definir política)
+
+Listar tags existentes con búsqueda
+
+Reglas / Validaciones:
+
+code es único (sin espacios, recomendado: snake_case o kebab-case).
+
+name obligatorio.
+
+No permitir duplicados por code.
+
+Si un tag está asociado a usuarios, no se elimina físicamente (preferible “inactivo” o soft-delete).
+
+Criterios de aceptación:
+
+✅ Puedo crear un tag y luego aparece en el listado.
+
+✅ No puedo crear dos tags con el mismo code.
+
+✅ Puedo modificar nombre/color.
+
+✅ Si un tag ya está en uso, no se elimina sin advertencia (o queda inactivo).
+
+RF-CAM-UG-02 — Asignación de Tags a Usuario
+
+Objetivo: asociar tags a usuarios para segmentación.
+
+Actor: Admin
+Ubicación: Admin → Usuarios → Detalle/Edición de Usuario
+
+Descripción:
+
+En el perfil del usuario el admin puede:
+
+Ver tags actuales (chips/badges)
+
+Agregar tags (autocomplete o selector multi)
+
+Quitar tags
+
+Reglas / Validaciones:
+
+Un usuario no puede tener el mismo tag repetido.
+
+Solo admins pueden editar tags.
+
+Criterios de aceptación:
+
+✅ Puedo agregar y remover tags desde el perfil del usuario.
+
+✅ Los tags se ven como “chips”.
+
+✅ Si refresco, persisten (guardado en DB).
+
+RF-CAM-UG-03 — Filtrado/Listado de Usuarios por Tags
+
+Objetivo: filtrar usuarios usando tags.
+
+Actor: Admin
+Ubicación: Admin → Usuarios
+
+Descripción:
+
+Agregar filtro por tags en la lista de usuarios:
+
+“Usuarios que tengan cualquiera de estos tags”
+
+(opcional) modo “tengan todos” (AND) para segunda iteración
+
+Criterios de aceptación:
+
+✅ Si selecciono tag frecuente, solo aparecen usuarios con ese tag.
+
+✅ Si selecciono 2 tags, filtra por OR (mínimo viable).
+
+RF-CAM-UG-04 — Importación masiva (Batch) con Tags (Extensión)
+
+Objetivo: permitir que el alta masiva de usuarios asigne tags.
+
+Actor: Admin
+Ubicación: Admin → Operaciones → Alta masiva usuarios
+
+Descripción:
+
+El archivo puede incluir una columna opcional tags:
+
+Formato: tag1|tag2|tag3 (pipe) o tag1,tag2
+
+En preview:
+
+validar tags existentes
+
+opción: “crear tags faltantes automáticamente” (configurable)
+
+Criterios de aceptación:
+
+✅ Si el archivo trae tags válidos, se asignan al usuario creado.
+
+✅ Si trae tags inválidos, la fila queda en “error” en preview o ejecución (según política).
+
+NFR-CAM-01 — Auditoría / Tracking básico (mínimo)
+
+Objetivo: trazabilidad mínima.
+
+Descripción:
+
+Registrar en logs y/o tabla ProcessRun cuando se hagan asignaciones masivas de tags (si aplica).
+
+Criterios de aceptación:
+
+✅ La corrida queda registrada en ProcessRun con contadores y resumen.
+
+Fase 2 — Campañas (Segmentación + Audiencias + Tracking)
+RF-CAM-CP-01 — CRUD de Campañas
+
+Objetivo: crear campañas y administrarlas.
+
+Actor: Admin
+Ubicación: Admin → Campañas
+
+Descripción:
+
+Crear campaña con:
+
+code único
+
+name
+
+description
+
+status: DRAFT / ACTIVE / FINISHED
+
+startDate/endDate (opcional)
+
+Criterios de aceptación:
+
+✅ Puedo crear campaña en estado DRAFT.
+
+✅ Puedo editar campos básicos.
+
+✅ No puedo duplicar code.
+
+RF-CAM-CP-02 — Definir Audiencia por Tags
+
+Objetivo: asociar tags a una campaña para armar audiencia segmentada.
+
+Actor: Admin
+Ubicación: Campaña → “Audiencia / Segmentación”
+
+Descripción:
+
+Seleccionar uno o más tags para la campaña.
+
+Mostrar conteo estimado de usuarios que cumplen el segmento (preview).
+
+Política base:
+
+Modo OR (usuarios con cualquiera de los tags)
+
+(opcional) modo AND (usuarios con todos los tags)
+
+Criterios de aceptación:
+
+✅ Al seleccionar tags, veo cuántos usuarios serían objetivo.
+
+✅ Puedo guardar los tags objetivo en campaña.
+
+RF-CAM-CP-03 — Audiencia Manual (Usuarios Directos)
+
+Objetivo: permitir agregar usuarios puntuales a una campaña (sin tags).
+
+Actor: Admin
+Ubicación: Campaña → “Audiencia / Usuarios”
+
+Descripción:
+
+Buscar usuarios y agregarlos manualmente como parte de la campaña.
+
+Un usuario no puede repetirse en la misma campaña.
+
+Criterios de aceptación:
+
+✅ Puedo agregar/quitar usuarios manualmente.
+
+✅ Persisten al refrescar.
+
+RF-CAM-CP-04 — Generar Lista de Impactados (CampaignUser)
+
+Objetivo: “materializar” audiencia (usuarios objetivo) para tracking.
+
+Actor: Admin
+Ubicación: Campaña → botón “Generar audiencia” / “Sincronizar audiencia”
+
+Descripción:
+
+El sistema genera registros CampaignUser con estado inicial PENDING
+
+Fuentes:
+
+usuarios por tags
+
+usuarios agregados manualmente
+
+Evitar duplicados
+
+Criterios de aceptación:
+
+✅ Puedo generar audiencia y ver lista final de usuarios impactados.
+
+✅ Si vuelvo a generar, no duplica; solo agrega nuevos o actualiza.
+
+RF-CAM-CP-05 — Estado por Usuario en Campaña (Tracking básico)
+
+Objetivo: tracking mínimo de ejecución por usuario.
+
+Actor: Admin
+Ubicación: Campaña → lista de usuarios
+
+Descripción:
+
+Estados básicos:
+
+PENDING
+
+SENT
+
+OPENED
+
+CLICKED
+
+Por ahora, solo permitir cambiar manualmente o por eventos simples (si existieran).
+
+Criterios de aceptación:
+
+✅ Puedo ver y actualizar estado por usuario (mínimo manual).
+
+RF-CAM-CP-06 — Integración con Email (opcional en Fase 2, o Fase 3)
+
+Objetivo: enviar email a la audiencia de campaña.
+
+Actor: Admin
+Ubicación: Campaña → “Enviar” / “Lanzar campaña”
+
+Descripción:
+
+Seleccionar template de email existente (reutilizar sistema de plantillas)
+
+Enviar mails a usuarios PENDING
+
+Marcar SENT
+
+Criterios de aceptación:
+
+✅ Puedo lanzar envío y se actualizan estados.
+
+✅ Errores quedan registrados por usuario (si aplica).
+
+RF-CAM-CP-07 — Reporte / Métricas básicas de campaña
+
+Objetivo: ver KPIs básicos.
+
+Actor: Admin
+Ubicación: Campaña → Dashboard
+
+Métricas:
+
+totalAudience
+
+sentCount
+
+openedCount
+
+clickedCount
+
+errorCount (si existe)
+
+Criterios de aceptación:
+
+✅ Veo contadores por estado.
+
+✅ Se actualizan según cambios.
+
+NFR-CAM-02 — Auditoría y Corridas
+
+Objetivo: trazabilidad de acciones automáticas.
+
+Descripción:
+
+Cada acción masiva (“generar audiencia”, “enviar campaña”) genera un ProcessRun con:
+
+totales
+
+éxito/error
+
+timestamps
+
+usuario ejecutor
+
+Criterios de aceptación:
+
+✅ Las corridas quedan registradas y se pueden consultar luego.
+
+Notas de implementación (para cuando lo hagamos)
+
+Tags: N–N (UserTag). Recomendación: Tag.code unique.
+
+Campañas: Campaign, CampaignTag, CampaignUser
+
+Audiencia: generar “materializada” para tracking, evita recalcular siempre.
+
+UI: chips para tags, filtros, sección Campañas.
+
+Seguridad: solo Admin puede gestionar tags/campañas.
