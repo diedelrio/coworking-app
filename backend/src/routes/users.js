@@ -23,6 +23,11 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
         classify: true,
         active: true,
         createdAt: true,
+        userTags: {
+          select: {
+            tag: { select: { id: true, name: true, slug: true } },
+          },
+        },
       },
     });
 
@@ -43,7 +48,7 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
  */
 router.post('/', authRequired, requireAdmin, async (req, res) => {
   try {
-    const { name, lastName, maternalLastName, email, phone, role, classify } = req.body;
+    const { name, lastName, maternalLastName, email, phone, role, classify, tagIds } = req.body;
 
     if (!name || !lastName || !email) {
       return res.status(400).json({
@@ -69,6 +74,10 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
     const tempPassword = Math.random().toString(36).slice(-10);
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
+    const parsedTagIds = Array.isArray(tagIds)
+      ? tagIds.map((x) => Number(x)).filter((n) => Number.isFinite(n))
+      : [];
+
     const created = await prisma.user.create({
       data: {
         name,
@@ -81,6 +90,9 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
         classify: typeof classify === 'undefined' ? 'GOOD' : classify,
         active: true,
         password: passwordHash, // ✅ requerido por Prisma
+        ...(parsedTagIds.length > 0
+          ? { userTags: { create: parsedTagIds.map((tagId) => ({ tagId })) } }
+          : {}),
       },
       select: {
         id: true,
@@ -93,6 +105,11 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
         classify: true,
         active: true,
         createdAt: true,
+        userTags: {
+          select: {
+            tag: { select: { id: true, name: true, slug: true } },
+          },
+        },
       },
     });
 
@@ -233,6 +250,11 @@ router.get('/:id', authRequired, requireAdmin, async (req, res) => {
         classify: true,
         active: true,
         createdAt: true,
+        userTags: {
+          select: {
+            tag: { select: { id: true, name: true, slug: true } },
+          },
+        },
       },
     });
 
@@ -258,7 +280,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'ID inválido' });
     }
 
-    const { name, lastName, maternalLastName,email, phone, role, active, classify } = req.body;
+    const { name, lastName, maternalLastName, email, phone, role, active, classify, tagIds } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
@@ -275,6 +297,10 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
       active,
       classify: classify ?? null,
     };
+
+    const parsedTagIds = Array.isArray(tagIds)
+      ? tagIds.map((x) => Number(x)).filter((n) => Number.isFinite(n))
+      : null; // null => no tocar tags
 
     const fieldsToTrack = [
       'name',
@@ -320,12 +346,52 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
           classify: true,
           active: true,
           createdAt: true,
+          userTags: {
+            select: {
+              tag: { select: { id: true, name: true, slug: true } },
+            },
+          },
         },
       });
+
+      // ✅ Tags: si el front envía tagIds, reemplazamos el set completo
+      if (parsedTagIds !== null) {
+        await tx.userTag.deleteMany({ where: { userId: id } });
+        if (parsedTagIds.length > 0) {
+          await tx.userTag.createMany({
+            data: parsedTagIds.map((tagId) => ({ userId: id, tagId })),
+            skipDuplicates: true,
+          });
+        }
+      }
 
       if (historyEntries.length > 0) {
         await tx.userHistory.createMany({
           data: historyEntries,
+        });
+      }
+
+      // ⚠️ Si tocamos tags, recargamos el usuario con tags para responder consistente
+      if (parsedTagIds !== null) {
+        return await tx.user.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            name: true,
+            lastName: true,
+            maternalLastName: true,
+            email: true,
+            phone: true,
+            role: true,
+            classify: true,
+            active: true,
+            createdAt: true,
+            userTags: {
+              select: {
+                tag: { select: { id: true, name: true, slug: true } },
+              },
+            },
+          },
         });
       }
 

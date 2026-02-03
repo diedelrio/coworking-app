@@ -6,8 +6,34 @@ const crypto = require('crypto');
 const { sendMail } = require('../services/emailService');
 const { getEmailTemplateByKey, renderEmailTemplate } = require('../services/emailTemplateService');
 const { parseDelimitedText } = require('../utils/delimitedParser');
+const { joinFrontendUrl } = require('../utils/frontendUrl');
 
 const router = express.Router();
+function slugify(str) {
+  return String(str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+async function getOrCreateTagBySlug({ slug, name }) {
+  const cleanSlug = slugify(slug);
+  if (!cleanSlug) return null;
+
+  const existing = await prisma.tag.findUnique({ where: { slug: cleanSlug } });
+  if (existing) return existing;
+
+  return prisma.tag.create({
+    data: {
+      slug: cleanSlug,
+      name: String(name || cleanSlug),
+    },
+  });
+}
+
 
 function parseMaybeInt(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -323,13 +349,12 @@ async function createActivationTokenForUser(userId) {
 }
 
 async function sendActivationEmail({ user, token }) {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-  const activationLink = `${frontendUrl}/activate?token=${token}`;
+  const activationLink = joinFrontendUrl(`activate?token=${token}`);
   const ttlMinutes = getActivationTtlMinutes();
 
   try {
     const tpl = await getEmailTemplateByKey('CREATE_NEW_USER_BATCH');
-    const { subject, body } = renderEmailTemplate(tpl, { name: user.name || '', activationLink, ttlMinutes });
+    const { subject, body } = renderEmailTemplate(tpl, { name: user.name || '', activationLink, actionUrl: activationLink, ttlMinutes });
     await sendMail({ to: user.email, subject, text: body });
   } catch (e) {
     await sendMail({
@@ -433,6 +458,12 @@ router.post('/users-batch/execute', authRequired, requireAdmin, async (req, res)
     },
   });
 
+  // Opcional: asignar Tag a todos los usuarios creados en este batch (para segmentación y trazabilidad)
+  const assignTagSlug = typeof options.assignTagSlug === 'string' ? options.assignTagSlug : '';
+  const assignTagName = typeof options.assignTagName === 'string' ? options.assignTagName : '';
+  const batchTag = assignTagSlug ? await getOrCreateTagBySlug({ slug: assignTagSlug, name: assignTagName }) : null;
+
+
   const successRows = [];
   const errorRows = [];
   let successCount = 0;
@@ -468,6 +499,7 @@ router.post('/users-batch/execute', authRequired, requireAdmin, async (req, res)
             password: passwordHash,
             role: 'CLIENT',
             active: false,
+            ...(batchTag ? { userTags: { create: [{ tagId: batchTag.id }] } } : {}),
           },
         });
 
@@ -524,6 +556,334 @@ router.post('/users-batch/execute', authRequired, requireAdmin, async (req, res)
       },
     });
     return res.status(500).json({ message: 'Error ejecutando alta masiva' });
+  }
+});
+
+
+/**
+ * GET /api/admin/operations/email-templates
+ * Devuelve lista corta de templates para UI de operaciones.
+ */
+router.get('/email-templates', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const templates = await prisma.emailTemplate.findMany({
+      select: { key: true, name: true, subject: true, updatedAt: true },
+      orderBy: { key: 'asc' },
+    });
+    return res.json({ templates });
+  } catch (err) {
+    console.error('email-templates error:', err);
+    return res.status(500).json({ message: 'Error obteniendo templates' });
+  }
+});
+
+/**
+ * GET /api/admin/operations/tags
+ * Lista de tags para segmentación.
+ */
+router.get('/tags', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const tags = await prisma.tag.findMany({
+      select: { id: true, name: true, slug: true, description: true, updatedAt: true },
+      orderBy: { slug: 'asc' },
+    });
+    return res.json({ tags });
+  } catch (err) {
+    console.error('tags list error:', err);
+    return res.status(500).json({ message: 'Error obteniendo tags' });
+  }
+});
+
+/**
+ * POST /api/admin/operations/tags
+ * Body: { name, slug?, description? }
+ */
+router.post('/tags', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const slug = slugify(String(req.body?.slug || name));
+    const description = req.body?.description ? String(req.body.description) : null;
+
+    if (!name) return res.status(400).json({ message: 'name requerido' });
+    if (!slug) return res.status(400).json({ message: 'slug inválido' });
+
+    const tag = await prisma.tag.upsert({
+      where: { slug },
+      update: { name, description },
+      create: { name, slug, description },
+    });
+    return res.json({ tag });
+  } catch (err) {
+    console.error('tags create error:', err);
+    return res.status(500).json({ message: 'Error creando tag' });
+  }
+});
+
+async function resolveAudienceUsers(audience) {
+  const type = String(audience?.type || 'CLIENT').toUpperCase();
+
+  if (type === 'CLIENT') {
+    return prisma.user.findMany({
+      where: { role: 'CLIENT', active: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+  if (type === 'CLASSIFY') {
+    const classify = String(audience?.classify || '').toUpperCase();
+    if (!['GOOD', 'REGULAR', 'BAD'].includes(classify)) throw new Error('classify inválido');
+    return prisma.user.findMany({
+      where: { role: 'CLIENT', classify, active: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+if (type === 'TAG') {
+  const slug = String(audience?.tagSlug || '').trim();
+  if (!slug) throw new Error('tagSlug requerido');
+
+  return prisma.user.findMany({
+    where: {
+      active: true,
+      userTags: {
+        some: {
+          tag: { slug },
+        },
+      },
+    },
+    select: { id: true, name: true, email: true },
+    orderBy: { id: 'asc' },
+  });
+}
+
+
+  throw new Error('audience.type inválido');
+}
+
+async function createResetTokenForUser(userId) {
+  await prisma.passwordResetToken.updateMany({
+    where: { userId, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(token);
+  const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 60);
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+
+  await prisma.passwordResetToken.create({
+    data: { userId, tokenHash, expiresAt },
+  });
+
+  return { token, expiresAt, ttlMinutes };
+}
+
+async function sendTemplateEmail({ templateKey, user, vars }) {
+  const tpl = await getEmailTemplateByKey(templateKey);
+  const { subject, body } = renderEmailTemplate(tpl, vars);
+  await sendMail({ to: user.email, subject, text: body });
+}
+
+/**
+ * POST /api/admin/operations/bulk-email/execute
+ * Body: { templateKey, audience, variables? }
+ */
+router.post('/bulk-email/execute', authRequired, requireAdmin, async (req, res) => {
+  const adminUserId = req.user?.userId;
+  if (!adminUserId) return res.status(401).json({ message: 'No autorizado' });
+
+  const templateKey = String(req.body?.templateKey || '').trim();
+  const audience = req.body?.audience || { type: 'CLIENT' };
+  const variables = req.body?.variables || {};
+
+  if (!templateKey) return res.status(400).json({ message: 'templateKey requerido' });
+
+  let processRun = null;
+  try {
+    const users = await resolveAudienceUsers(audience);
+
+    processRun = await prisma.processRun.create({
+      data: {
+        processName: 'Envío masivo de emails',
+        processCode: 'OPS_BULK_EMAIL_SEND',
+        executedByUserId: adminUserId,
+        totalRecords: users.length,
+        status: 'RUNNING',
+        resultSummary: JSON.stringify({ templateKey, audience }),
+      },
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const u of users) {
+      try {
+        await sendTemplateEmail({
+          templateKey,
+          user: u,
+          vars: {
+            name: u.name || '',
+            userEmail: u.email,
+            ...variables,
+          },
+        });
+        successCount++;
+      } catch (e) {
+        errorCount++;
+        console.error('bulk-email item error:', u.email, e);
+      }
+    }
+
+    const status =
+      errorCount === 0
+        ? 'SUCCESS'
+        : successCount > 0
+          ? 'PARTIAL'
+          : 'ERROR';
+
+
+    processRun = await prisma.processRun.update({
+      where: { id: processRun.id },
+      data: {
+        finishedAt: new Date(),
+        status,
+        successRecords: successCount,
+        errorRecords: errorCount,
+        resultSummary: JSON.stringify({ templateKey, audience, successCount, errorCount }),
+        errorSummary: errorCount ? 'Algunos envíos fallaron. Revisar logs del servidor.' : null,
+      },
+    });
+
+    return res.json({ processRun });
+  } catch (err) {
+    console.error('bulk-email execute error:', err);
+    if (processRun) {
+      await prisma.processRun.update({
+        where: { id: processRun.id },
+        data: {
+          finishedAt: new Date(),
+          status: 'ERROR',
+          errorRecords: processRun.totalRecords || 0,
+          errorSummary: String(err?.message || err),
+        },
+      });
+    }
+    return res.status(500).json({ message: 'Error ejecutando envío masivo' });
+  }
+});
+
+/**
+ * POST /api/admin/operations/bulk-token-regenerate/execute
+ * Body: { tokenType: 'ACTIVATION'|'RESET', templateKey, audience }
+ */
+router.post('/bulk-token-regenerate/execute', authRequired, requireAdmin, async (req, res) => {
+  const adminUserId = req.user?.userId;
+  if (!adminUserId) return res.status(401).json({ message: 'No autorizado' });
+
+  const tokenType = String(req.body?.tokenType || 'ACTIVATION').toUpperCase();
+  const templateKey = String(req.body?.templateKey || '').trim();
+  const audience = req.body?.audience || { type: 'CLIENT' };
+
+  if (!templateKey) return res.status(400).json({ message: 'templateKey requerido' });
+  if (!['ACTIVATION', 'RESET'].includes(tokenType)) return res.status(400).json({ message: 'tokenType inválido' });
+
+  let processRun = null;
+  try {
+    const users = await resolveAudienceUsers(audience);
+
+    processRun = await prisma.processRun.create({
+      data: {
+        processName: tokenType === 'ACTIVATION' ? 'Regenerar token de activación + enviar' : 'Regenerar token de reset + enviar',
+        processCode: 'OPS_BULK_TOKEN_REGEN_SEND',
+        executedByUserId: adminUserId,
+        totalRecords: users.length,
+        status: 'RUNNING',
+        resultSummary: JSON.stringify({ tokenType, templateKey, audience }),
+      },
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const u of users) {
+      try {
+        if (tokenType === 'ACTIVATION') {
+          const { token } = await createActivationTokenForUser(u.id);
+          const actionUrl = joinFrontendUrl(`activate?token=${token}`);
+          const ttlMinutes = getActivationTtlMinutes();
+
+          await sendTemplateEmail({
+            templateKey,
+            user: u,
+            vars: {
+              name: u.name || '',
+              userEmail: u.email,
+              actionUrl,
+              activationLink: actionUrl, // compat
+              ttlMinutes,
+            },
+          });
+        } else {
+          const { token, ttlMinutes } = await createResetTokenForUser(u.id);
+          const actionUrl = joinFrontendUrl(`reset-password?token=${token}`);
+
+          await sendTemplateEmail({
+            templateKey,
+            user: u,
+            vars: {
+              name: u.name || '',
+              userEmail: u.email,
+              actionUrl,
+              resetLink: actionUrl, // compat
+              ttlMinutes,
+            },
+          });
+        }
+
+        successCount++;
+      } catch (e) {
+        errorCount++;
+        console.error('bulk-token item error:', u.email, e);
+      }
+    }
+
+    const status =
+      errorCount === 0
+        ? 'SUCCESS'
+        : successCount > 0
+          ? 'PARTIAL'
+          : 'ERROR';
+
+
+    processRun = await prisma.processRun.update({
+      where: { id: processRun.id },
+      data: {
+        finishedAt: new Date(),
+        status,
+        successRecords: successCount,
+        errorRecords: errorCount,
+        resultSummary: JSON.stringify({ tokenType, templateKey, audience, successCount, errorCount }),
+        errorSummary: errorCount ? 'Algunos envíos fallaron. Revisar logs del servidor.' : null,
+      },
+    });
+
+    return res.json({ processRun });
+  } catch (err) {
+    console.error('bulk-token execute error:', err);
+    if (processRun) {
+      await prisma.processRun.update({
+        where: { id: processRun.id },
+        data: {
+          finishedAt: new Date(),
+          status: 'ERROR',
+          errorRecords: processRun.totalRecords || 0,
+          errorSummary: String(err?.message || err),
+        },
+      });
+    }
+    return res.status(500).json({ message: 'Error ejecutando regeneración + envío' });
   }
 });
 

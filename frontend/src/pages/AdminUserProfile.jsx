@@ -4,6 +4,7 @@ import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import { FiKey } from "react-icons/fi";
 import { TbLockCheck } from "react-icons/tb";
+import TagsChipsInput from '../components/TagsChipsInput';
 
 
 function getInitials(name, lastName, email) {
@@ -39,6 +40,10 @@ export default function AdminUserProfile() {
   const [classify, setClassify] = useState('GOOD');
   const [active, setActive] = useState(true);
 
+  // Tags
+  const [allTags, setAllTags] = useState([]);
+  const [selectedTagIds, setSelectedTagIds] = useState([]);
+
   const initials = useMemo(() => {
     return getInitials(user?.name, user?.lastName, user?.email);
   }, [user]);
@@ -58,7 +63,31 @@ export default function AdminUserProfile() {
     setRole(u?.role || 'CLIENT');
     setClassify(u?.classify || 'GOOD');
     setActive(Boolean(u?.active));
+
+    const ids = (u?.userTags || [])
+      .map((ut) => ut?.tag?.id)
+      .filter((x) => Number.isFinite(x));
+    setSelectedTagIds(ids);
   }
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadTags() {
+      try {
+        const { data } = await api.get('/admin/tags');
+        if (!mounted) return;
+        setAllTags((Array.isArray(data) ? data : []).sort((a,b)=>(a.name||'').localeCompare(b.name||'')));
+      } catch (e) {
+        console.warn('No se pudieron cargar tags', e);
+        if (!mounted) return;
+        setAllTags([]);
+      }
+    }
+    loadTags();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -110,7 +139,37 @@ export default function AdminUserProfile() {
     setIsEditing(false);
   }
 
-  async function onSave() {
+  async function createTag({ name, slug }) {
+    // Crea tag si no existe y devuelve el tag creado/existente
+    const cleanSlug = String(slug || '').trim();
+    const cleanName = String(name || '').trim() || cleanSlug;
+    if (!cleanSlug) return null;
+
+    // si ya está en memoria
+    const existing = allTags.find((t) => String(t.slug).toLowerCase() === cleanSlug.toLowerCase());
+    if (existing) return existing;
+
+    try {
+      const { data } = await api.post('/admin/tags', { name: cleanName, slug: cleanSlug });
+      // backend devuelve tag creado
+      const created = data && data.id ? data : null;
+      if (created) setAllTags((prev) => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      return created;
+    } catch (e) {
+      // Si ya existe (race/unique), recargamos listado y devolvemos el que corresponda
+      try {
+        const { data } = await api.get('/admin/tags');
+        const list = Array.isArray(data) ? data : [];
+        setAllTags(list.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        const found = list.find((t) => String(t.slug).toLowerCase() === cleanSlug.toLowerCase());
+        return found || null;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+async function onSave() {
     setSaving(true);
     setError('');
     setNotice('');
@@ -125,6 +184,7 @@ export default function AdminUserProfile() {
         role,
         classify,
         active,
+        tagIds: selectedTagIds,
       });
 
       setUser(data);
@@ -368,6 +428,20 @@ export default function AdminUserProfile() {
                         <option value="ACTIVE">Activo</option>
                         <option value="INACTIVE">Inactivo</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="form-field" style={{ marginTop: 12 }}>
+                    <label>Tags</label>
+                    <TagsChipsInput
+                      availableTags={allTags}
+                      selectedIds={selectedTagIds}
+                      onChange={setSelectedTagIds}
+                      onCreateTag={isEditing ? createTag : undefined}
+                      disabled={!isEditing || saving}
+                    />
+                    <div className="form-hint" style={{ marginTop: 6 }}>
+                      Usá tags para segmentación (campañas, envíos masivos, etc.).
                     </div>
                   </div>
 

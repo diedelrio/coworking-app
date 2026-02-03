@@ -5,6 +5,8 @@ import OperationsCompleteReservations from './operations/OperationsCompleteReser
 import OperationsBilling from './operations/OperationsBilling';
 import OperationsUserBatchImport from './operations/OperationsUserBatchImport';
 import OperationsOfficeClosures from './operations/OperationsOfficeClosures';
+import OperationsBulkEmail from './operations/OperationsBulkEmail';
+import OperationsBulkTokenRegen from './operations/OperationsBulkTokenRegen';
 
 export default function AdminOperations() {
   const processes = useMemo(
@@ -26,6 +28,18 @@ export default function AdminOperations() {
         title: 'Alta masiva de usuarios',
         desc: 'Importar CSV/TXT, preview, crear usuarios y enviar activación.',
         component: <OperationsUserBatchImport />,
+      },
+      {
+        id: 'bulkEmail',
+        title: 'Envío masivo de emails',
+        desc: 'Enviar un template por key a clientes / clasificación / tag.',
+        component: <OperationsBulkEmail />,
+      },
+      {
+        id: 'bulkTokenRegen',
+        title: 'Regenerar tokens + enviar',
+        desc: 'Regenerar tokens de activación/reset y reenviar por template.',
+        component: <OperationsBulkTokenRegen />,
       },
       {
         id: 'closures',

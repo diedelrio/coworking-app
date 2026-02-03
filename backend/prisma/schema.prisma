@@ -30,6 +30,7 @@ model User {
   Liquidation         Liquidation[]
 
   processRunsExecuted  ProcessRun[]        @relation("ProcessRun_ExecutedBy")
+  userTags            UserTag[]
 }
 
 model UserHistory {
@@ -126,6 +127,29 @@ model SettingHistory {
 
   @@index([settingId])
   @@index([changedByUserId])
+}
+
+model Tag {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       UserTag[]
+}
+
+model UserTag {
+  userId    Int
+  tagId     Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tagId])
+  @@index([tagId])
 }
 
 model EmailTemplate {

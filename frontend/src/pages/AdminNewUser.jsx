@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
+import TagsMultiSelect from '../components/TagsMultiSelect';
 
 export default function AdminNewUser() {
   const { id } = useParams();
@@ -19,6 +20,9 @@ export default function AdminNewUser() {
     active: true,
   });
 
+  const [availableTags, setAvailableTags] = useState([]);
+  const [selectedTagIds, setSelectedTagIds] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -27,13 +31,23 @@ export default function AdminNewUser() {
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
-    if (isEditMode) {
-      loadUserAndHistory();
-    } else {
-      setLoading(false);
-    }
+    // Cargar tags disponibles (para create y edit)
+    loadTags();
+
+    if (isEditMode) loadUserAndHistory();
+    else setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const loadTags = async () => {
+    try {
+      const res = await api.get('/admin/tags');
+      setAvailableTags(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error cargando tags', err);
+      setAvailableTags([]);
+    }
+  };
 
   const loadUserAndHistory = async () => {
     try {
@@ -54,6 +68,15 @@ export default function AdminNewUser() {
         classify: user.classify ?? '', // ✅ FIX: si viene null/undefined queda vacío
         active: user.active ?? true,
       });
+
+      // Tags asignados
+      const currentTagIds = Array.isArray(user.userTags)
+        ? user.userTags
+            .map((ut) => ut?.tag?.id)
+            .filter((x) => Number.isFinite(Number(x)))
+            .map((x) => Number(x))
+        : [];
+      setSelectedTagIds(currentTagIds);
 
       // Historia de cambios
       setLoadingHistory(true);
@@ -97,6 +120,7 @@ export default function AdminNewUser() {
           role: form.role,
           classify: form.classify || null, // ✅ NUEVO: enviar classify
           active: form.active,
+          tagIds: selectedTagIds,
         });
 
         setSuccess('Usuario actualizado correctamente.');
@@ -108,6 +132,7 @@ export default function AdminNewUser() {
           email: form.email,
           phone: form.phone,
           role: form.role,
+          tagIds: selectedTagIds,
           // Para usuario nuevo, el backend debería generar clave temporal
           // o requerir otro flujo. Aquí NO manejamos password.
         });
@@ -252,6 +277,15 @@ export default function AdminNewUser() {
                     <option value="CLIENT">Cliente</option>
                     <option value="ADMIN">Admin</option>
                   </select>
+                </div>
+
+                {/* ✅ Tags (segmentación) */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <TagsMultiSelect
+                    tags={availableTags}
+                    value={selectedTagIds}
+                    onChange={setSelectedTagIds}
+                  />
                 </div>
 
                 {/* ✅ NUEVO: Classify (solo visible en edición) */}

@@ -11,6 +11,8 @@ export default function OperationsUserBatchImport() {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [onExistingEmail, setOnExistingEmail] = useState('ERROR');
+  const [assignTagSlug, setAssignTagSlug] = useState('');
+  const [assignTagName, setAssignTagName] = useState('');
 
   const readFileAsText = (file) =>
     new Promise((resolve, reject) => {
