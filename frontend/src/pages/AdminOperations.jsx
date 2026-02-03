@@ -56,16 +56,16 @@ export default function AdminOperations() {
 
   return (
     <Layout>
-      <div style={{ padding: '1.5rem', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ padding: '1.5rem', maxWidth: '90%', margin: '0 auto' }}>
         <h1 style={{ marginBottom: '0.25rem' }}>Operaciones</h1>
         <p style={{ marginTop: 0, color: '#6b7280' }}>Centro de procesos de backoffice. Elegí una operación en el menú.</p>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '280px 1fr',
+            gridTemplateColumns: '340px 1fr',
             gap: '1rem',
-            alignItems: 'start',
+            alignItems: 'start'
           }}
         >
           {/* Sidebar */}
