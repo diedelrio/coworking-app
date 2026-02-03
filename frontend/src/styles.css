@@ -2451,3 +2451,5 @@ Diego lo borro porque hay dos */
   background: white;
 }
 /**/
+.info { background:#ecfeff; border:1px solid #a5f3fc; padding:10px; border-radius:10px; }
+.success { background:#ecfdf5; border:1px solid #6ee7b7; padding:10px; border-radius:10px; }

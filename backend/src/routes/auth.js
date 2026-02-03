@@ -5,6 +5,7 @@ const prisma = require('../prisma');
 const { sendMail } = require('../services/emailService');
 const { getEmailTemplateByKey, renderEmailTemplate } = require('../services/emailTemplateService');
 const crypto = require('crypto');
+const { joinFrontendUrl } = require('../utils/frontendUrl');
 
 const router = express.Router();
 
@@ -113,8 +114,7 @@ async function createActivationTokenForUser(userId) {
 }
 
 async function sendActivationEmail({ user, token }) {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-  const activationLink = `${frontendUrl}/activate?token=${token}`;
+  const activationLink = joinFrontendUrl(`activate?token=${token}`);
   const ttlMinutes = getActivationTtlMinutes();
 
   try {
@@ -122,6 +122,7 @@ async function sendActivationEmail({ user, token }) {
     const { subject, body } = renderEmailTemplate(tpl, {
       name: user.name || '',
       activationLink,
+      actionUrl: activationLink,
       ttlMinutes,
     });
 
@@ -283,8 +284,7 @@ router.post('/forgot-password', async (req, res) => {
     });
 
     // Link al frontend
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+    const resetLink = joinFrontendUrl(`reset-password?token=${token}`);
 
     try {
       const tpl = await getEmailTemplateByKey('FORGOT_PASSWORD');
@@ -292,6 +292,7 @@ router.post('/forgot-password', async (req, res) => {
       const { subject, body } = renderEmailTemplate(tpl, {
         name: user.name || '',
         resetLink,
+        actionUrl: resetLink,
         ttlMinutes,
       });
 

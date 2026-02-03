@@ -5,6 +5,8 @@ import OperationsCompleteReservations from './operations/OperationsCompleteReser
 import OperationsBilling from './operations/OperationsBilling';
 import OperationsUserBatchImport from './operations/OperationsUserBatchImport';
 import OperationsOfficeClosures from './operations/OperationsOfficeClosures';
+import OperationsBulkEmail from './operations/OperationsBulkEmail';
+import OperationsBulkTokenRegen from './operations/OperationsBulkTokenRegen';
 
 export default function AdminOperations() {
   const processes = useMemo(
@@ -28,6 +30,18 @@ export default function AdminOperations() {
         component: <OperationsUserBatchImport />,
       },
       {
+        id: 'bulkEmail',
+        title: 'Envío masivo de emails',
+        desc: 'Enviar un template por key a clientes / clasificación / tag.',
+        component: <OperationsBulkEmail />,
+      },
+      {
+        id: 'bulkTokenRegen',
+        title: 'Regenerar tokens + enviar',
+        desc: 'Regenerar tokens de activación/reset y reenviar por template.',
+        component: <OperationsBulkTokenRegen />,
+      },
+      {
         id: 'closures',
         title: 'Cierres de oficina',
         desc: 'CRUD de cierres/feriados. Bloquea disponibilidad de reservas.',
@@ -42,16 +56,16 @@ export default function AdminOperations() {
 
   return (
     <Layout>
-      <div style={{ padding: '1.5rem', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ padding: '1.5rem', maxWidth: '90%', margin: '0 auto' }}>
         <h1 style={{ marginBottom: '0.25rem' }}>Operaciones</h1>
         <p style={{ marginTop: 0, color: '#6b7280' }}>Centro de procesos de backoffice. Elegí una operación en el menú.</p>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '280px 1fr',
+            gridTemplateColumns: '340px 1fr',
             gap: '1rem',
-            alignItems: 'start',
+            alignItems: 'start'
           }}
         >
           {/* Sidebar */}
