@@ -622,9 +622,13 @@ router.post('/tags', authRequired, requireAdmin, async (req, res) => {
 async function resolveAudienceUsers(audience) {
   const type = String(audience?.type || 'CLIENT').toUpperCase();
 
+  // Por defecto: activos. Caller puede forzar active=false.
+  const activeFilter = audience?.active;
+  const activeWhere = (activeFilter === true || activeFilter === false) ? activeFilter : true;
+
   if (type === 'CLIENT') {
     return prisma.user.findMany({
-      where: { role: 'CLIENT', active: true },
+      where: { role: 'CLIENT', active: activeWhere },
       select: { id: true, name: true, email: true },
       orderBy: { id: 'asc' },
     });
@@ -634,33 +638,30 @@ async function resolveAudienceUsers(audience) {
     const classify = String(audience?.classify || '').toUpperCase();
     if (!['GOOD', 'REGULAR', 'BAD'].includes(classify)) throw new Error('classify inválido');
     return prisma.user.findMany({
-      where: { role: 'CLIENT', classify, active: true },
+      where: { role: 'CLIENT', classify, active: activeWhere },
       select: { id: true, name: true, email: true },
       orderBy: { id: 'asc' },
     });
   }
 
-if (type === 'TAG') {
-  const slug = String(audience?.tagSlug || '').trim();
-  if (!slug) throw new Error('tagSlug requerido');
+  if (type === 'TAG') {
+    const slug = String(audience?.tagSlug || '').trim();
+    if (!slug) throw new Error('tagSlug requerido');
 
-  return prisma.user.findMany({
-    where: {
-      active: true,
-      userTags: {
-        some: {
-          tag: { slug },
-        },
+    return prisma.user.findMany({
+      where: {
+        role: 'CLIENT',
+        active: activeWhere,
+        userTags: { some: { tag: { slug } } },
       },
-    },
-    select: { id: true, name: true, email: true },
-    orderBy: { id: 'asc' },
-  });
-}
-
+      select: { id: true, name: true, email: true },
+      orderBy: { id: 'asc' },
+    });
+  }
 
   throw new Error('audience.type inválido');
 }
+
 
 async function createResetTokenForUser(userId) {
   await prisma.passwordResetToken.updateMany({
@@ -786,12 +787,20 @@ router.post('/bulk-token-regenerate/execute', authRequired, requireAdmin, async 
   const templateKey = String(req.body?.templateKey || '').trim();
   const audience = req.body?.audience || { type: 'CLIENT' };
 
+  const audienceWithDefaults = {
+    ...audience,
+    active:
+      (audience && Object.prototype.hasOwnProperty.call(audience, 'active'))
+        ? audience.active
+        : (tokenType === 'ACTIVATION' ? false : true),
+  };
+
   if (!templateKey) return res.status(400).json({ message: 'templateKey requerido' });
   if (!['ACTIVATION', 'RESET'].includes(tokenType)) return res.status(400).json({ message: 'tokenType inválido' });
 
   let processRun = null;
   try {
-    const users = await resolveAudienceUsers(audience);
+    const users = await resolveAudienceUsers(audienceWithDefaults);
 
     processRun = await prisma.processRun.create({
       data: {
@@ -800,7 +809,7 @@ router.post('/bulk-token-regenerate/execute', authRequired, requireAdmin, async 
         executedByUserId: adminUserId,
         totalRecords: users.length,
         status: 'RUNNING',
-        resultSummary: JSON.stringify({ tokenType, templateKey, audience }),
+        resultSummary: JSON.stringify({ tokenType, templateKey, audience: audienceWithDefaults }),
       },
     });
 
@@ -864,7 +873,7 @@ router.post('/bulk-token-regenerate/execute', authRequired, requireAdmin, async 
         status,
         successRecords: successCount,
         errorRecords: errorCount,
-        resultSummary: JSON.stringify({ tokenType, templateKey, audience, successCount, errorCount }),
+        resultSummary: JSON.stringify({ tokenType, templateKey, audience: audienceWithDefaults, successCount, errorCount }),
         errorSummary: errorCount ? 'Algunos envíos fallaron. Revisar logs del servidor.' : null,
       },
     });
