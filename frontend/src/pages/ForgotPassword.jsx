@@ -41,6 +41,12 @@ export default function ForgotPassword() {
         border: '1px solid rgba(15, 23, 42, 0.06)',
       }}
     >
+              {/* Logo centrado */}
+        <img
+          src="/logoCoworking.png"
+          alt="Coworking Sinergia"
+          style={{ height: 64, width: 'auto', margin: '0 auto 12px', display: 'block' }}
+        />
       <h1
         style={{
           margin: 0,
@@ -158,8 +164,9 @@ export default function ForgotPassword() {
               >
                 {error}
               </div>
+              
             )}
-
+      
             <button
               type="submit"
               style={{
