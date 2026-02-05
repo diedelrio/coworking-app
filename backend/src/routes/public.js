@@ -50,3 +50,49 @@ router.get('/settings', async (_req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * GET /api/public/content
+ * ?keys=TEXT_LOGIN,TEXT_CREATE_USER
+ */
+router.get('/content', async (req, res) => {
+  try {
+    const keysParam = String(req.query.keys || '').trim();
+    if (!keysParam) {
+      return res.json({ content: {} });
+    }
+
+    const keys = keysParam
+      .split(',')
+      .map(k => k.trim())
+      .filter(Boolean);
+
+    if (!keys.length) {
+      return res.json({ content: {} });
+    }
+
+    const rows = await prisma.setting.findMany({
+      where: {
+        key: { in: keys },
+        status: 'ACTIVE', // ✅ en tu modelo no existe "active"
+      },
+      select: {
+        key: true,
+        value: true,
+      },
+    });
+
+    // 🔁 Pasamos a objeto plano
+    const content = {};
+    for (const r of rows) {
+      content[r.key] = r.value;
+    }
+
+    return res.json({ content });
+  } catch (err) {
+    console.error('public/content error:', err);
+    return res.status(500).json({ message: 'Error obteniendo contenido público' });
+  }
+});
+
+module.exports = router;

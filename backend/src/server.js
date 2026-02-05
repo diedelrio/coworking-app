@@ -28,25 +28,25 @@ app.use('/api/auth', authRoutes);
 app.use('/api/spaces', spacesRoutes);
 app.use('/api/reservations', reservationsRoutes);
 app.use('/api/office-closures', officeClosuresRoutes);
-app.use('/api/users', usersRoutes); 
+app.use('/api/users', usersRoutes);
+
 app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);
 app.use('/api/admin/operations', adminOperations);
 app.use('/api/admin/tags', adminTags);
+
+// ✅ Public routes (login/register screens)
 app.use('/api/public', publicRoutes);
 
 // ✅ Backoffice jobs
 const { startAutoCompleteJob } = require('./jobs/autoCompleteReservations');
 startAutoCompleteJob();
 
-
-const { bootstrapMasterAdmin } = require("./utils/bootstrapAdmin");
-
+const { bootstrapMasterAdmin } = require('./utils/bootstrapAdmin');
 bootstrapMasterAdmin().catch((err) => {
-  console.error("[bootstrap] Failed to create master admin:", err);
+  console.error('[bootstrap] Failed to create master admin:', err);
 });
 
 app.listen(PORT, () => {
   console.log(`API escuchando en http://localhost:${PORT}`);
 });
-

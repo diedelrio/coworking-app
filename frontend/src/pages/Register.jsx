@@ -51,6 +51,12 @@ export default function Register() {
   return (
     <div className="app-center">
       <div className="card">
+              {/* Logo centrado */}
+        <img
+          src="/logoCoworking.png"
+          alt="Coworking Sinergia"
+          style={{ height: 64, width: 'auto', margin: '0 auto 12px', display: 'block' }}
+        />
         <h1>Crear cuenta</h1>
         <p>Regístrate para reservar espacios en el coworking.</p>
 
@@ -143,6 +149,7 @@ export default function Register() {
             Ya tengo cuenta
           </Link>
         </div>
+        
       </div>
     </div>
   );
