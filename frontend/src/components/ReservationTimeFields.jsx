@@ -1,6 +1,33 @@
 import { useMemo, useState, useEffect } from "react";
 import { hhmmToMinutes, minutesToHHMM, pickClosestEndOption } from "../utils/timeUtils";
 
+function normalizeHHMM(v) {
+  if (!v) return "";
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (/^\d{2}:\d{2}$/.test(s)) return s;
+    const m = /^(\d{2}):(\d{2}):\d{2}/.exec(s);
+    if (m) return `${m[1]}:${m[2]}`;
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+    return s;
+  }
+  try {
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+  } catch (_) {}
+  return "";
+}
+
+
 export default function ReservationTimeFields({
   startTime,
   endTime,
@@ -24,19 +51,38 @@ export default function ReservationTimeFields({
     return Array.from(new Set(allowed));
   }, [startOptions, halfDayMinutes]);
 
-  // Si cambian opciones y el valor actual no existe, corregimos (defensivo)
+  // Si cambian opciones:
+  // - En creación: si no hay valor, setear default permitido
+  // - En edición: si hay valor pero no está en opciones, NO lo pisamos (lo mostramos igual)
   useEffect(() => {
     if (!startOptions?.length) return;
-    const allowed = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
-    if (startTime && allowed.includes(startTime)) return;
-    setStartTime(allowed[0]);
+
+    const normalized = normalizeHHMM(startTime);
+    if (startTime && normalized && normalized !== startTime) {
+      setStartTime(normalized);
+      return;
+    }
+
+    if (!startTime) {
+      const allowed = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
+      setStartTime(allowed[0]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startOptions, mode, halfDayStarts]);
 
+
   useEffect(() => {
     if (!endOptions?.length) return;
-    if (endTime && endOptions.includes(endTime)) return;
-    setEndTime(endOptions[0]);
+
+    const normalized = normalizeHHMM(endTime);
+    if (endTime && normalized && normalized !== endTime) {
+      setEndTime(normalized);
+      return;
+    }
+
+    if (!endTime) {
+      setEndTime(endOptions[0]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endOptions]);
 
@@ -83,7 +129,19 @@ export default function ReservationTimeFields({
     // MANUAL: no toca horas
   };
 
-  const startSelectOptions = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
+  const startSelectOptions = useMemo(() => {
+    const base = mode === "HALF" && halfDayStarts.length ? halfDayStarts : startOptions;
+    const st = normalizeHHMM(startTime);
+    if (st && Array.isArray(base) && !base.includes(st)) return [st, ...base];
+    return base;
+  }, [mode, halfDayStarts, startOptions, startTime]);
+
+  const endSelectOptions = useMemo(() => {
+    const base = Array.isArray(endOptions) ? endOptions : [];
+    const et = normalizeHHMM(endTime);
+    if (et && !base.includes(et)) return [et, ...base];
+    return base;
+  }, [endOptions, endTime]);
 
   return (
     <div className="user-reserve-field full">
@@ -141,8 +199,8 @@ export default function ReservationTimeFields({
               }}
               disabled={disabled || !endOptions?.length || mode === "HALF" || mode === "FULL"}
             >
-              {!endOptions?.length ? <option value="">—</option> : null}
-              {endOptions.map((t) => (
+              {!endSelectOptions?.length ? <option value="">—</option> : null}
+              {endSelectOptions.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>

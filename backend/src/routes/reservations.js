@@ -23,6 +23,7 @@ const {
 
 // ✅ Validador de horario/min/step (usa settings DB por dentro)
 const { validateReservationTimes } = require('../utils/reservationTimeValidator');
+const { madridDateTimeToUtc, madridDateYMDToUtcMidnight } = require('../utils/timezone');
 
 const router = express.Router();
 
@@ -264,9 +265,10 @@ async function validateAndBuildReservation({
     throw new ReservationValidationError('Faltan datos de la reserva');
   }
 
-  const dateOnly = new Date(`${date}T00:00:00`);
-  const startDateTime = new Date(`${date}T${startTime}:00`);
-  const endDateTime = new Date(`${date}T${endTime}:00`);
+  // Interpretar date+time como hora local del coworking (Europe/Madrid) y convertir a UTC real.
+  const dateOnly = madridDateYMDToUtcMidnight(date);
+  const startDateTime = madridDateTimeToUtc(date, startTime);
+  const endDateTime = madridDateTimeToUtc(date, endTime);
 
   if (
     Number.isNaN(dateOnly.getTime()) ||

@@ -10,31 +10,70 @@ import {
   minutesBetween,
 } from "../utils/timeUtils";
 
-
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
+/**
+ * Convierte cualquier formato razonable a "HH:MM" SIN aplicar timezone:
+ * - "09:00" -> "09:00"
+ * - "09:00:00" -> "09:00"
+ * - "2026-02-06T09:00:00.000Z" -> "09:00"   (extrae del string, NO new Date())
+ * - Date/number -> usa getHours/getMinutes
+ */
 function toHHMM(v) {
   if (!v) return "";
+
   if (typeof v === "string") {
-    if (/^\d{2}:\d{2}$/.test(v)) return v;
+    // 1) "HH:MM" o "HH:MM:SS" (ya es hora local de negocio)
+    const m1 = v.match(/^(\d{2}:\d{2})/);
+    if (m1) return m1[1];
+
+    // 2) ISO con zona horaria (Z o ±HH:MM) -> convertir a hora local del navegador
+    // Ej: "2026-02-10T16:00:00.000Z" o "2026-02-10T16:00:00+00:00"
+    const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(v);
+    if (hasTZ) {
+      const d = new Date(v);
+      if (!Number.isNaN(d.getTime())) {
+        return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      }
+    }
+
+    // 3) ISO sin TZ o formatos raros: último intento (no recomendado pero evita romper)
     const d = new Date(v);
-    if (!Number.isNaN(d.getTime())) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    if (!Number.isNaN(d.getTime())) {
+      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    }
+
     return v;
   }
+
   const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+
+/**
+ * Convierte cualquier formato razonable a "YYYY-MM-DD" sin corrimientos por TZ:
+ * - "2026-02-06" -> "2026-02-06"
+ * - "2026-02-06T00:00:00.000Z" -> "2026-02-06" (extrae string)
+ * - Date/number -> yyyy-mm-dd con Date local
+ */
 function toYMD(dateLike) {
+  if (!dateLike) return "";
+
+  if (typeof dateLike === "string") {
+    const m = dateLike.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) return m[1];
+  }
+
   const d = new Date(dateLike);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-
 
 function nextBusinessDayYMD(ymd) {
   const d = new Date(`${ymd}T00:00:00`);
@@ -50,7 +89,10 @@ function isValidHHMM(v) {
 }
 function formatEUR(value) {
   const num = Number(value || 0);
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(num);
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: "EUR",
+  }).format(num);
 }
 
 function isSharedSpaceType(spaceType) {
@@ -64,7 +106,9 @@ export default function UserNewReservation() {
   const editId = params.get("edit");
   const modeParam = params.get("mode"); // "edit" | null
   // Desde la lista (Ver detalles) abrimos en modo lectura por defecto.
-  const [detailMode, setDetailMode] = useState(() => Boolean(editId) && modeParam !== "edit");
+  const [detailMode, setDetailMode] = useState(
+    () => Boolean(editId) && modeParam !== "edit"
+  );
 
   useEffect(() => {
     setDetailMode(Boolean(editId) && modeParam !== "edit");
@@ -111,9 +155,13 @@ export default function UserNewReservation() {
   // No lo atamos a `timeEditable` porque ese flag está pensado para bloquear la creación cuando
   // el usuario elige HOY y ya no hay horarios; en modo detalle queremos poder abrir y, si corresponde,
   // habilitar edición.
-  const canEditLoadedReservation = Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
-  const readOnly = Boolean(editId) ? (detailMode || !canEditLoadedReservation) : false;
-  const showEnableEdit = Boolean(editId) && detailMode && canEditLoadedReservation;
+  const canEditLoadedReservation =
+    Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
+  const readOnly = Boolean(editId)
+    ? detailMode || !canEditLoadedReservation
+    : false;
+  const showEnableEdit =
+    Boolean(editId) && detailMode && canEditLoadedReservation;
   const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
 
   // form
@@ -142,7 +190,7 @@ export default function UserNewReservation() {
   // pricing snapshot para UI (en edit se congela)
   const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
 
-  // para edición: la hora original define desde dónde se pinta el combo
+  // para edición: la hora original (NO se usa para limitar el combo)
   const [originalStartTime, setOriginalStartTime] = useState(null);
 
   const selectedSpace = useMemo(
@@ -164,7 +212,9 @@ export default function UserNewReservation() {
   const durationHoursLabel = useMemo(() => {
     if (durationMinutes <= 0) return "—";
     const hours = durationMinutes / 60;
-    const pretty = Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 10) / 10);
+    const pretty = Number.isInteger(hours)
+      ? String(hours)
+      : String(Math.round(hours * 10) / 10);
     return `${pretty} horas`;
   }, [durationMinutes]);
 
@@ -173,8 +223,8 @@ export default function UserNewReservation() {
       hourlyRateSnapshot != null
         ? Number(hourlyRateSnapshot)
         : selectedSpace?.hourlyRate != null
-          ? Number(selectedSpace.hourlyRate)
-          : 0;
+        ? Number(selectedSpace.hourlyRate)
+        : 0;
 
     const hours = Math.max(0, durationMinutes) / 60;
     const qty = shared ? Math.max(1, Number(attendees || 1)) : 1;
@@ -201,7 +251,12 @@ export default function UserNewReservation() {
         border: selected ? "1px solid #b9ccff" : "1px solid #e6e9ef",
         background: selected ? "#f3f7ff" : "#fafbfc",
       }),
-      optionTitle: { fontWeight: 700, fontSize: 13, color: "#2a2f3a", marginBottom: 8 },
+      optionTitle: {
+        fontWeight: 700,
+        fontSize: 13,
+        color: "#2a2f3a",
+        marginBottom: 8,
+      },
       input: {
         width: "100%",
         height: 40,
@@ -279,8 +334,9 @@ export default function UserNewReservation() {
         setDate(toYMD(r.date));
 
         const st = toHHMM(r.startTime);
+        const et = toHHMM(r.endTime);
         setStartTime(st);
-        setEndTime(toHHMM(r.endTime));
+        setEndTime(et);
 
         // ✅ Para reglas de edición desde "detalle"
         setLoadedStatus(r.status ?? null);
@@ -292,7 +348,7 @@ export default function UserNewReservation() {
           setLoadedStartISO(`${ymd}T00:00:00`);
         }
 
-        // ✅ base para pintar el combo en edición
+        // guardamos la original por si la querés para algo, pero NO limitamos el combo
         setOriginalStartTime(st);
 
         setAttendees(Number(r.attendees ?? 1));
@@ -342,15 +398,15 @@ export default function UserNewReservation() {
       repeat === "DAILY"
         ? "Diaria"
         : repeat === "MONTHLY"
-          ? "Mismo día todos los meses"
-          : "Mismo día todas las semanas";
+        ? "Mismo día todos los meses"
+        : "Mismo día todas las semanas";
 
     const endLabel =
       endRule === "COUNT"
         ? `${Math.max(1, Number(repeatCount || 1))} ocurrencias`
         : repeatEndDate
-          ? `hasta ${repeatEndDate}`
-          : "(sin fin)";
+        ? `hasta ${repeatEndDate}`
+        : "(sin fin)";
 
     return { patternLabel, endLabel };
   }, [recurring, repeat, endRule, repeatCount, repeatEndDate]);
@@ -381,27 +437,43 @@ export default function UserNewReservation() {
       selectedDateYMD: date,
       now: new Date(),
       settings,
-      originalStartTime: editId ? originalStartTime : null,
+      // ✅ IMPORTANTE: en edición NO limitar por hora original.
+      // Si es día futuro, debe permitir cambiar 16 -> 10.
+      originalStartTime: null,
     });
 
-    setStartTimeOptions(result.options || []);
+    const opts = result.options || [];
+
+    // ✅ En edición: NO pisar el valor cargado.
+    // Si no está en la lista (cambió grilla, etc.), lo agregamos para que el <select> lo muestre.
+    let finalOpts = opts;
+    if (
+      editId &&
+      startTime &&
+      /^\d{2}:\d{2}$/.test(startTime) &&
+      !opts.includes(startTime)
+    ) {
+      finalOpts = [startTime, ...opts];
+    }
+
+    setStartTimeOptions(finalOpts);
     setTimeEditable(!!result.editable);
 
     if (result.error) setTimeError(result.error);
     if (result.warning) setTimeWarning(result.warning);
 
-    // Ajuste automático si el valor actual no es válido
-    if (result.options?.length) {
-      if (!result.options.includes(startTime)) {
-        setStartTime(result.options[0]);
+    // ✅ Solo en CREATE hacemos auto-ajuste
+    if (!editId) {
+      if (finalOpts.length) {
+        if (!finalOpts.includes(startTime)) setStartTime(finalOpts[0]);
+      } else {
+        // no hay opciones: limpiamos para evitar submit accidental
+        setStartTime("");
+        setEndTime("");
       }
-    } else {
-      // no hay opciones: limpiamos para evitar submit accidental
-      setStartTime("");
-      setEndTime("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, date, editId, originalStartTime]);
+  }, [settings, date, editId]);
 
   // ✅ BUG-0003 (1): si al abrir el formulario es imposible reservar hoy (fuera de horario),
   // setear automáticamente el próximo día laboral (solo en create y si NO vino una fecha por query).
@@ -421,7 +493,11 @@ export default function UserNewReservation() {
       settings,
     });
 
-    if (!result?.options?.length && result?.error && String(result.error).includes("Ya no es posible reservar para hoy")) {
+    if (
+      !result?.options?.length &&
+      result?.error &&
+      String(result.error).includes("Ya no es posible reservar para hoy")
+    ) {
       setDate(nextBusinessDayYMD(today));
       setAutoShiftedToNextDay(true);
     }
@@ -446,13 +522,26 @@ export default function UserNewReservation() {
     }
 
     const opts = buildEndTimeOptions({ startTime, settings });
-    setEndTimeOptions(opts);
 
-    if (opts.length && !opts.includes(endTime)) {
-      setEndTime(opts[0]);
+    // ✅ En edición: NO pisar endTime cargado; si falta en opciones, lo agregamos.
+    let finalOpts = opts;
+    if (
+      editId &&
+      endTime &&
+      /^\d{2}:\d{2}$/.test(endTime) &&
+      !opts.includes(endTime)
+    ) {
+      finalOpts = [endTime, ...opts];
+    }
+
+    setEndTimeOptions(finalOpts);
+
+    // ✅ Solo en CREATE ajustamos
+    if (!editId && finalOpts.length && !finalOpts.includes(endTime)) {
+      setEndTime(finalOpts[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, startTime]);
+  }, [settings, startTime, editId]);
 
   async function submit() {
     setSuccess("");
@@ -460,13 +549,14 @@ export default function UserNewReservation() {
 
     if (!spaceId) return setFormError("Seleccioná un espacio.");
     if (!date) return setFormError("Seleccioná una fecha.");
-    if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
+    if (!startTime || !endTime)
+      return setFormError("Seleccioná hora inicio/fin.");
 
     if (timeError) return setFormError(timeError);
     if (readOnly) {
       return setFormError(
         detailMode
-          ? "Esta reserva está en modo solo lectura. Tocá \"Editar\" para habilitar cambios (si está permitido)."
+          ? 'Esta reserva está en modo solo lectura. Tocá "Editar" para habilitar cambios (si está permitido).'
           : "Esta reserva no puede modificarse por las reglas de negocio."
       );
     }
@@ -493,11 +583,16 @@ export default function UserNewReservation() {
       if (recurring) {
         if (!repeat) return setFormError("Seleccioná un patrón de recurrencia.");
         if (endRule === "DATE") {
-          if (!repeatEndDate) return setFormError("Seleccioná una fecha de fin para la recurrencia.");
+          if (!repeatEndDate)
+            return setFormError(
+              "Seleccioná una fecha de fin para la recurrencia."
+            );
         } else {
           const n = Number(repeatCount || 0);
           if (!Number.isInteger(n) || n < 1 || n > 100) {
-            return setFormError("La cantidad de ocurrencias debe ser un número entre 1 y 100.");
+            return setFormError(
+              "La cantidad de ocurrencias debe ser un número entre 1 y 100."
+            );
           }
         }
       }
@@ -563,7 +658,11 @@ export default function UserNewReservation() {
   }
 
   const timeFieldsDisabled =
-    saving || loadingSettings || readOnly || (!editId && createLocked) || (!editId && !timeEditable && !!timeError);
+    saving ||
+    loadingSettings ||
+    readOnly ||
+    (!editId && createLocked) ||
+    (!editId && !timeEditable && !!timeError);
 
   return (
     <div>
@@ -574,42 +673,77 @@ export default function UserNewReservation() {
           {/* Header tipo mock */}
           <div className="user-reserve-header-wrap">
             <div className="user-reserve-header">
-              <button className="user-reserve-back" onClick={() => navigate("/user")}>
+              <button
+                className="user-reserve-back"
+                onClick={() => navigate("/user")}
+              >
                 ←
               </button>
 
               <div className="user-reserve-title">
-                <h1>{editId ? (readOnly ? "Detalle de Reserva" : "Editar Reserva") : "Nueva Reserva"}</h1>
-                <p>{editId ? "Consulta el detalle de tu reserva" : "Crea una nueva reserva de espacio de coworking"}</p>
+                <h1>
+                  {editId
+                    ? readOnly
+                      ? "Detalle de Reserva"
+                      : "Editar Reserva"
+                    : "Nueva Reserva"}
+                </h1>
+                <p>
+                  {editId
+                    ? "Consulta el detalle de tu reserva"
+                    : "Crea una nueva reserva de espacio de coworking"}
+                </p>
               </div>
             </div>
           </div>
 
           {spacesError ? (
-            <div className="form-error" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+            <div
+              className="form-error"
+              style={{ maxWidth: 860, margin: "0 auto 12px" }}
+            >
               <b>Error</b>
               <div>{spacesError}</div>
             </div>
           ) : null}
 
           {formError ? (
-            <div className="form-error" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+            <div
+              className="form-error"
+              style={{ maxWidth: 860, margin: "0 auto 12px" }}
+            >
               {formError}
             </div>
           ) : null}
 
-                    {editId ? (
-            <div className="admin-card" style={{ maxWidth: 860, margin: "0 auto 12px", padding: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          {editId ? (
+            <div
+              className="admin-card"
+              style={{ maxWidth: 860, margin: "0 auto 12px", padding: 14 }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <div style={{ display: "grid", gap: 4 }}>
-                  <div style={{ fontWeight: 900 }}>{detailMode ? "Modo detalle" : "Modo edición"}</div>
+                  <div style={{ fontWeight: 900 }}>
+                    {detailMode ? "Modo detalle" : "Modo edición"}
+                  </div>
                   {showNotEditableHint ? (
                     <div style={{ opacity: 0.8, fontSize: 13 }}>
-                      Esta reserva no se puede editar (solo reservas <b>ACTIVAS</b> y <b>futuras</b>).
+                      Esta reserva no se puede editar (solo reservas <b>ACTIVAS</b>{" "}
+                      y <b>futuras</b>).
                     </div>
                   ) : (
                     <div style={{ opacity: 0.8, fontSize: 13 }}>
-                      {detailMode ? "Podés habilitar la edición si la reserva cumple las reglas de negocio." : "Estás editando esta reserva."}
+                      {detailMode
+                        ? "Podés habilitar la edición si la reserva cumple las reglas de negocio."
+                        : "Estás editando esta reserva."}
                     </div>
                   )}
                 </div>
@@ -628,8 +762,11 @@ export default function UserNewReservation() {
             </div>
           ) : null}
 
-{success ? (
-            <div className="success" style={{ maxWidth: 860, margin: "0 auto 12px" }}>
+          {success ? (
+            <div
+              className="success"
+              style={{ maxWidth: 860, margin: "0 auto 12px" }}
+            >
               {success}
             </div>
           ) : null}
@@ -638,7 +775,13 @@ export default function UserNewReservation() {
           <div className="user-reserve-card">
             <div className="user-reserve-card-head">
               <div className="title">Detalles de la Reserva</div>
-              <p className="sub">{editId ? (detailMode ? "Revisa la información de la reserva seleccionada." : "Modificá los datos de tu reserva.") : "Completa la información a continuación para crear tu reserva"}</p>
+              <p className="sub">
+                {editId
+                  ? detailMode
+                    ? "Revisa la información de la reserva seleccionada."
+                    : "Modificá los datos de tu reserva."
+                  : "Completa la información a continuación para crear tu reserva"}
+              </p>
             </div>
 
             <div className="user-reserve-grid">
@@ -650,10 +793,13 @@ export default function UserNewReservation() {
                   onChange={(e) => setSpaceId(e.target.value)}
                   disabled={loadingSpaces || saving || createLocked || readOnly}
                 >
-                  <option value="">{loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}</option>
+                  <option value="">
+                    {loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}
+                  </option>
                   {spaces.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} • {formatEUR(s.hourlyRate)} / hora • {s.capacity} persona(s)
+                      {s.name} • {formatEUR(s.hourlyRate)} / hora •{" "}
+                      {s.capacity} persona(s)
                     </option>
                   ))}
                 </select>
@@ -665,7 +811,9 @@ export default function UserNewReservation() {
                       <span>💶 {formatEUR(selectedSpace.hourlyRate)} / hora</span>
                     </div>
                     {selectedSpace.description ? (
-                      <p className="space-info-desc">{selectedSpace.description}</p>
+                      <p className="space-info-desc">
+                        {selectedSpace.description}
+                      </p>
                     ) : null}
                   </div>
                 ) : null}
@@ -704,7 +852,10 @@ export default function UserNewReservation() {
                   <div className="recurrence-head">
                     <div>
                       <div className="title">Haz recurrente tu reserva</div>
-                      <div className="sub">Configura una cita recurrente y programada para esta reserva</div>
+                      <div className="sub">
+                        Configura una cita recurrente y programada para esta
+                        reserva
+                      </div>
                     </div>
                     <label className="toggle-switch" title="Activar recurrencia">
                       <input
@@ -723,7 +874,9 @@ export default function UserNewReservation() {
                         {/* Izquierda: Repetir */}
                         <div>
                           <div style={recurStyles.blockTitle}>Repetir</div>
-                          <div style={recurStyles.labelMuted}>Elige el patrón de recurrencia</div>
+                          <div style={recurStyles.labelMuted}>
+                            Elige el patrón de recurrencia
+                          </div>
                           <div style={{ marginTop: 10 }}>
                             <select
                               value={repeat}
@@ -732,8 +885,12 @@ export default function UserNewReservation() {
                               style={recurStyles.input}
                             >
                               <option value="DAILY">Diaria</option>
-                              <option value="WEEKLY">Mismo día todas las semanas</option>
-                              <option value="MONTHLY">Mismo día todos los meses</option>
+                              <option value="WEEKLY">
+                                Mismo día todas las semanas
+                              </option>
+                              <option value="MONTHLY">
+                                Mismo día todos los meses
+                              </option>
                             </select>
                           </div>
                         </div>
@@ -741,7 +898,9 @@ export default function UserNewReservation() {
                         {/* Derecha: Regla de fin */}
                         <div>
                           <div style={recurStyles.blockTitle}>Regla de fin</div>
-                          <div style={recurStyles.labelMuted}>Define cuándo finaliza la recurrencia</div>
+                          <div style={recurStyles.labelMuted}>
+                            Define cuándo finaliza la recurrencia
+                          </div>
 
                           <div style={recurStyles.optionList}>
                             <div style={recurStyles.optionCard(endRule === "DATE")}>
@@ -754,11 +913,15 @@ export default function UserNewReservation() {
                                 style={{ marginTop: 3 }}
                               />
                               <div>
-                                <div style={recurStyles.optionTitle}>Hasta una fecha</div>
+                                <div style={recurStyles.optionTitle}>
+                                  Hasta una fecha
+                                </div>
                                 <input
                                   type="date"
                                   value={repeatEndDate}
-                                  onChange={(e) => setRepeatEndDate(e.target.value)}
+                                  onChange={(e) =>
+                                    setRepeatEndDate(e.target.value)
+                                  }
                                   disabled={saving || endRule !== "DATE" || readOnly}
                                   style={recurStyles.input}
                                 />
@@ -775,13 +938,17 @@ export default function UserNewReservation() {
                                 style={{ marginTop: 3 }}
                               />
                               <div>
-                                <div style={recurStyles.optionTitle}>Cantidad de ocurrencias</div>
+                                <div style={recurStyles.optionTitle}>
+                                  Cantidad de ocurrencias
+                                </div>
                                 <input
                                   type="number"
                                   min={1}
                                   max={100}
                                   value={repeatCount}
-                                  onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
+                                  onChange={(e) =>
+                                    setRepeatCount(Number(e.target.value || 1))
+                                  }
                                   disabled={saving || endRule !== "COUNT" || readOnly}
                                   style={recurStyles.input}
                                 />
@@ -796,7 +963,9 @@ export default function UserNewReservation() {
                           <div className="row">
                             <div>
                               <div className="k">Patrón</div>
-                              <div className="v">{recurrenceSummary.patternLabel}</div>
+                              <div className="v">
+                                {recurrenceSummary.patternLabel}
+                              </div>
                             </div>
                             <div>
                               <div className="k">Inicio</div>
@@ -807,7 +976,10 @@ export default function UserNewReservation() {
                               <div className="v">{recurrenceSummary.endLabel}</div>
                             </div>
                           </div>
-                          <div className="hint">Esta reserva se repetirá según la configuración seleccionada.</div>
+                          <div className="hint">
+                            Esta reserva se repetirá según la configuración
+                            seleccionada.
+                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -873,7 +1045,11 @@ export default function UserNewReservation() {
 
             {/* Footer botones */}
             <div className="user-reserve-footer">
-              <button className="pill-button-outline" onClick={() => navigate("/user")} disabled={saving}>
+              <button
+                className="pill-button-outline"
+                onClick={() => navigate("/user")}
+                disabled={saving}
+              >
                 {editId ? "Volver" : "Cancelar"}
               </button>
 
@@ -895,13 +1071,23 @@ export default function UserNewReservation() {
                 <button
                   className="pill-button"
                   onClick={submit}
-                  disabled={saving || loadingSpaces || loadingSettings || !!timeError || readOnly || createLocked}
+                  disabled={
+                    saving ||
+                    loadingSpaces ||
+                    loadingSettings ||
+                    !!timeError ||
+                    readOnly ||
+                    createLocked
+                  }
                 >
-                  {saving ? "Guardando..." : editId ? "Guardar cambios" : "Crear Reserva"}
+                  {saving
+                    ? "Guardando..."
+                    : editId
+                    ? "Guardar cambios"
+                    : "Crear Reserva"}
                 </button>
               ) : null}
             </div>
-
           </div>
         </div>
 
@@ -931,9 +1117,12 @@ export default function UserNewReservation() {
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>Aplicar cambios</div>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>
+                  Aplicar cambios
+                </div>
                 <div style={{ color: "#5b6472", fontSize: 13 }}>
-                  Esta reserva es recurrente. ¿Querés aplicar los cambios solo a esta cita o a la serie?
+                  Esta reserva es recurrente. ¿Querés aplicar los cambios solo a
+                  esta cita o a la serie?
                 </div>
               </div>
 
@@ -945,7 +1134,10 @@ export default function UserNewReservation() {
                     alignItems: "center",
                     padding: 12,
                     borderRadius: 12,
-                    border: applyScope === "ONE" ? "1px solid #7aa7ff" : "1px solid #e6e9ef",
+                    border:
+                      applyScope === "ONE"
+                        ? "1px solid #7aa7ff"
+                        : "1px solid #e6e9ef",
                     background: applyScope === "ONE" ? "#f3f7ff" : "#fafbfc",
                     cursor: "pointer",
                   }}
@@ -958,7 +1150,9 @@ export default function UserNewReservation() {
                     onChange={() => setApplyScope("ONE")}
                   />
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Solo esta cita</div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      Solo esta cita
+                    </div>
                     <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
                       Modifica únicamente la reserva seleccionada.
                     </div>
@@ -972,7 +1166,10 @@ export default function UserNewReservation() {
                     alignItems: "center",
                     padding: 12,
                     borderRadius: 12,
-                    border: applyScope === "SERIES" ? "1px solid #7aa7ff" : "1px solid #e6e9ef",
+                    border:
+                      applyScope === "SERIES"
+                        ? "1px solid #7aa7ff"
+                        : "1px solid #e6e9ef",
                     background: applyScope === "SERIES" ? "#f3f7ff" : "#fafbfc",
                     cursor: "pointer",
                   }}
@@ -985,7 +1182,9 @@ export default function UserNewReservation() {
                     onChange={() => setApplyScope("SERIES")}
                   />
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Esta y las siguientes</div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      Esta y las siguientes
+                    </div>
                     <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
                       Aplica el cambio a la serie a partir de esta ocurrencia.
                     </div>
@@ -993,7 +1192,14 @@ export default function UserNewReservation() {
                 </label>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  marginTop: 16,
+                }}
+              >
                 <button
                   type="button"
                   onClick={onCancelApplyScope}
