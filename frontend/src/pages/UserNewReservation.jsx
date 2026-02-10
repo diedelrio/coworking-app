@@ -140,16 +140,23 @@ export default function UserNewReservation() {
 
   // Meta de la reserva cargada (para decidir si se puede editar desde "detalles")
   const [loadedStatus, setLoadedStatus] = useState(null);
-  const [loadedStartISO, setLoadedStartISO] = useState(null);
 
   const [createLocked, setCreateLocked] = useState(false);
   const [autoShiftedToNextDay, setAutoShiftedToNextDay] = useState(false);
 
-  const isLoadedFuture = useMemo(() => {
-    if (!loadedStartISO) return false;
-    const t = new Date(loadedStartISO).getTime();
-    return Number.isFinite(t) && t > Date.now();
-  }, [loadedStartISO]);
+const isLoadedFuture = useMemo(() => {
+  if (!editId || !date || !startTime) return false;
+
+  // Comparamos SOLO por negocio: fecha + hora local
+  const now = new Date();
+
+  const [hh, mm] = startTime.split(":").map(Number);
+  const d = new Date(date);
+  d.setHours(hh, mm, 0, 0);
+
+  return d.getTime() > now.getTime();
+}, [editId, date, startTime]);
+
 
   // Para habilitar edición desde "detalle" SOLO depende de reglas de negocio de la reserva cargada.
   // No lo atamos a `timeEditable` porque ese flag está pensado para bloquear la creación cuando
