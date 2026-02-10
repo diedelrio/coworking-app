@@ -392,7 +392,7 @@ async function validateAndBuildReservation({
     (sum, r) => sum + getReservationDurationHours(r.startTime, r.endTime),
     0
   );
-
+  
   if (usedDayHours + newReservationHours > typeRules.maxHoursPerDayPerUser) {
     throw new ReservationValidationError(
       `Superas el máximo de ${typeRules.maxHoursPerDayPerUser} horas por día para este tipo de espacio`,

@@ -50,8 +50,8 @@ function getReservationDurationHours(startTime, endTime) {
  */
 function getDefaultTypeRules(spaceType) {
   const base = {
-    maxHoursPerDayPerUser: 9,
-    maxHoursPerWeekPerUser: 45,
+    maxHoursPerDayPerUser: 12,
+    maxHoursPerWeekPerUser: 60,
     maxOverlappingSpacesPerUser: 1,
     maxSpacesPerDayPerUser: 1,
   };
@@ -189,7 +189,7 @@ async function validateAndBuildReservation({
   console.log('usedDayHours:', usedDayHours);
   console.log('newReservationHours:', newReservationHours);
   console.log('typeRules.maxHoursPerDayPerUser:', typeRules.maxHoursPerDayPerUser);
-
+  
   if (usedDayHours + newReservationHours > typeRules.maxHoursPerDayPerUser) {
     throw new ReservationValidationError(
       `Superas el máximo de ${typeRules.maxHoursPerDayPerUser} horas por día para este tipo de espacio`,

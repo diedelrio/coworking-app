@@ -72,11 +72,11 @@ async function getReservationRules() {
 
   // defaults seguros
   const openHour = toTyped(m.OFFICE_OPEN_HOUR?.value, m.OFFICE_OPEN_HOUR?.valueType, 9);
-  const closeHour = toTyped(m.OFFICE_CLOSE_HOUR?.value, m.OFFICE_CLOSE_HOUR?.valueType, 18);
+  const closeHour = toTyped(m.OFFICE_CLOSE_HOUR?.value, m.OFFICE_CLOSE_HOUR?.valueType, 17);
   const minMinutes = toTyped(m.RESERVATION_MIN_MINUTES?.value, m.RESERVATION_MIN_MINUTES?.valueType, 60);
   const stepMinutes = toTyped(m.RESERVATION_STEP_MINUTES?.value, m.RESERVATION_STEP_MINUTES?.valueType, 30);
   const minMinutesBefore = toTyped(m.MIN_HOURS_BEFORE?.value, m.MIN_HOURS_BEFORE?.valueType, 0);
-
+  console.log('Loaded reservation rules from settings:', { openHour, closeHour, minMinutes, stepMinutes, minMinutesBefore });
   return {
     openHour: Number(openHour),
     closeHour: Number(closeHour),
