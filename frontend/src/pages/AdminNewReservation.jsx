@@ -8,7 +8,6 @@ import {
   buildStartTimeOptions,
   buildEndTimeOptions,
   minutesBetween,
-  composeLocalDateTimeToISO,  
 } from "../utils/timeUtils";
 
 const CREATE_USER_PATH = "/admin/usuarios/nuevo"; 
@@ -540,8 +539,6 @@ export default function AdminNewReservation() {
           }
         }
       }
-      const startAt = composeLocalDateTimeToISO(selectedDateYMD, startTime);
-      const endAt   = composeLocalDateTimeToISO(selectedDateYMD, endTime);  
 
       const payload = {
         // ✅ diferencia admin
@@ -549,8 +546,8 @@ export default function AdminNewReservation() {
 
         spaceId: Number(spaceId),
         date,
-        startAt,
-        endAt,
+        startTime,
+        endTime,
         attendees: Number(attendees || 1),
         purpose: purpose ? String(purpose).trim() : null,
         notes: notes ? String(notes).trim() : null,

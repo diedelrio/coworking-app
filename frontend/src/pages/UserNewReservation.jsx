@@ -8,7 +8,6 @@ import {
   buildStartTimeOptions,
   buildEndTimeOptions,
   minutesBetween,
-  composeLocalDateTimeToISO, 
 } from "../utils/timeUtils";
 
 function pad2(n) {
@@ -597,14 +596,12 @@ export default function UserNewReservation() {
           }
         }
       }
-      const startAt = composeLocalDateTimeToISO(selectedDateYMD, startTime);
-      const endAt   = composeLocalDateTimeToISO(selectedDateYMD, endTime);  
 
       const payload = {
         spaceId: Number(spaceId),
         date,
-        startAt,
-        endAt,
+        startTime,
+        endTime,
         attendees: Number(attendees || 1),
         purpose: purpose ? String(purpose).trim() : null,
         notes: notes ? String(notes).trim() : null,
