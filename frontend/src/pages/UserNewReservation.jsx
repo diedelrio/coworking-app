@@ -63,17 +63,47 @@ function toHHMM(v) {
 function toYMD(dateLike) {
   if (!dateLike) return "";
 
+  // Si viene string con hora + timezone, convertir a Date y formatear en local (Madrid)
   if (typeof dateLike === "string") {
-    const m = dateLike.match(/^(\d{4}-\d{2}-\d{2})/);
+    const hasTime = dateLike.includes("T");
+    const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(dateLike);
+
+    // ISO con TZ -> usar Date (corrige el "día -1")
+    if (hasTime && hasTZ) {
+      const d = new Date(dateLike);
+      if (!Number.isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    // "YYYY-MM-DD" puro -> devolver tal cual
+    const m = dateLike.match(/^(\d{4}-\d{2}-\d{2})$/);
     if (m) return m[1];
+
+    // "YYYY-MM-DD..." sin TZ -> último intento
+    const d = new Date(dateLike);
+    if (!Number.isNaN(d.getTime())) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return "";
   }
 
+  // Date/number
   const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+
 
 function nextBusinessDayYMD(ymd) {
   const d = new Date(`${ymd}T00:00:00`);
@@ -126,7 +156,14 @@ export default function UserNewReservation() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [success, setSuccess] = useState("");
-
+  // form
+  const [spaceId, setSpaceId] = useState("");
+  const [date, setDate] = useState(toYMD(new Date()));
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
+  const [attendees, setAttendees] = useState(1);
+  const [purpose, setPurpose] = useState("");
+  const [notes, setNotes] = useState("");
   // settings (para combos de horas)
   const [settings, setSettings] = useState(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -140,7 +177,7 @@ export default function UserNewReservation() {
 
   // Meta de la reserva cargada (para decidir si se puede editar desde "detalles")
   const [loadedStatus, setLoadedStatus] = useState(null);
-
+  const [loadedStartISO, setLoadedStartISO] = useState(null);
   const [createLocked, setCreateLocked] = useState(false);
   const [autoShiftedToNextDay, setAutoShiftedToNextDay] = useState(false);
 
@@ -171,14 +208,7 @@ const isLoadedFuture = useMemo(() => {
     Boolean(editId) && detailMode && canEditLoadedReservation;
   const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
 
-  // form
-  const [spaceId, setSpaceId] = useState("");
-  const [date, setDate] = useState(toYMD(new Date()));
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
-  const [attendees, setAttendees] = useState(1);
-  const [purpose, setPurpose] = useState("");
-  const [notes, setNotes] = useState("");
+
 
   // recurrencia
   const [recurring, setRecurring] = useState(false);
