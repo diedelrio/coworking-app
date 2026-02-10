@@ -40,7 +40,7 @@ async function validateReservationTimes({ startTime, endTime }) {
   const startMin = minutesSinceMidnight(start);
   const endMin = minutesSinceMidnight(end);
 
-  if (startMin < openMin || endMin > closeMin) {
+  if (startMin =< openMin || endMin >= closeMin) {
     throw buildRuleError(
       'OUT_OF_OPENING_HOURS',
       `El horario de reservas es de ${String(openHour).padStart(2, '0')}:00 a ${String(closeHour).padStart(2, '0')}:00.`
