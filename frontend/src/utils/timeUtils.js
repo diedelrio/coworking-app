@@ -71,6 +71,13 @@ export function composeLocalDateTime(dateYMD, hhmm) {
   return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
 }
 
+/** Devuelve ISO UTC (con Z) a partir de fecha (YYYY-MM-DD) + hora (HH:mm) local. */
+export function composeLocalDateTimeToISO(dateYMD, hhmm) {
+  const dt = composeLocalDateTime(dateYMD, hhmm);
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+
 function pickSetting(settings, keys, fallback) {
   for (const k of keys) {
     const v = settings?.[k];

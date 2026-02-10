@@ -97,6 +97,16 @@ export default function AdminNewReservation() {
   const [loadingSpaces, setLoadingSpaces] = useState(true);
   const [spacesError, setSpacesError] = useState("");
 
+  // form
+  const [spaceId, setSpaceId] = useState("");
+  const [date, setDate] = useState(toYMD(new Date()));
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
+  const [attendees, setAttendees] = useState(1);
+  const [purpose, setPurpose] = useState("");
+  const [notes, setNotes] = useState("");
+
+
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [success, setSuccess] = useState("");
@@ -115,30 +125,28 @@ export default function AdminNewReservation() {
   // Meta de la reserva cargada (para decidir si se puede editar desde "detalles")
   const [loadedStatus, setLoadedStatus] = useState(null);
   const [loadedStartISO, setLoadedStartISO] = useState(null);
-
   const [createLocked, setCreateLocked] = useState(false);
   const [autoShiftedToNextDay, setAutoShiftedToNextDay] = useState(false);
 
-  const isLoadedFuture = useMemo(() => {
-    if (!loadedStartISO) return false;
-    const t = new Date(loadedStartISO).getTime();
-    return Number.isFinite(t) && t > Date.now();
-  }, [loadedStartISO]);
+const isLoadedFuture = useMemo(() => {
+  if (!editId || !date || !startTime) return false;
+
+  // Comparamos SOLO por negocio: fecha + hora local
+  const now = new Date();
+
+  const [hh, mm] = startTime.split(":").map(Number);
+  const d = new Date(date);
+  d.setHours(hh, mm, 0, 0);
+
+  return d.getTime() > now.getTime();
+}, [editId, date, startTime]);
+
 
   // Para habilitar edición desde "detalle" SOLO depende de reglas de negocio de la reserva cargada.
   const canEditLoadedReservation = Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
   const readOnly = Boolean(editId) ? (detailMode || !canEditLoadedReservation) : false;
   const showEnableEdit = Boolean(editId) && detailMode && canEditLoadedReservation;
   const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
-
-  // form
-  const [spaceId, setSpaceId] = useState("");
-  const [date, setDate] = useState(toYMD(new Date()));
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
-  const [attendees, setAttendees] = useState(1);
-  const [purpose, setPurpose] = useState("");
-  const [notes, setNotes] = useState("");
 
   // ====== DIFERENCIA ADMIN: usuario ======
   const [users, setUsers] = useState([]);
