@@ -14,6 +14,18 @@ const adminEmailTemplates = require('./routes/adminEmailTemplates');
 const adminOperations = require('./routes/adminOperations');
 const adminTags = require('./routes/adminTags');
 
+const adminPricing = require('./routes/adminPricing');
+const pricingResolve = require('./routes/pricingResolve');
+const adminEntitlements = require('./routes/adminEntitlements');
+const meEntitlements = require('./routes/meEntitlements');
+const adminContracts = require('./routes/adminContracts');
+const adminInvoices = require('./routes/adminInvoices');
+const adminCms = require('./routes/adminCms');
+const publicContent = require('./routes/publicContent');
+const meMessages = require('./routes/meMessages');
+const adminMessages = require('./routes/adminMessages');
+const meNotifications = require('./routes/meNotifications');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -35,8 +47,23 @@ app.use('/api/admin/email-templates', adminEmailTemplates);
 app.use('/api/admin/operations', adminOperations);
 app.use('/api/admin/tags', adminTags);
 
+app.use('/api/admin/pricing', adminPricing);
+app.use('/api/pricing', pricingResolve);
+app.use('/api/admin/entitlements', adminEntitlements);
+app.use('/api/me/entitlements', meEntitlements);
+
+app.use('/api/admin/contracts', adminContracts);
+app.use('/api/admin/invoices', adminInvoices);
+
+app.use('/api/admin/cms', adminCms);
+
+app.use('/api/me', meMessages);
+app.use('/api/admin', adminMessages);
+app.use('/api/me/notifications', meNotifications);
+
 // ✅ Public routes (login/register screens)
 app.use('/api/public', publicRoutes);
+app.use('/api/public', publicContent);
 
 // ✅ Backoffice jobs
 const { startAutoCompleteJob } = require('./jobs/autoCompleteReservations');

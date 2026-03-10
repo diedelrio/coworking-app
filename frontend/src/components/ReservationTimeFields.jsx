@@ -39,8 +39,18 @@ export default function ReservationTimeFields({
   error = "",
   warning = "",
   halfDayMinutes = 300,
+  initialMode = "MANUAL",
+  onModeChange,
 }) {
-  const [mode, setMode] = useState("MANUAL"); // MANUAL | HALF | FULL
+  const [mode, setMode] = useState(initialMode || "MANUAL"); // MANUAL | HALF | FULL
+
+  // sincronizar modo inicial (edición)
+  useEffect(() => {
+    if (initialMode && initialMode !== mode) {
+      setMode(initialMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMode]);
 
   const halfDayStarts = useMemo(() => {
     if (!Array.isArray(startOptions) || startOptions.length === 0) return [];
@@ -110,6 +120,7 @@ export default function ReservationTimeFields({
     if (!startOptions?.length) return;
 
     setMode(next);
+    if (typeof onModeChange === "function") onModeChange(next);
 
     // ✅ BUG-0003 (2): al cambiar de Manual → Medio día / Día completo, resetear horas y usar valores predefinidos
     if (next === "FULL") {
@@ -171,6 +182,7 @@ export default function ReservationTimeFields({
                   return;
                 }
                 setMode("MANUAL");
+                if (typeof onModeChange === "function") onModeChange("MANUAL");
                 setStartTime(v);
               }}
               disabled={disabled || !startSelectOptions?.length}
@@ -195,6 +207,7 @@ export default function ReservationTimeFields({
               value={endTime || ""}
               onChange={(e) => {
                 setMode("MANUAL");
+                if (typeof onModeChange === "function") onModeChange("MANUAL");
                 setEndTime(e.target.value);
               }}
               disabled={disabled || !endOptions?.length || mode === "HALF" || mode === "FULL"}

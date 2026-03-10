@@ -112,10 +112,62 @@ function buildPricingSnapshot({
   };
 }
 
+
+/**
+ * Calcula pricing snapshot soportando unidades:
+ * - HOUR: total = unitPrice * horas * multiplier
+ * - HALF_DAY/DAY/MONTH: total = unitPrice * multiplier (precio fijo por unidad)
+ *
+ * Params:
+ *  - unit: PriceUnit
+ *  - unitPrice: Decimal|number|string
+ *  - hourlyRateForRef: Decimal|number|string (opcional, para mantener hourlyRateSnapshot informativo)
+ *
+ * Devuelve:
+ *  { pricingUnit, unitPriceSnapshot, hourlyRateSnapshot, durationMinutes, totalAmount }
+ */
+function buildPricingSnapshotByUnit({
+  startTime,
+  endTime,
+  unit = "HOUR",
+  unitPrice,
+  hourlyRateForRef,
+  shared = false,
+  attendees = 1,
+}) {
+  const durationMinutes = calcDurationMinutes(startTime, endTime);
+  const multiplier = shared ? Math.max(1, Number(attendees || 1)) : 1;
+
+  const unitPriceSnapshot = roundMoneyDecimal(unitPrice || 0);
+
+  let totalAmount;
+  if (unit === "HOUR") {
+    totalAmount = calcTotalAmount(unitPriceSnapshot, durationMinutes, multiplier);
+  } else {
+    const t = new Prisma.Decimal(unitPriceSnapshot).mul(new Prisma.Decimal(multiplier));
+    totalAmount = roundMoneyDecimal(t);
+  }
+
+  const hourlyRateSnapshot =
+    hourlyRateForRef !== undefined && hourlyRateForRef !== null
+      ? roundMoneyDecimal(hourlyRateForRef)
+      : unit === "HOUR"
+        ? unitPriceSnapshot
+        : roundMoneyDecimal(0);
+
+  return {
+    pricingUnit: unit,
+    unitPriceSnapshot,
+    hourlyRateSnapshot,
+    durationMinutes,
+    totalAmount,
+  };
+}
 module.exports = {
   hhmmToMinutes,
   calcDurationMinutes,
   calcTotalAmount,
   buildPricingSnapshot,
+  buildPricingSnapshotByUnit,
   roundMoneyDecimal,
 };

@@ -9,7 +9,8 @@ const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
 
 const reservationValidationService = require('../services/reservationValidationService');
-const { buildPricingSnapshot } = require('../services/pricing');
+const { buildPricingSnapshot, buildPricingSnapshotByUnit } = require('../services/pricing');
+const { resolveHourlyRate, resolveUnitPrice } = require('../services/pricingResolver');
 
 const { getTypeReservationRules } = reservationValidationService;
 
@@ -26,6 +27,61 @@ const { validateReservationTimes } = require('../utils/reservationTimeValidator'
 const { madridDateTimeToUtc, madridDateYMDToUtcMidnight } = require('../utils/timezone');
 
 const router = express.Router();
+
+// --- Bonos: equivalencias (Opción 2) ---
+const BONO_EQUIV_HALF_DAY_HOURS = 4;
+const BONO_EQUIV_DAY_HOURS = 8;
+
+async function tryConsumeBonoForReservation({ reservationId, userId, pricingUnit, durationMinutes, when }) {
+  // Solo consume para reservas por hora / medio día / día completo.
+  let hoursToConsume = 0;
+  if (pricingUnit === 'HOUR') {
+    hoursToConsume = Math.ceil(Number(durationMinutes || 0) / 60);
+  } else if (pricingUnit === 'HALF_DAY') {
+    hoursToConsume = BONO_EQUIV_HALF_DAY_HOURS;
+  } else if (pricingUnit === 'DAY') {
+    hoursToConsume = BONO_EQUIV_DAY_HOURS;
+  }
+  if (!hoursToConsume || hoursToConsume <= 0) return { consumed: false };
+
+  const ent = await prisma.userEntitlement.findFirst({
+    where: {
+      userId: Number(userId),
+      type: 'HOURS_PACK',
+      unit: 'HOUR',
+      remainingAmount: { gte: hoursToConsume },
+      OR: [{ validFrom: null }, { validFrom: { lte: when } }],
+      AND: [{ OR: [{ validTo: null }, { validTo: { gte: when } }] }],
+    },
+    orderBy: [
+      { validTo: 'asc' },
+      { id: 'asc' },
+    ],
+    select: { id: true, remainingAmount: true },
+  });
+
+  if (!ent) return { consumed: false };
+
+  // consumir
+  await prisma.$transaction(async (tx) => {
+    await tx.userEntitlement.update({
+      where: { id: ent.id },
+      data: { remainingAmount: { decrement: hoursToConsume } },
+    });
+
+    // si se consume bono, dejamos totalAmount=0 (cobertura total, MVP)
+    await tx.reservation.update({
+      where: { id: reservationId },
+      data: {
+        entitlementId: ent.id,
+        entitlementConsumedHours: hoursToConsume,
+        totalAmount: '0.00',
+      },
+    });
+  });
+
+  return { consumed: true, entitlementId: ent.id, hoursToConsume };
+}
 
 /* ------------------------------ Helpers fechas ------------------------------ */
 
@@ -632,6 +688,9 @@ router.patch('/series/:seriesId/reject', authRequired, requireAdmin, async (req,
   try {
     const { seriesId } = req.params;
     const { reason } = req.body || {};
+
+    const pricingMode = String((req.body || {}).pricingMode || 'MANUAL').toUpperCase();
+    const pricingUnit = pricingMode === 'HALF' ? 'HALF_DAY' : pricingMode === 'FULL' ? 'DAY' : 'HOUR';
     if (!seriesId) return res.status(400).json({ message: 'seriesId inválido' });
 
     const result = await prisma.reservation.updateMany({
@@ -697,6 +756,9 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { reason } = req.body || {};
+
+    const pricingMode = String((req.body || {}).pricingMode || 'MANUAL').toUpperCase();
+    const pricingUnit = pricingMode === 'HALF' ? 'HALF_DAY' : pricingMode === 'FULL' ? 'DAY' : 'HOUR';
 
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: 'ID de reserva inválido' });
@@ -821,6 +883,9 @@ router.post('/', authRequired, async (req, res) => {
       recurrenceEndDate,
       recurrenceCount,
     } = req.body || {};
+
+    const pricingMode = String((req.body || {}).pricingMode || 'MANUAL').toUpperCase();
+    const pricingUnit = pricingMode === 'HALF' ? 'HALF_DAY' : pricingMode === 'FULL' ? 'DAY' : 'HOUR';
 
     if (!actorId) {
       return res
@@ -1046,12 +1111,24 @@ const closures = prisma.officeClosure
           );
         }
       }
+      const hourlyRateForRef = await resolveHourlyRate({ userId: targetUserId, spaceId: Number(spaceId), date: dateOnly });
+      const unitPrice = await resolveUnitPrice({ userId: targetUserId, spaceId: Number(spaceId), unit: pricingUnit, date: dateOnly });
 
-      const pricing = buildPricingSnapshot({
+      const effectiveUnitPrice = unitPrice != null ? unitPrice : (pricingUnit === "HOUR" ? hourlyRateForRef : null);
+      if (effectiveUnitPrice == null) {
+        throw new ReservationValidationError(
+          `No hay precio configurado para ${pricingUnit} en el espacio seleccionado.`,
+          "PRICING_NOT_FOUND",
+          { occurrenceIndex: i + 1, date: occYMD, unit: pricingUnit }
+        );
+      }
+
+      const pricing = buildPricingSnapshotByUnit({
         startTime,
         endTime,
-        spaceHourlyRate: space.hourlyRate,
-        hourlyRateSnapshot: null,
+        unit: pricingUnit,
+        unitPrice: effectiveUnitPrice,
+        hourlyRateForRef,
         shared,
         attendees: occAttendees,
       });
@@ -1072,6 +1149,8 @@ const closures = prisma.officeClosure
         recurrenceCount: isRecurring && hasCount ? Number(recurrenceCount) : null,
 
         // snapshot + cálculo
+        pricingUnit: pricing.pricingUnit,
+        unitPriceSnapshot: pricing.unitPriceSnapshot,
         hourlyRateSnapshot: pricing.hourlyRateSnapshot,
         durationMinutes: pricing.durationMinutes,
         totalAmount: pricing.totalAmount,
@@ -1112,6 +1191,26 @@ const closures = prisma.officeClosure
           take: 1,
           include: { user: true, space: true },
         });
+
+    // --- Bonos: si hay paquete de horas disponible, consumir (MVP cobertura total) ---
+    try {
+      const when = dateOnly;
+      for (const r of (createdReservations || [])) {
+        // solo consumo si la reserva quedó ACTIVE o PENDING (ajustable)
+        if (!r || !r.id) continue;
+        await tryConsumeBonoForReservation({
+          reservationId: r.id,
+          userId: r.userId,
+          pricingUnit: r.pricingUnit || 'HOUR',
+          durationMinutes: r.durationMinutes || 0,
+          when,
+        });
+      }
+    } catch (e) {
+      // no bloqueamos creación por consumo de bonos
+      console.warn('Bono consume failed:', e?.message || e);
+    }
+
 
     // Si es recurrente devolvemos resumen + primera
     if (isRecurring) {
@@ -1279,6 +1378,9 @@ router.put('/:id', authRequired, async (req, res) => {
       // recurrencia
       applyTo, // ONE | SERIES
     } = req.body || {};
+
+    const pricingMode = String((req.body || {}).pricingMode || 'MANUAL').toUpperCase();
+    const pricingUnit = pricingMode === 'HALF' ? 'HALF_DAY' : pricingMode === 'FULL' ? 'DAY' : 'HOUR';
 
     // 1) Traer reserva actual
     const existing = await prisma.reservation.findUnique({

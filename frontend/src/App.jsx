@@ -20,6 +20,14 @@ import AdminEmailTemplates from './pages/AdminEmailTemplates';
 import AdminOperations from './pages/AdminOperations';
 import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
+import AdminPricing from './pages/AdminPricing';
+import AdminEntitlements from './pages/AdminEntitlements';
+import AdminContracts from './pages/AdminContracts';
+import AdminInvoices from './pages/AdminInvoices';
+import AdminCMS from './pages/AdminCMS';
+import AdminMessages from './pages/AdminMessages';
+import UserMessages from './pages/UserMessages';
+import UserBonos from './pages/UserBonos';
 
 
 function App() {
@@ -53,6 +61,23 @@ function App() {
         element={
           <ProtectedRoute roles={['CLIENT']}>
             <UserNewReservation />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/user/bonos"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserBonos />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/user/mensajes"
+        element={
+          <ProtectedRoute roles={['CLIENT']}>
+            <UserMessages />
           </ProtectedRoute>
         }
       />
@@ -152,6 +177,56 @@ function App() {
         element={
           <ProtectedRoute roles={['ADMIN']}>
             <AdminUserProfile />
+          </ProtectedRoute>
+        }
+      />
+
+
+      <Route
+        path="/admin/pricing"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminPricing />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/bonos"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminEntitlements />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/contratos"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminContracts />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/facturas"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminInvoices />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/cms"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminCMS />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/mensajes"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminMessages />
           </ProtectedRoute>
         }
       />

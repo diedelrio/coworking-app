@@ -29,8 +29,16 @@ model User {
   historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
   Liquidation         Liquidation[]
 
-  processRunsExecuted  ProcessRun[]        @relation("ProcessRun_ExecutedBy")
+  processRunsExecuted ProcessRun[] @relation("ProcessRun_ExecutedBy")
   userTags            UserTag[]
+
+  // EP06-10 relations
+  purchases     Purchase[]
+  entitlements  UserEntitlement[]
+  contracts     Contract[]
+  invoices      Invoice[]
+  conversations Conversation[]
+  notifications Notification[]
 }
 
 model UserHistory {
@@ -61,6 +69,10 @@ model Space {
   imageUrl   String?
 
   reservations Reservation[]
+
+  // EP06-10 relations
+  priceItems PriceItem[]
+  contracts  Contract[]
 }
 
 model Reservation {
@@ -86,8 +98,14 @@ model Reservation {
   durationMinutes    Int     @default(0)
   totalAmount        Decimal @default(0.00) @db.Decimal(10, 2)
 
+  // Bonos (consumo)
+  entitlementId            Int?
+  entitlementConsumedHours Int  @default(0)
+
   purpose String?
   notes   String?
+
+  entitlement UserEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
 
   space Space @relation(fields: [spaceId], references: [id])
   user  User  @relation(fields: [userId], references: [id])
@@ -130,14 +148,14 @@ model SettingHistory {
 }
 
 model Tag {
-  id          Int      @id @default(autoincrement())
-  name        String
-  slug        String   @unique
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  users       UserTag[]
+  id               Int                  @id @default(autoincrement())
+  name             String
+  slug             String               @unique
+  description      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  users            UserTag[]
+  priceListTargets PriceListTargetTag[]
 }
 
 model UserTag {
@@ -192,15 +210,15 @@ model ActivationToken {
 }
 
 model ProcessRun {
-  id               Int              @id @default(autoincrement())
+  id               Int    @id @default(autoincrement())
   processName      String
   processCode      String
   executedByUserId Int
-  executedByUser   User             @relation("ProcessRun_ExecutedBy", fields: [executedByUserId], references: [id])
+  executedByUser   User   @relation("ProcessRun_ExecutedBy", fields: [executedByUserId], references: [id])
 
-  executedAt   DateTime         @default(now())
-  finishedAt   DateTime?
-  status       ProcessRunStatus @default(RUNNING)
+  executedAt DateTime         @default(now())
+  finishedAt DateTime?
+  status     ProcessRunStatus @default(RUNNING)
 
   inputFileName String?
   inputFileType String?
@@ -258,6 +276,243 @@ model LiquidationItem {
 
   liquidation Liquidation @relation(fields: [liquidationId], references: [id])
   reservation Reservation @relation(fields: [reservationId], references: [id])
+}
+
+model PriceList {
+  id         Int                  @id @default(autoincrement())
+  name       String
+  priority   Int                  @default(0)
+  active     Boolean              @default(true)
+  validFrom  DateTime?
+  validTo    DateTime?
+  items      PriceItem[]
+  targetTags PriceListTargetTag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([priority])
+  @@index([validFrom])
+  @@index([validTo])
+}
+
+model PriceItem {
+  id          Int            @id @default(autoincrement())
+  priceListId Int
+  scope       PriceItemScope
+  spaceType   SpaceType?
+  spaceId     Int?
+  unit        PriceUnit      @default(HOUR)
+  price       Decimal        @db.Decimal(10, 2)
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  // evita duplicados por unidad y scope
+  @@unique([priceListId, scope, spaceType, spaceId, unit])
+  @@index([priceListId])
+  @@index([scope])
+  @@index([spaceType])
+  @@index([spaceId])
+  @@index([unit])
+}
+
+model PriceListTargetTag {
+  priceListId Int
+  tagId       Int
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([priceListId, tagId])
+  @@index([tagId])
+  @@index([priceListId])
+}
+
+model Purchase {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  status      PurchaseStatus @default(PENDING)
+  totalAmount Decimal        @db.Decimal(10, 2)
+  createdAt   DateTime       @default(now())
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entitlements UserEntitlement[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model UserEntitlement {
+  id              Int             @id @default(autoincrement())
+  userId          Int
+  type            EntitlementType
+  initialAmount   Int
+  remainingAmount Int
+  unit            PriceUnit       @default(HOUR)
+  validFrom       DateTime?
+  validTo         DateTime?
+  purchaseId      Int?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  Reservation Reservation[]
+
+  @@index([userId])
+  @@index([type])
+  @@index([validTo])
+}
+
+model Contract {
+  id            Int            @id @default(autoincrement())
+  userId        Int
+  spaceId       Int?
+  startDate     DateTime
+  endDate       DateTime?
+  billingPeriod BillingPeriod
+  amount        Decimal        @db.Decimal(10, 2)
+  status        ContractStatus @default(ACTIVE)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space    Space?    @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  invoices Invoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Invoice {
+  id          Int           @id @default(autoincrement())
+  userId      Int
+  contractId  Int?
+  periodStart DateTime
+  periodEnd   DateTime
+  amount      Decimal       @db.Decimal(10, 2)
+  status      InvoiceStatus @default(DRAFT)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, contractId, periodStart, periodEnd])
+  @@index([userId])
+  @@index([contractId])
+  @@index([status])
+}
+
+model PublicContent {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique
+  content   String
+  published Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([published])
+}
+
+model Conversation {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id             Int               @id @default(autoincrement())
+  conversationId Int
+  senderRole     MessageSenderRole
+  body           String
+  readAt         DateTime?
+  createdAt      DateTime          @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType
+  payload   String
+  seenAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([seenAt])
+}
+
+enum PriceItemScope {
+  GLOBAL
+  SPACE_TYPE
+  SPACE_ID
+}
+
+enum PriceUnit {
+  HOUR
+  HALF_DAY
+  DAY
+  MONTH
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum EntitlementType {
+  HOURS_PACK
+}
+
+enum BillingPeriod {
+  MONTHLY
+  YEARLY
+}
+
+enum ContractStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
+enum MessageSenderRole {
+  ADMIN
+  CLIENT
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  RESERVATION_CREATED
 }
 
 enum LiquidationStatus {

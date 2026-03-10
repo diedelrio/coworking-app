@@ -170,6 +170,8 @@ const isLoadedFuture = useMemo(() => {
 
   // pricing snapshot para UI (en edit se congela)
   const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
+  const [reservationMode, setReservationMode] = useState("MANUAL"); // MANUAL | HALF | FULL
+  const [unitPriceSnapshot, setUnitPriceSnapshot] = useState(null);
 
   // para edición: la hora original define desde dónde se pinta el combo
   const [originalStartTime, setOriginalStartTime] = useState(null);
@@ -183,6 +185,29 @@ const isLoadedFuture = useMemo(() => {
     () => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false),
     [selectedSpace]
   );
+
+  const pricingUnit = useMemo(
+    () => (reservationMode === 'HALF' ? 'HALF_DAY' : reservationMode === 'FULL' ? 'DAY' : 'HOUR'),
+    [reservationMode]
+  );
+
+
+  // Resolver pricing para preview (por unidad)
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!spaceId) return;
+        const res = await api.get('/pricing/resolve', {
+          params: { spaceId, unit: pricingUnit, date },
+        });
+        setHourlyRateSnapshot(res?.data?.hourlyRate ?? null);
+        setUnitPriceSnapshot(res?.data?.unitPrice ?? null);
+      } catch (e) {
+        console.error(e);
+        setUnitPriceSnapshot(null);
+      }
+    })();
+  }, [spaceId, pricingUnit, date]);
 
   // duration + total (UI)
   const durationMinutes = useMemo(() => {
@@ -198,17 +223,24 @@ const isLoadedFuture = useMemo(() => {
   }, [durationMinutes]);
 
   const totalAmount = useMemo(() => {
-    const rate =
-      hourlyRateSnapshot != null
-        ? Number(hourlyRateSnapshot)
-        : selectedSpace?.hourlyRate != null
-          ? Number(selectedSpace.hourlyRate)
-          : 0;
-
-    const hours = Math.max(0, durationMinutes) / 60;
     const qty = shared ? Math.max(1, Number(attendees || 1)) : 1;
-    return rate * hours * qty;
-  }, [hourlyRateSnapshot, selectedSpace, durationMinutes, attendees, shared]);
+
+    // MANUAL = por hora
+    if (reservationMode === 'MANUAL') {
+      const rate =
+        hourlyRateSnapshot != null
+          ? Number(hourlyRateSnapshot)
+          : selectedSpace?.hourlyRate != null
+            ? Number(selectedSpace.hourlyRate)
+            : 0;
+      const hours = Math.max(0, durationMinutes) / 60;
+      return rate * hours * qty;
+    }
+
+    // HALF/FULL = precio fijo por unidad
+    const fixed = unitPriceSnapshot != null ? Number(unitPriceSnapshot) : 0;
+    return fixed * qty;
+  }, [reservationMode, hourlyRateSnapshot, unitPriceSnapshot, selectedSpace, durationMinutes, attendees, shared]);
 
   // ---- styles inline para dejar la UI alineada aunque el CSS global varíe ----
   const recurStyles = useMemo(
@@ -549,6 +581,7 @@ const isLoadedFuture = useMemo(() => {
       }
 
       const payload = {
+        pricingMode: reservationMode,
         // ✅ diferencia admin
         userId: Number(userId),
 
@@ -804,6 +837,8 @@ const isLoadedFuture = useMemo(() => {
                 error={readOnly ? "" : timeError}
                 warning={readOnly ? "" : timeWarning}
                 halfDayMinutes={settings?.HALF_DAY_MINUTES}
+                initialMode={reservationMode}
+                onModeChange={setReservationMode}
               />
 
               {/* Recurrencia */}
