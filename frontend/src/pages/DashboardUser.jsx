@@ -297,7 +297,7 @@ export default function DashboardUser() {
                             {toHHMM(r.startTime)}–{toHHMM(r.endTime)}
                           </span>
                           <span>👥 {r.attendees ?? 1}</span>
-                          {r.totalAmount != null ? <span>💶 {formatEUR(r.totalAmount)}</span> : null}
+                          {/*{r.totalAmount != null ? <span>💶 {formatEUR(r.totalAmount)}</span> : null} --elimino el precio por ahora */}
                         </div>
                       </div>
 
@@ -388,7 +388,7 @@ export default function DashboardUser() {
                   </div>
                 ) : null}
 
-                {detailRes.hourlyRateSnapshot != null ? (
+                {/*{detailRes.hourlyRateSnapshot != null ? (
                   <div style={{ opacity: 0.85 }}>
                     Precio aplicado: <b>{formatEUR(detailRes.hourlyRateSnapshot)}</b>
                   </div>
@@ -398,7 +398,7 @@ export default function DashboardUser() {
                   <div style={{ opacity: 0.85 }}>
                     Total: <b>{formatEUR(detailRes.totalAmount)}</b>
                   </div>
-                ) : null}
+                ) : null} --elimino el precio por ahora */}
 
                 {detailRes.purpose ? (
                   <div style={{ opacity: 0.85 }}>
