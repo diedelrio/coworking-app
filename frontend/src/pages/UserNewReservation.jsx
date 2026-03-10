@@ -835,8 +835,7 @@ const isLoadedFuture = useMemo(() => {
                   </option>
                   {spaces.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} • {formatEUR(s.hourlyRate)} / hora •{" "}
-                      {s.capacity} persona(s)
+                      {s.name} • {s.capacity} persona(s)
                     </option>
                   ))}
                 </select>
@@ -845,7 +844,7 @@ const isLoadedFuture = useMemo(() => {
                   <div className="space-info-card">
                     <div className="space-info-row">
                       <span>👥 Capacidad: {selectedSpace.capacity}</span>
-                      <span>💶 {formatEUR(selectedSpace.hourlyRate)} / hora</span>
+                      
                     </div>
                     {selectedSpace.description ? (
                       <p className="space-info-desc">
@@ -1024,7 +1023,7 @@ const isLoadedFuture = useMemo(() => {
                 </div>
               </div>
 
-              {/* Duración + Total */}
+              {/*{/* Duración + Total 
               {durationMinutes > 0 ? (
                 <div className="user-reserve-field full">
                   <div className="pricing-summary">
@@ -1038,7 +1037,18 @@ const isLoadedFuture = useMemo(() => {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              ) : null}*/}
+              {/* Duración */}
+                {durationMinutes > 0 ? (
+                  <div className="user-reserve-field full">
+                    <div className="pricing-summary">
+                      <div className="pricing-box">
+                        <span className="label">Duración</span>
+                        <span className="value">{durationHoursLabel}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
               {/* Asistentes */}
               <div className="user-reserve-field full">
