@@ -68,59 +68,146 @@ export default function Header({ user, onToggleSidebar }) {
   }
 
   return (
-    <header className="app-header">
-      <div className="app-header__brand">
+    <header
+      style={{
+        width: '100%',
+        backgroundColor: '#33576f',
+        padding: '0.75rem 1.5rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: '1px solid #33576f',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+        zIndex: 30,
+        position: 'relative',
+      }}
+    >
+      {/* Logo + nombre coworking + botón sidenav */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {onToggleSidebar && (
           <button
             type="button"
             onClick={onToggleSidebar}
             aria-label="Alternar menú lateral"
-            className="app-header__menu-btn"
+            style={{
+              border: 'none',
+              background: '#33576f',
+              width: 36,
+              height: 36,
+              borderRadius: '999px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 0 0 1px #33576f',
+            }}
           >
-            <span className="app-header__menu-icon">☰</span>
+            <span style={{ fontSize: '1.2rem', lineHeight: 1, color: 'white', fontWeight: 'bold' }}>
+              ☰
+            </span>
           </button>
         )}
 
-        <img src={logo} alt="Logo" className="app-header__logo" />
-        <div>
-          <p className="app-header__eyebrow">Coworking</p>
-          <h2 className="app-header__title">Sinergia</h2>
-        </div>
+        <img src={logo} alt="Logo" style={{ width: 40, height: 40, borderRadius: '0.5rem' }} />
+        <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#faf8f8ff' }}>
+          Coworking Sinergia
+        </h2>
       </div>
 
-      <div ref={menuRef} className="app-header__user">
+      {/* ✅ User dropdown */}
+      <div ref={menuRef} style={{ position: 'relative' }}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="app-header__user-trigger"
+          style={{
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            color: 'white',
+          }}
           aria-label="Menú de usuario"
         >
-          <div className="app-header__avatar">{initials}</div>
-
-          <div className="app-header__user-meta">
-            <div className="app-header__user-name">
-              {currentUser?.name ? `${currentUser?.name} ${currentUser?.lastName || ''}`.trim() : 'Usuario'}
-            </div>
-            <div className="app-header__user-email">{currentUser?.email || ''}</div>
+          {/* Avatar */}
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: '999px',
+              background: '#2563eb',
+              display: 'grid',
+              placeItems: 'center',
+              fontWeight: 800,
+              boxShadow: '0 6px 14px rgba(0,0,0,0.18)',
+            }}
+          >
+            {initials}
           </div>
 
-          <div className="app-header__chevron">▾</div>
+          {/* Name + email */}
+          <div style={{ textAlign: 'left', lineHeight: 1.05 }}>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>
+              {currentUser?.name ? `${currentUser?.name} ${currentUser?.lastName || ''}`.trim() : 'Usuario'}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>
+              {currentUser?.email || ''}
+            </div>
+          </div>
+
+          {/* Chevron */}
+          <div style={{ fontSize: 16, marginLeft: 2, opacity: 0.95 }}>▾</div>
         </button>
 
         {open ? (
-          <div className="app-header__dropdown">
+          <div
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: 'calc(100% + 10px)',
+              width: 260,
+              background: '#fff',
+              borderRadius: 12,
+              border: '1px solid rgba(0,0,0,0.10)',
+              boxShadow: '0 14px 30px rgba(0,0,0,0.20)',
+              overflow: 'hidden',
+              zIndex: 999,
+            }}
+          >
             <button
               onClick={goProfile}
-              className="app-header__dropdown-item"
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '12px 14px',
+                border: 'none',
+                background: '#fff',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,0,0,0.03)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
             >
               👤&nbsp;&nbsp;Mi Perfil
             </button>
 
-            <div className="app-header__dropdown-divider" />
+            <div style={{ height: 1, background: 'rgba(0,0,0,0.08)' }} />
 
             <button
               onClick={handleLogout}
-              className="app-header__dropdown-item app-header__dropdown-item--danger"
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '12px 14px',
+                border: 'none',
+                background: '#fff',
+                cursor: 'pointer',
+                fontWeight: 800,
+                color: '#dc2626',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(220,38,38,0.06)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
             >
               🚪&nbsp;&nbsp;Cerrar sesión
             </button>

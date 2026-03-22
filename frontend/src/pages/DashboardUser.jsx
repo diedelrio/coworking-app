@@ -31,6 +31,11 @@ function formatDateES(dateLike) {
   }).format(d);
 }
 
+function formatEUR(value) {
+  const num = Number(value || 0);
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+}
+
 function statusLabel(status) {
   switch (status) {
     case 'ACTIVE':
@@ -161,7 +166,6 @@ export default function DashboardUser() {
   const todayCount = useMemo(() => reservations.filter(isToday).length, [reservations]);
   const upcomingCount = upcoming.length;
   const upcomingTop = useMemo(() => upcoming, [upcoming]);
-  const nextReservation = upcomingTop[0] || null;
 
   function canEdit(res) {
     if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
@@ -208,11 +212,11 @@ export default function DashboardUser() {
 
       <div className="page-container dashboard-page">
         <div className="dashboard-container">
+          {/* Top header row (mock) */}
           <div className="dashboard-user-top">
             <div className="dashboard-header">
-              <span className="section-kicker">Tu panel</span>
               <h1>Bienvenido</h1>
-              <p>Entrá y visualizá tu estado de reserva sin vueltas.</p>
+              <p>Gestioná tus espacios de trabajo, reservas y próximos turnos.</p>
               {error ? <div className="form-error">{error}</div> : null}
             </div>
 
@@ -221,42 +225,7 @@ export default function DashboardUser() {
             </button>
           </div>
 
-          {nextReservation ? (
-            <div className="hero-reservation-card">
-              <div>
-                <div className="hero-reservation-card__eyebrow">Próxima reserva</div>
-                <div className="hero-reservation-card__title">
-                  {nextReservation?.space?.name || `Espacio #${nextReservation.spaceId}`}
-                </div>
-                <div className="hero-reservation-card__meta">
-                  <span>{formatDateES(nextReservation.date)}</span>
-                  <span>{toHHMM(nextReservation.startTime)}–{toHHMM(nextReservation.endTime)}</span>
-                  <span className={`status-pill status-${nextReservation.status}`}>{statusLabel(nextReservation.status)}</span>
-                </div>
-              </div>
-              <div className="hero-reservation-card__actions">
-                <button
-                  className="pill-button-outline"
-                  type="button"
-                  onClick={() => {
-                    setDetailRes(nextReservation);
-                    setDetailOpen(true);
-                  }}
-                >
-                  Ver detalle
-                </button>
-                <button
-                  className="pill-button"
-                  type="button"
-                  onClick={() => navigate(`/user/reservar?edit=${nextReservation.id}&mode=edit`)}
-                  disabled={!canEdit(nextReservation)}
-                >
-                  Gestionar
-                </button>
-              </div>
-            </div>
-          ) : null}
-
+          {/* KPIs (mock) */}
           <div className="dashboard-kpis">
             <div className="user-card card-accent card-accent--grey">
               <div className="kpi-title">Reservas totales</div>
@@ -277,6 +246,7 @@ export default function DashboardUser() {
             </div>
           </div>
 
+          {/* Próximas reservas (mock) */}
           <div className="user-card">
             <div className="dashboard-section-head">
               <div>
