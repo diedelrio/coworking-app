@@ -5,15 +5,9 @@ import { MdOutlineMarkEmailRead } from "react-icons/md";
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
   const content = (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: collapsed ? 0 : '0.6rem',
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        fontSize: '0.9rem',
-      }}
+      className={`app-sidebar__item-inner ${collapsed ? 'is-collapsed' : ''}`}
     >
-      <span style={{ fontSize: '1.1rem' }}>{icon}</span>
+      <span className="app-sidebar__icon">{icon}</span>
       {!collapsed && <span>{label}</span>}
     </div>
   );
@@ -21,12 +15,14 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
   const commonStyle = (isActive) => ({
     display: 'block',
     textDecoration: 'none',
-    color: isActive ? '#ffffff' : '#e5e7eb',
-    padding: '0.55rem 0.75rem',
-    borderRadius: '0.5rem',
-    background: isActive ? '#5686a7ff' : 'transparent',
-    marginBottom: '0.1rem',
+    color: isActive ? '#12313c' : '#f2f7f6',
+    padding: '0.75rem 0.9rem',
+    borderRadius: '1rem',
+    background: isActive ? 'linear-gradient(135deg, #9adfe5, #7fd5df)' : 'transparent',
+    marginBottom: '0.25rem',
     textAlign: collapsed ? 'center' : 'left',
+    fontWeight: isActive ? 700 : 500,
+    transition: 'all 0.2s ease',
   });
 
   if (!to) {
@@ -72,38 +68,15 @@ export default function Navbar({ collapsed, onToggle }) {
 
   return (
     <aside
-      style={{
-        width,
-        background: '#33576f',
-        color: '#e5e7eb',
-        padding: '1rem 0.75rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-        transition: 'width 0.2s ease',
-      }}
+      className="app-sidebar"
+      style={{ width }}
     >
-      {/* Toggle (siempre arriba) */}
       <button
         type="button"
         onClick={onToggle}
         aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
         title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
-        style={{
-          width: '100%',
-          border: 'none',
-          background: 'transparent',
-          color: '#e5e7eb',
-          cursor: 'pointer',
-          padding: '0.55rem 0.75rem',
-          borderRadius: '0.5rem',
-          textAlign: collapsed ? 'center' : 'left',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          fontSize: '1rem',
-          outline: 'none',
-        }}
+        className={`app-sidebar__toggle ${collapsed ? 'is-collapsed' : ''}`}
       >
         {collapsed ? '»' : '«'}
       </button>
