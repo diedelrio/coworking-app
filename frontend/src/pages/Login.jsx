@@ -27,7 +27,7 @@ export default function Login() {
 
         const md = res?.data?.content?.TEXT_LOGIN || '';
         if (!cancelled) setLoginTextMd(md);
-      } catch (e) {
+      } catch {
         // Silencioso: si falla, no rompe la pantalla de login
         if (!cancelled) setLoginTextMd('');
       }
@@ -64,26 +64,28 @@ export default function Login() {
   }
 
   return (
-    <div className="app-center">
-      <div className="card" style={{ textAlign: 'center' }}>
-        {/* Logo centrado */}
-        <img
-          src="/logoCoworking.png"
-          alt="Coworking Sinergia"
-          style={{ height: 64, width: 'auto', margin: '0 auto 12px', display: 'block' }}
-        />
-
-        <h1 style={{ marginTop: 0 }}>Coworking Sinergia</h1>
-
-        {/* Texto fijo (si querés, lo podés eliminar y dejar solo el Markdown) */}
-        <p style={{ marginTop: 6 }}>Inicia sesión para gestionar tus reservas.</p>
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <span className="auth-brand-badge">Acceso</span>
+          <img
+            src="/logoCoworking.png"
+            alt="Coworking Sinergia"
+            className="auth-logo"
+          />
+          <h1>Coworking Sinergia</h1>
+          <p>
+            Iniciá sesión para acceder rápido a tus reservas, tu estado actual y las herramientas de gestión.
+          </p>
+        </div>
 
         {error && <div className="error">{error}</div>}
 
-        <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
+        <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
             <label>Email</label>
             <input
+              className="auth-input"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -95,6 +97,7 @@ export default function Login() {
           <div className="form-group">
             <label>Contraseña</label>
             <input
+              className="auth-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -103,14 +106,13 @@ export default function Login() {
             />
           </div>
 
-          <button className="button" type="submit" disabled={loading}>
+          <button className="button auth-submit" type="submit" disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-        {/* Texto dinámico desde reglas (Markdown) */}
+
         {loginTextMd ? (
-          <div style={{ marginTop: 10, marginBottom: 14, textAlign: 'center' }}>
-          <div style={{ fontSize: 14, lineHeight: 1.5, color: '#555', textAlign: 'justify', marginTop: 16 }}>
+          <div className="auth-markdown">
             <ReactMarkdown
               components={{
                 a: (props) => (
@@ -123,10 +125,10 @@ export default function Login() {
                   />
                 ),
                 ul: (props) => (
-                  <ul {...props} style={{ textAlign: 'left', margin: '8px auto', paddingLeft: 18, maxWidth: 360 }} />
+                  <ul {...props} style={{ textAlign: 'left', margin: '8px auto', paddingLeft: 18 }} />
                 ),
                 ol: (props) => (
-                  <ol {...props} style={{ textAlign: 'left', margin: '8px auto', paddingLeft: 18, maxWidth: 360 }} />
+                  <ol {...props} style={{ textAlign: 'left', margin: '8px auto', paddingLeft: 18 }} />
                 ),
                 strong: (props) => <strong {...props} style={{ fontWeight: 700 }} />,
                 p: (props) => <p {...props} style={{ margin: '6px 0' }} />,
@@ -135,10 +137,9 @@ export default function Login() {
               {loginTextMd}
             </ReactMarkdown>
           </div>
-          </div>
         ) : null}
 
-        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+        <div className="auth-links">
           <Link className="link" to="/register">
             Crear cuenta
           </Link>

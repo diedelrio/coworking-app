@@ -328,12 +328,11 @@ async function fetchCalendarReservations() {
   return (
     <Layout user={user}>
       <div className="admin-page">
-        {/* Encabezado Dashboard */}
         <div
-          className="admin-header"
-          style={{ justifyContent: 'space-between', marginBottom: '1.25rem' }}
+          className="admin-header admin-header--stacked"
         >
           <div>
+            <span className="section-kicker">Panel operativo</span>
             <h1>Panel de administrador</h1>
             <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
               Visión general de reservas y gestión del coworking
@@ -347,17 +346,8 @@ async function fetchCalendarReservations() {
           </div>
         )}
 
-        {/* Card acción rápida: agendar reserva */}
-        <div
-          className="admin-card"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '1.5rem',
-          }}
-        >
-          <div>
+        <div className="admin-card admin-hero-card">
+          <div className="admin-hero-card__content">
             <h2 style={{ margin: 0, marginBottom: '0.25rem', fontSize: '1.1rem' }}>
               Agendar una reserva
             </h2>
@@ -365,7 +355,7 @@ async function fetchCalendarReservations() {
               Crea una reserva a nombre de un usuario que te contacte por teléfono, mail u otro canal.
             </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="admin-hero-card__aside">
             <img
               src={calendarImg}
               alt="Calendario"
@@ -373,16 +363,7 @@ async function fetchCalendarReservations() {
             />
             <Link
               to="/admin/reservas/nueva"
-              style={{
-                padding: '0.6rem 1.2rem',
-                borderRadius: '10px',
-                background: '#4f46e5',
-                color: 'white',
-                fontSize: '0.9rem',
-                fontWeight: '600',
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}
+              className="button-link-primary"
             >
               Nueva reserva
             </Link>
@@ -400,7 +381,6 @@ async function fetchCalendarReservations() {
           <AdminDashboardWidgets />
         </div>
 
-        {/* Tabla de reservas (hoy en adelante) */}
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
           <h2 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>
             Reservas desde hoy
@@ -451,7 +431,8 @@ async function fetchCalendarReservations() {
             </p>
           ) : (
             <>
-              <table className="admin-table">
+              <div className="admin-table-wrapper admin-table-wrapper--soft">
+              <table className="admin-table admin-table--reservations">
                 <thead>
                   <tr>
                     <th>Espacio</th>
@@ -555,6 +536,7 @@ async function fetchCalendarReservations() {
                   })}
                 </tbody>
               </table>
+              </div>
 
               {/* paginado simple */}
               <div
