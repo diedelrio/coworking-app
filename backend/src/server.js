@@ -13,6 +13,7 @@ const settingsRouter = require('./routes/settings');
 const adminEmailTemplates = require('./routes/adminEmailTemplates');
 const adminOperations = require('./routes/adminOperations');
 const adminTags = require('./routes/adminTags');
+const adminCommercial = require('./routes/adminCommercial');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -34,6 +35,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);
 app.use('/api/admin/operations', adminOperations);
 app.use('/api/admin/tags', adminTags);
+app.use('/api/admin/commercial', adminCommercial);
 
 // ✅ Public routes (login/register screens)
 app.use('/api/public', publicRoutes);

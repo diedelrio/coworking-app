@@ -29,6 +29,12 @@ model User {
   historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
   history             UserHistory[]        @relation("UserHistory_User")
   userTags            UserTag[]
+
+  contractsCreated   Contract[]              @relation("ContractCreatedBy")
+  contractsUpdated   Contract[]              @relation("ContractUpdatedBy")
+  customerContracts  Contract[]              @relation("UserContracts")
+  commercialProducts UserCommercialProduct[] @relation("UserCommercialProducts")
+  benefitBalances    UserBenefitBalance[]    @relation("UserBenefitBalances")
 }
 
 model UserHistory {
@@ -47,15 +53,18 @@ model UserHistory {
 }
 
 model Space {
-  id           Int           @id @default(autoincrement())
-  name         String
-  type         SpaceType
-  capacity     Int
-  description  String?
-  active       Boolean       @default(true)
-  hourlyRate   Decimal       @default(0.00) @db.Decimal(10, 2)
-  imageUrl     String?
-  reservations Reservation[]
+  id                        Int                 @id @default(autoincrement())
+  name                      String
+  type                      SpaceType
+  capacity                  Int
+  description               String?
+  active                    Boolean             @default(true)
+  hourlyRate                Decimal             @default(0.00) @db.Decimal(10, 2)
+  imageUrl                  String?
+  reservations              Reservation[]
+  contractLines             ContractLine[]
+  promotionRules            PromotionRule[]
+  defaultCommercialProducts CommercialProduct[] @relation("CommercialProductDefaultSpace")
 }
 
 model Reservation {
@@ -80,6 +89,11 @@ model Reservation {
   liquidationItem    LiquidationItem?
   space              Space             @relation(fields: [spaceId], references: [id])
   user               User              @relation(fields: [userId], references: [id])
+
+  benefitConsumptions     BenefitConsumption[]
+  pricingSnapshot         ReservationPricingSnapshot?
+  userCommercialProductId Int?
+  userCommercialProduct   UserCommercialProduct?      @relation(fields: [userCommercialProductId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([spaceId])
@@ -232,6 +246,367 @@ model LiquidationItem {
   reservation   Reservation @relation(fields: [reservationId], references: [id])
 }
 
+model CommercialProduct {
+  id              Int                   @id @default(autoincrement())
+  code            String                @unique
+  name            String
+  description     String?
+  productType     CommercialProductType
+  targetType      CommercialTargetType
+  billingType     CommercialBillingType
+  defaultUnitType CommercialUnitType
+  taxMode         TaxMode               @default(EXCLUDED)
+  isActive        Boolean               @default(true)
+  validFrom       DateTime?
+  validTo         DateTime?
+  sortOrder       Int                   @default(0)
+  metadataJson    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rates                      CommercialRate[]
+  benefits                   CommercialBenefit[]
+  contractLines              ContractLine[]
+  userProducts               UserCommercialProduct[]
+  promotionRules             PromotionRule[]
+  balances                   UserBenefitBalance[]
+  ReservationPricingSnapshot ReservationPricingSnapshot[]
+  requiresReservation        Boolean                      @default(false)
+  defaultSpaceId             Int?
+  defaultSpace               Space?                       @relation("CommercialProductDefaultSpace", fields: [defaultSpaceId], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+  @@index([productType])
+  @@index([targetType])
+}
+
+model CommercialRate {
+  id         Int                @id @default(autoincrement())
+  productId  Int
+  unitType   CommercialUnitType
+  currency   String             @default("EUR")
+  price      Decimal            @db.Decimal(10, 2)
+  taxMode    TaxMode            @default(EXCLUDED)
+  taxPercent Decimal?           @db.Decimal(5, 2)
+  validFrom  DateTime
+  validTo    DateTime?
+  priority   Int                @default(0)
+  isActive   Boolean            @default(true)
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product                    CommercialProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ReservationPricingSnapshot ReservationPricingSnapshot[]
+
+  @@index([productId, isActive])
+  @@index([validFrom, validTo])
+}
+
+model CommercialBenefit {
+  id              Int                  @id @default(autoincrement())
+  productId       Int
+  benefitType     BenefitType
+  targetType      CommercialTargetType
+  unitType        CommercialUnitType
+  creditAmount    Decimal              @db.Decimal(10, 2)
+  resetEachPeriod Boolean              @default(false)
+  resetFrequency  PaymentFrequency?
+  rolloverAllowed Boolean              @default(false)
+  isActive        Boolean              @default(true)
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product CommercialProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, isActive])
+}
+
+model Contract {
+  id           Int            @id @default(autoincrement())
+  code         String         @unique
+  userId       Int
+  status       ContractStatus @default(DRAFT)
+  contractType ContractType   @default(OTHER)
+
+  startDate DateTime
+  endDate   DateTime?
+  autoRenew Boolean   @default(false)
+
+  paymentFrequency PaymentFrequency  @default(MONTHLY)
+  paymentMethod    PaymentMethodType @default(TRANSFER)
+  paymentTerms     String?
+  agreedCurrency   String            @default("EUR")
+
+  notes                 String?
+  specialConditionsText String?
+
+  signedAt    DateTime?
+  cancelledAt DateTime?
+
+  createdById Int?
+  updatedById Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User  @relation("UserContracts", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("ContractCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("ContractUpdatedBy", fields: [updatedById], references: [id])
+
+  lines                 ContractLine[]
+  conditions            ContractCondition[]
+  promotionRules        PromotionRule[]
+  pricingSnapshots      ReservationPricingSnapshot[]
+  UserCommercialProduct UserCommercialProduct[]
+
+  @@index([userId, status])
+  @@index([startDate, endDate])
+}
+
+model ContractLine {
+  id          Int              @id @default(autoincrement())
+  contractId  Int
+  productId   Int?
+  spaceId     Int?
+  lineType    ContractLineType
+  description String
+
+  quantity Decimal            @default(1) @db.Decimal(10, 2)
+  unitType CommercialUnitType
+
+  listPrice   Decimal? @db.Decimal(10, 2)
+  agreedPrice Decimal? @db.Decimal(10, 2)
+
+  discountType  DiscountType @default(NONE)
+  discountValue Decimal?     @db.Decimal(10, 2)
+
+  billingType CommercialBillingType @default(RECURRING)
+
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean   @default(true)
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contract Contract           @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  product  CommercialProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  space    Space?             @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+
+  @@index([contractId, isActive])
+  @@index([productId])
+  @@index([spaceId])
+}
+
+model ContractCondition {
+  id            Int                   @id @default(autoincrement())
+  contractId    Int
+  conditionType ContractConditionType
+  title         String
+  value         String?
+  notes         String?
+  priority      Int                   @default(0)
+  isActive      Boolean               @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId, isActive])
+}
+
+model Promotion {
+  id                Int                @id @default(autoincrement())
+  code              String             @unique
+  name              String
+  description       String?
+  status            PromotionStatus    @default(DRAFT)
+  promotionType     PromotionType
+  scopeType         PromotionScopeType
+  startDate         DateTime
+  endDate           DateTime?
+  isCombinable      Boolean            @default(false)
+  priority          Int                @default(0)
+  usageLimitTotal   Int?
+  usageLimitPerUser Int?
+  metadataJson      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rules            PromotionRule[]
+  pricingSnapshots ReservationPricingSnapshot[]
+
+  @@index([status])
+  @@index([startDate, endDate])
+}
+
+model PromotionRule {
+  id               Int  @id @default(autoincrement())
+  promotionId      Int
+  targetProductId  Int?
+  targetSpaceId    Int?
+  targetContractId Int?
+
+  unitType        CommercialUnitType?
+  minimumQuantity Decimal?            @db.Decimal(10, 2)
+
+  discountPercent  Decimal? @db.Decimal(5, 2)
+  discountAmount   Decimal? @db.Decimal(10, 2)
+  specialUnitPrice Decimal? @db.Decimal(10, 2)
+
+  bonusCreditAmount Decimal?            @db.Decimal(10, 2)
+  bonusCreditUnit   CommercialUnitType?
+
+  notes    String?
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  promotion      Promotion          @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  targetProduct  CommercialProduct? @relation(fields: [targetProductId], references: [id], onDelete: SetNull)
+  targetSpace    Space?             @relation(fields: [targetSpaceId], references: [id], onDelete: SetNull)
+  targetContract Contract?          @relation(fields: [targetContractId], references: [id], onDelete: SetNull)
+
+  @@index([promotionId, isActive])
+  @@index([targetProductId])
+  @@index([targetSpaceId])
+  @@index([targetContractId])
+}
+
+model UserCommercialProduct {
+  id         Int  @id @default(autoincrement())
+  userId     Int
+  productId  Int
+  contractId Int?
+
+  status BalanceStatus @default(ACTIVE)
+
+  startDate DateTime
+  endDate   DateTime?
+
+  priceSnapshot Decimal? @db.Decimal(10, 2)
+  currency      String   @default("EUR")
+  taxMode       TaxMode?
+  taxPercent    Decimal? @db.Decimal(5, 2)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User              @relation("UserCommercialProducts", fields: [userId], references: [id], onDelete: Cascade)
+  product  CommercialProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  contract Contract?         @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  balances     UserBenefitBalance[]
+  reservations Reservation[]
+
+  @@index([userId, status])
+  @@index([productId])
+  @@index([contractId])
+}
+
+model UserBenefitBalance {
+  id                      Int  @id @default(autoincrement())
+  userId                  Int
+  productId               Int
+  userCommercialProductId Int?
+
+  sourceType PricingSourceType
+  targetType CommercialTargetType
+  unitType   CommercialUnitType
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+  expiresAt   DateTime?
+
+  grantedAmount   Decimal @db.Decimal(10, 2)
+  consumedAmount  Decimal @default(0) @db.Decimal(10, 2)
+  remainingAmount Decimal @db.Decimal(10, 2)
+
+  status BalanceStatus @default(ACTIVE)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user                  User                   @relation("UserBenefitBalances", fields: [userId], references: [id], onDelete: Cascade)
+  product               CommercialProduct      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userCommercialProduct UserCommercialProduct? @relation(fields: [userCommercialProductId], references: [id], onDelete: SetNull)
+
+  consumptions               BenefitConsumption[]
+  ReservationPricingSnapshot ReservationPricingSnapshot[]
+
+  @@index([userId, status])
+  @@index([productId])
+  @@index([expiresAt])
+}
+
+model BenefitConsumption {
+  id             Int                @id @default(autoincrement())
+  balanceId      Int
+  reservationId  Int
+  consumedAmount Decimal            @db.Decimal(10, 2)
+  unitType       CommercialUnitType
+  consumedAt     DateTime           @default(now())
+  notes          String?
+
+  balance     UserBenefitBalance @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+  reservation Reservation        @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([balanceId])
+  @@index([reservationId])
+}
+
+model ReservationPricingSnapshot {
+  id            Int @id @default(autoincrement())
+  reservationId Int @unique
+
+  pricingSource    PricingSourceType
+  contractId       Int?
+  promotionId      Int?
+  benefitBalanceId Int?
+  appliedProductId Int?
+  appliedRateId    Int?
+
+  currency String @default("EUR")
+
+  unitType CommercialUnitType?
+  quantity Decimal?            @db.Decimal(10, 2)
+
+  baseAmount     Decimal? @db.Decimal(10, 2)
+  discountAmount Decimal? @db.Decimal(10, 2)
+  benefitAmount  Decimal? @db.Decimal(10, 2)
+  taxAmount      Decimal? @db.Decimal(10, 2)
+  finalAmount    Decimal  @db.Decimal(10, 2)
+
+  explanation  String?
+  snapshotJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservation    Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  contract       Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  promotion      Promotion?          @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  benefitBalance UserBenefitBalance? @relation(fields: [benefitBalanceId], references: [id], onDelete: SetNull)
+  appliedProduct CommercialProduct?  @relation(fields: [appliedProductId], references: [id], onDelete: SetNull)
+  appliedRate    CommercialRate?     @relation(fields: [appliedRateId], references: [id], onDelete: SetNull)
+
+  @@index([pricingSource])
+  @@index([contractId])
+  @@index([promotionId])
+}
+
 enum LiquidationStatus {
   GENERATED
   PAID
@@ -289,4 +664,146 @@ enum UserClassify {
   GOOD
   REGULAR
   BAD
+}
+
+enum CommercialProductType {
+  PLAN
+  BONUS
+  RATE
+}
+
+enum CommercialTargetType {
+  COWORKING
+  MEETING_ROOM
+  INSPIRATION_ROOM
+  FULL_SPACE
+  OTHER
+}
+
+enum CommercialBillingType {
+  RECURRING
+  PREPAID
+  PAY_PER_USE
+  INCLUDED
+}
+
+enum CommercialUnitType {
+  HOUR
+  DAY
+  HALF_DAY
+  FULL_DAY
+  WEEK
+  MONTH
+  UNIT
+  SESSION
+}
+
+enum TaxMode {
+  INCLUDED
+  EXCLUDED
+  EXEMPT
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
+enum ContractType {
+  COWORKING
+  ROOM
+  MIXED
+  CORPORATE
+  OTHER
+}
+
+enum PaymentFrequency {
+  ONE_TIME
+  WEEKLY
+  MONTHLY
+  BIMONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum PaymentMethodType {
+  CASH
+  TRANSFER
+  CARD
+  DIRECT_DEBIT
+  OTHER
+}
+
+enum ContractLineType {
+  PLAN
+  BONUS
+  SPACE_ACCESS
+  DISCOUNT
+  CUSTOM
+}
+
+enum DiscountType {
+  NONE
+  PERCENTAGE
+  FIXED_AMOUNT
+  FIXED_PRICE
+}
+
+enum ContractConditionType {
+  SCHEDULE
+  CANCELLATION
+  NOTICE
+  ACCESS
+  PRICE_EXCEPTION
+  PROMO
+  OTHER
+}
+
+enum PromotionStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  EXPIRED
+}
+
+enum PromotionType {
+  SPECIAL_PRICE
+  PERCENT_DISCOUNT
+  FIXED_DISCOUNT
+  BONUS_CREDIT
+}
+
+enum PromotionScopeType {
+  PRODUCT
+  SPACE
+  CONTRACT
+  USER
+  SEGMENT
+  GLOBAL
+}
+
+enum BenefitType {
+  INCLUDED_CREDIT
+  BONUS_CREDIT
+  DISCOUNT
+  ACCESS_RIGHT
+}
+
+enum BalanceStatus {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  CANCELLED
+}
+
+enum PricingSourceType {
+  CONTRACT
+  BENEFIT
+  PROMOTION
+  STANDARD_RATE
+  MANUAL
 }

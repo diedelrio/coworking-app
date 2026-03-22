@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { FaHome, FaUserAlt, FaCog, FaChartBar, FaWrench } from 'react-icons/fa';
+import { FaHome, FaUserAlt, FaCog, FaChartBar, FaWrench, FaMoneyBillWave, FaHandshake } from 'react-icons/fa';
 import { MdOutlineMarkEmailRead } from "react-icons/md";
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
@@ -64,6 +64,8 @@ export default function Navbar({ collapsed, onToggle }) {
   const isSettings = path === '/admin/settings';
   const isEmailTemplates = path === '/admin/email-templates';
   const isUsers = path === '/admin/usuarios';
+  const isCommercialAssignments = path.startsWith('/admin/comercial/asignaciones');
+  const isCommercial = path.startsWith('/admin/comercial');
   const isOperations = path.startsWith('/admin/operaciones');
   const isReports =
     path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
@@ -141,7 +143,21 @@ export default function Navbar({ collapsed, onToggle }) {
         collapsed={collapsed}
         active={isEmailTemplates}
       />
-
+      {/* Comercial */}
+      <NavItem
+        to="/admin/comercial"
+        icon={<FaMoneyBillWave />}
+        label="Comercial"
+        collapsed={collapsed}
+        active={isCommercial}
+      />
+      <NavItem
+        to="/admin/comercial/asignaciones"
+        icon={<FaHandshake />}
+        label="Asignaciones"
+        collapsed={collapsed}
+        active={isCommercialAssignments}
+      />
       {/* Operaciones */}
       <NavItem
         to="/admin/operaciones"

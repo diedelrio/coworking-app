@@ -20,7 +20,8 @@ import AdminEmailTemplates from './pages/AdminEmailTemplates';
 import AdminOperations from './pages/AdminOperations';
 import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
-
+import AdminCommercial from './pages/AdminCommercial';
+import AdminCommercialAssignments from './pages/AdminCommercialAssignments';
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/activate" element={<ActivateAccount />} />
+      <Route path="/admin/comercial" element={<ProtectedRoute roles={['ADMIN']}><AdminCommercial /></ProtectedRoute>} />
 
       {/* RUTAS USUARIO */}
       <Route
@@ -152,6 +154,14 @@ function App() {
         element={
           <ProtectedRoute roles={['ADMIN']}>
             <AdminUserProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/comercial/asignaciones"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminCommercialAssignments />
           </ProtectedRoute>
         }
       />
