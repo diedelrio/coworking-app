@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { FaHome, FaUserAlt, FaCog, FaChartBar, FaWrench } from 'react-icons/fa';
-import { MdOutlineMarkEmailRead } from "react-icons/md";
+import { MdOutlineMarkEmailRead } from 'react-icons/md';
 
 function NavItem({ to, icon, label, collapsed, active, onClick }) {
   const content = (
@@ -65,8 +66,24 @@ export default function Navbar({ collapsed, onToggle }) {
   const isEmailTemplates = path === '/admin/email-templates';
   const isUsers = path === '/admin/usuarios';
   const isOperations = path.startsWith('/admin/operaciones');
-  const isReports =
-    path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
+  const isReports = path.startsWith('/admin/reportes') || path.startsWith('/admin/reports');
+  const isUsersReport = path === '/admin/reportes/usuarios';
+  const isReservationsReport = path === '/admin/reportes/reservas';
+
+  const [reportsOpen, setReportsOpen] = useState(isReports);
+
+  useEffect(() => {
+    if (isReports) setReportsOpen(true);
+  }, [isReports]);
+
+  const handleReportsClick = () => {
+    if (collapsed) {
+      setReportsOpen(true);
+      onToggle?.();
+      return;
+    }
+    setReportsOpen((prev) => !prev);
+  };
 
   return (
     <aside
@@ -81,7 +98,6 @@ export default function Navbar({ collapsed, onToggle }) {
         transition: 'width 0.2s ease',
       }}
     >
-      {/* Toggle (siempre arriba) */}
       <button
         type="button"
         onClick={onToggle}
@@ -106,7 +122,6 @@ export default function Navbar({ collapsed, onToggle }) {
         {collapsed ? '»' : '«'}
       </button>
 
-      {/* Dashboard */}
       <NavItem
         to="/admin"
         icon={<FaHome />}
@@ -115,7 +130,6 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isDashboard}
       />
 
-      {/* Espacios */}
       <NavItem
         to="/admin/espacios"
         icon={<FaChartBar />}
@@ -124,7 +138,6 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isSpaces}
       />
 
-      {/* Settings */}
       <NavItem
         to="/admin/settings"
         icon={<FaCog />}
@@ -133,7 +146,6 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isSettings}
       />
 
-      {/* Email Templates */}
       <NavItem
         to="/admin/email-templates"
         icon={<MdOutlineMarkEmailRead />}
@@ -142,7 +154,6 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isEmailTemplates}
       />
 
-      {/* Operaciones */}
       <NavItem
         to="/admin/operaciones"
         icon={<FaWrench />}
@@ -151,7 +162,6 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isOperations}
       />
 
-      {/* Usuarios */}
       <NavItem
         to="/admin/usuarios"
         icon={<FaUserAlt />}
@@ -160,13 +170,50 @@ export default function Navbar({ collapsed, onToggle }) {
         active={isUsers}
       />
 
-      {/* Reportes (placeholder sin navegación) */}
-      <NavItem
-        icon={<FaChartBar />}
-        label="Reportes"
-        collapsed={collapsed}
-        active={isReports}
-      />
+      <div>
+        <NavItem
+          icon={<FaChartBar />}
+          label="Reportes"
+          collapsed={collapsed}
+          active={isReports}
+          onClick={handleReportsClick}
+        />
+
+        {!collapsed && reportsOpen && (
+          <div style={{ marginTop: 4, marginLeft: 10 }}>
+            <Link
+              to="/admin/reportes/usuarios"
+              style={{
+                display: 'block',
+                textDecoration: 'none',
+                color: isUsersReport ? '#ffffff' : '#e5e7eb',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '0.5rem',
+                background: isUsersReport ? '#5686a7ff' : 'transparent',
+                fontSize: '0.88rem',
+                marginBottom: 4,
+              }}
+            >
+              Consulta usuarios
+            </Link>
+
+            <Link
+              to="/admin/reportes/reservas"
+              style={{
+                display: 'block',
+                textDecoration: 'none',
+                color: isReservationsReport ? '#ffffff' : '#e5e7eb',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '0.5rem',
+                background: isReservationsReport ? '#5686a7ff' : 'transparent',
+                fontSize: '0.88rem',
+              }}
+            >
+              Consulta reservas
+            </Link>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

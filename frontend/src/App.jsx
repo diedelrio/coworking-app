@@ -20,7 +20,8 @@ import AdminEmailTemplates from './pages/AdminEmailTemplates';
 import AdminOperations from './pages/AdminOperations';
 import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
-
+import AdminUsersReport from './pages/reports/AdminUsersReport';
+import AdminReservationsReport from './pages/reports/AdminReservationsReport';
 
 function App() {
   return (
@@ -152,6 +153,24 @@ function App() {
         element={
           <ProtectedRoute roles={['ADMIN']}>
             <AdminUserProfile />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/reportes/usuarios"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminUsersReport />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/reportes/reservas"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminReservationsReport />
           </ProtectedRoute>
         }
       />

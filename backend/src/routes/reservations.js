@@ -1197,12 +1197,34 @@ router.get('/space/:spaceId', authRequired, requireAdmin, async (req, res) => {
 
 /**
  * GET /api/reservations
- * Todas las reservas (admin)
+ * Todas las reservas (admin) con filtros opcionales
  */
 router.get('/', authRequired, requireAdmin, async (req, res) => {
   try {
+    const { userId, spaceId, status } = req.query || {};
+
+    const where = {};
+
+    const parsedUserId = Number(userId);
+    if (!Number.isNaN(parsedUserId) && parsedUserId > 0) {
+      where.userId = parsedUserId;
+    }
+
+    const parsedSpaceId = Number(spaceId);
+    if (!Number.isNaN(parsedSpaceId) && parsedSpaceId > 0) {
+      where.spaceId = parsedSpaceId;
+    }
+
+    if (typeof status === 'string' && status && status !== 'ALL') {
+      where.status = status;
+    }
+
     const reservations = await prisma.reservation.findMany({
-      include: { user: true, space: true },
+      where,
+      include: {
+        user: true,
+        space: true,
+      },
       orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
     });
 

@@ -5,18 +5,95 @@ const bcrypt = require('bcrypt');
 
 const router = express.Router();
 
+function normalizeStatusFilter(status) {
+  if (!status) return null;
+  const value = String(status).trim().toUpperCase();
+  if (value === 'ACTIVE') return true;
+  if (value === 'INACTIVE') return false;
+  return null;
+}
+
+function normalizeClassifyFilter(classify) {
+  if (!classify) return null;
+  const value = String(classify).trim().toUpperCase();
+
+  if (value === 'GOOD' || value === 'REGULAR' || value === 'BAD') {
+    return value;
+  }
+
+  if (value === 'EMPTY' || value === 'NULL' || value === 'SIN_CLASIFICAR') {
+    return 'EMPTY';
+  }
+
+  return null;
+}
+
 /**
  * GET /api/users
- * Listar todos los usuarios (solo admin)
+ * Listar usuarios (solo admin)
+ * Filtros soportados:
+ *   - search: nombre, apellido, email
+ *   - status: ACTIVE | INACTIVE
+ *   - classify: GOOD | REGULAR | BAD | EMPTY
+ *   - tagId: number
  */
 router.get('/', authRequired, requireAdmin, async (req, res) => {
   try {
+    const { search, status, classify, tagId } = req.query;
+
+    const where = {};
+    const and = [];
+
+    const normalizedStatus = normalizeStatusFilter(status);
+    if (normalizedStatus !== null) {
+      and.push({ active: normalizedStatus });
+    }
+
+    const normalizedClassify = normalizeClassifyFilter(classify);
+    if (normalizedClassify === 'EMPTY') {
+      and.push({ classify: null });
+    } else if (normalizedClassify) {
+      and.push({ classify: normalizedClassify });
+    }
+
+    const parsedTagId = Number(tagId);
+    if (Number.isFinite(parsedTagId) && parsedTagId > 0) {
+      and.push({
+        userTags: {
+          some: {
+            tagId: parsedTagId,
+          },
+        },
+      });
+    }
+
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
+      and.push({
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (and.length > 0) {
+      where.AND = and;
+    }
+
     const users = await prisma.user.findMany({
-      orderBy: { id: 'asc' },
+      where,
+      orderBy: [
+        { lastName: 'asc' },
+        { name: 'asc' },
+        { id: 'asc' },
+      ],
       select: {
         id: true,
         name: true,
         lastName: true,
+        maternalLastName: true,
         email: true,
         phone: true,
         role: true,
@@ -26,6 +103,11 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
         userTags: {
           select: {
             tag: { select: { id: true, name: true, slug: true } },
+          },
+          orderBy: {
+            tag: {
+              name: 'asc',
+            },
           },
         },
       },
@@ -64,13 +146,11 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       }
     }
 
-    // Evitar duplicado por email
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return res.status(400).json({ message: 'Ya existe un usuario con ese email' });
     }
 
-    // Password temporal (no se devuelve por seguridad)
     const tempPassword = Math.random().toString(36).slice(-10);
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
@@ -89,7 +169,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
         role: role || 'CLIENT',
         classify: typeof classify === 'undefined' ? 'GOOD' : classify,
         active: true,
-        password: passwordHash, // ✅ requerido por Prisma
+        password: passwordHash,
         ...(parsedTagIds.length > 0
           ? { userTags: { create: parsedTagIds.map((tagId) => ({ tagId })) } }
           : {}),
@@ -113,7 +193,6 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       },
     });
 
-    // (Opcional futuro) Enviar mail con link para setear password (forgot-password)
     return res.status(201).json(created);
   } catch (err) {
     console.error('ERROR POST /users', err);
@@ -147,7 +226,7 @@ router.get('/missing-classify', authRequired, requireAdmin, async (req, res) => 
     res.status(500).json({ message: 'Error al obtener usuarios sin classify' });
   }
 });
-// ✅ GET /api/users/me (cliente o admin: su propio perfil)
+
 router.get('/me', authRequired, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -176,7 +255,6 @@ router.get('/me', authRequired, async (req, res) => {
   }
 });
 
-// ✅ PATCH /api/users/me (solo phone + maternalLastName)
 router.patch('/me', authRequired, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -209,7 +287,6 @@ router.patch('/me', authRequired, async (req, res) => {
   }
 });
 
-// ✅ PATCH /api/users/me/deactivate (darse de baja)
 router.patch('/me/deactivate', authRequired, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -300,7 +377,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
 
     const parsedTagIds = Array.isArray(tagIds)
       ? tagIds.map((x) => Number(x)).filter((n) => Number.isFinite(n))
-      : null; // null => no tocar tags
+      : null;
 
     const fieldsToTrack = [
       'name',
@@ -326,7 +403,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
           field,
           oldValue: oldValue !== null ? String(oldValue) : null,
           newValue: newValue !== null ? String(newValue) : null,
-          changedByUserId: req.user.userId, // ✅ coherente con tu auth
+          changedByUserId: req.user.userId,
         });
       }
     });
@@ -354,7 +431,6 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
         },
       });
 
-      // ✅ Tags: si el front envía tagIds, reemplazamos el set completo
       if (parsedTagIds !== null) {
         await tx.userTag.deleteMany({ where: { userId: id } });
         if (parsedTagIds.length > 0) {
@@ -371,7 +447,6 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
         });
       }
 
-      // ⚠️ Si tocamos tags, recargamos el usuario con tags para responder consistente
       if (parsedTagIds !== null) {
         return await tx.user.findUnique({
           where: { id },
