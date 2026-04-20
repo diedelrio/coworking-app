@@ -21,7 +21,7 @@ Ambas permiten:
 
 `/admin/reportes/usuarios`
 
-### 🔎 Filtros disponibles
+### 🔎 Filtros disponibles 
 
 * Búsqueda por:
 

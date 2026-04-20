@@ -173,7 +173,7 @@ function App() {
             <AdminReservationsReport />
           </ProtectedRoute>
         }
-      />
+      /> 
 
       {/* CATCH ALL */}
       <Route path="*" element={<Navigate to="/login" />} />

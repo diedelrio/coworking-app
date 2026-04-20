@@ -29,7 +29,7 @@ function NavItem({ to, icon, label, collapsed, active, onClick }) {
     marginBottom: '0.1rem',
     textAlign: collapsed ? 'center' : 'left',
   });
-
+ 
   if (!to) {
     return (
       <button

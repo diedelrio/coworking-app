@@ -345,7 +345,7 @@ export default function AdminReservationsReport() {
               </table>
             </div>
           )}
-        </div>
+        </div> 
       </div>
     </Layout>
   );
