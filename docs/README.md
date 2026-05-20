@@ -181,6 +181,3 @@ MIT License.
 
 ---
 
-## ⭐ Créditos
-
-Desarrollado junto a ChatGPT como asistente técnico.
