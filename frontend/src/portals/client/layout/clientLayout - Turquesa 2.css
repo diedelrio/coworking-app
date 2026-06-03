@@ -1,26 +1,25 @@
 /* ============================================================
-   SINERGIA CLIENT PORTAL — DESIGN SYSTEM v5.2
-   Alineado EXACTO con el nuevo color principal de identidad:
-   · Color Principal: rgb(79 70 229) [Indigo]
+   SINERGIA CLIENT PORTAL — DESIGN SYSTEM v5.1
+   Alineado EXACTO con el logo e identidad visual:
    · Tipografía: Inter (igual que la landing)
    · Superficies: glass (rgba(255,255,255,0.95) + backdrop-filter blur(10px))
-   · Paleta: Índigo de marca + neutros cálidos stone
+   · Paleta: Turquesa / Aqua del logo + neutros cálidos stone
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ── DESIGN TOKENS ──────────────────────────────────────── */
 :root {
-  /* Brand Índigo — Derivado exactamente de rgb(79 70 229) */
-  --sn-green:          rgb(79 70 229);  /* Color predominante principal */
-  --sn-green-dark:     #4338ca;         /* Versión ideal para estados hover */
-  --sn-green-deeper:   #312e81;         /* Indigo oscuro para máxima legibilidad en textos */
-  --sn-green-light:    #f5f3ff;         /* Fondo extremadamente suave con matiz índigo */
-  --sn-green-100:      #e0e7ff;         /* Chips y fondos secundarios de alertas */
-  --sn-green-200:      #c7d2fe;         /* Bordes decorativos suaves o estados intermedios */
-  --sn-green-border:   #a5b4fc;         /* Líneas divisorias de marca */
+  /* Brand Aqua/Turquesa — Extraído EXACTAMENTE de logo.png */
+  --sn-green:          #59c3c3;   /* El tono turquesa medio predominante del pincel */
+  --sn-green-dark:     #429b9b;   /* Versión ideal para estados hover */
+  --sn-green-deeper:   #255e5e;   /* Turquesa oscuro para máxima legibilidad en textos */
+  --sn-green-light:    #f2fafb;   /* Fondo extremadamente suave con matiz aqua */
+  --sn-green-100:      #daf2f2;   /* Chips y fondos secundarios de alertas */
+  --sn-green-200:      #b3e5e5;   /* Bordes decorativos suaves o estados intermedios */
+  --sn-green-border:   #8ed6d6;   /* Líneas divisorias de marca */
 
-  /* Neutros stone (Manteniendo la calidez para equilibrar el tono índigo) */
+  /* Neutros stone (Manteniendo la calidez para equilibrar el frío del turquesa) */
   --sn-ink:            #1c1917;
   --sn-ink-2:          #44403c;
   --sn-muted:          #78716c;
@@ -67,8 +66,8 @@
   --sn-shadow:         0 10px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -2px rgba(0,0,0,0.04);
   --sn-shadow-lg:      0 20px 25px -5px rgba(0,0,0,0.08), 0 10px 10px -5px rgba(0,0,0,0.03);
   
-  /* Sombra actualizada con el nuevo reflejo índigo */
-  --sn-shadow-green:   0 4px 14px rgba(79, 70, 229, 0.20);
+  /* Sombra actualizada con el nuevo reflejo del logo */
+  --sn-shadow-green:   0 4px 14px rgba(89, 195, 195, 0.25);
 
   /* Tipografía */
   --sn-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -157,7 +156,7 @@
 }
 .client-header__user-button:hover {
   border-color: var(--sn-green-border);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.08);
 }
 
 .client-header__avatar {
@@ -407,7 +406,7 @@
 }
 .sn-btn--primary:hover:not(:disabled) {
   background: var(--sn-green-dark);
-  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.30);
+  box-shadow: 0 6px 20px rgba(22,163,74,0.30);
 }
 .sn-btn--outline {
   background: var(--sn-surface);
@@ -549,7 +548,7 @@
   box-shadow:var(--sn-shadow-xs);
   transition:border-color .15s,box-shadow .15s;
 }
-.sn-input:focus,.sn-select:focus,.sn-textarea:focus { border-color:var(--sn-green);box-shadow:0 0 0 3px rgba(79, 70, 229, 0.12); }
+.sn-input:focus,.sn-select:focus,.sn-textarea:focus { border-color:var(--sn-green);box-shadow:0 0 0 3px rgba(22,163,74,0.12); }
 .sn-input::placeholder,.sn-textarea::placeholder { color:var(--sn-muted-light); }
 .sn-input:disabled,.sn-select:disabled,.sn-textarea:disabled { background:var(--sn-bg-2);color:var(--sn-muted);cursor:not-allowed;box-shadow:none; }
 .sn-textarea { padding:0.65rem 0.9rem;min-height:88px;resize:vertical; }

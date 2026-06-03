@@ -1,18 +1,62 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FiRefreshCw, FiSearch, FiUserPlus, FiUsers } from 'react-icons/fi';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import AdminUsersWithoutClassify from '../components/AdminUsersWithoutClassify';
 
+function getInitials(user) {
+  const first = (user?.name || '').trim()[0] || '';
+  const last = (user?.lastName || '').trim()[0] || '';
+  const email = (user?.email || '').trim()[0] || '';
+  return (first + last || email || 'U').toUpperCase();
+}
+
+function fullName(user) {
+  return `${user?.name || ''} ${user?.lastName || ''}`.trim() || 'Sin nombre';
+}
+
+function getUserTags(user) {
+  if (!Array.isArray(user?.userTags)) return [];
+  return user.userTags.map((ut) => ut?.tag).filter(Boolean);
+}
+
+function RoleBadge({ role }) {
+  const isAdmin = role === 'ADMIN';
+  return <span className={`admin-crm-badge ${isAdmin ? 'admin-crm-badge--purple' : 'admin-crm-badge--slate'}`}>{isAdmin ? 'Admin' : 'Cliente'}</span>;
+}
+
+function StatusBadge({ active }) {
+  return <span className={`admin-crm-badge ${active ? 'admin-crm-badge--green' : 'admin-crm-badge--red'}`}>{active ? 'Activo' : 'Inactivo'}</span>;
+}
+
+function ClassifyBadge({ classify }) {
+  const value = classify || 'SIN_CLASIFICAR';
+  const labelMap = {
+    GOOD: 'Premium',
+    REGULAR: 'Regular',
+    BAD: 'Bloqueado',
+    SIN_CLASIFICAR: 'Sin clasificar',
+  };
+  const toneMap = {
+    GOOD: 'admin-crm-badge--green',
+    REGULAR: 'admin-crm-badge--blue',
+    BAD: 'admin-crm-badge--red',
+    SIN_CLASIFICAR: 'admin-crm-badge--amber',
+  };
+  return <span className={`admin-crm-badge ${toneMap[value] || 'admin-crm-badge--slate'}`}>{labelMap[value] || value}</span>;
+}
+
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | INACTIVE
-  const [roleFilter, setRoleFilter] = useState('ALL'); // ALL | ADMIN | CLIENT
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [roleFilter, setRoleFilter] = useState('ALL');
+  const [classifyFilter, setClassifyFilter] = useState('ALL');
 
   const navigate = useNavigate();
 
@@ -26,7 +70,7 @@ export default function AdminUsers() {
       setLoading(true);
       setError('');
       const response = await api.get('/users');
-      setUsers(response.data || []);
+      setUsers(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error(err);
       setError('No se pudieron cargar los usuarios. Intenta nuevamente.');
@@ -40,342 +84,190 @@ export default function AdminUsers() {
     if (!window.confirm(`¿Seguro que quieres ${action} a ${user.email}?`)) return;
 
     try {
-      setSaving(true);
+      setSavingId(user.id);
       setError('');
-
-      const response = await api.put(`/users/${user.id}`, {
-        active: !user.active,
-      });
-
+      const response = await api.put(`/users/${user.id}`, { active: !user.active });
       const updated = response.data || {};
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u))
-      );
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
     } catch (err) {
       console.error(err);
       setError('No se pudo actualizar el estado del usuario.');
     } finally {
-      setSaving(false);
+      setSavingId(null);
     }
   };
 
-  const handleToggleRole = async (user) => {
-    const nextRole = user.role === 'ADMIN' ? 'CLIENT' : 'ADMIN';
-    const label = nextRole === 'ADMIN' ? 'hacer admin' : 'pasar a cliente';
+  const stats = useMemo(() => {
+    const total = users.length;
+    const active = users.filter((u) => u.active).length;
+    const admins = users.filter((u) => u.role === 'ADMIN').length;
+    const unclassified = users.filter((u) => !u.classify).length;
+    return { total, active, admins, unclassified };
+  }, [users]);
 
-    if (!window.confirm(`¿Seguro que quieres ${label} a ${user.email}?`)) return;
+  const tagOptions = useMemo(() => {
+    const byId = new Map();
+    users.forEach((u) => getUserTags(u).forEach((tag) => {
+      if (tag?.id) byId.set(tag.id, tag);
+    }));
+    return Array.from(byId.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [users]);
 
-    try {
-      setSaving(true);
-      setError('');
-
-      const response = await api.put(`/users/${user.id}`, {
-        role: nextRole,
-      });
-
-      const updated = response.data || {};
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u))
-      );
-    } catch (err) {
-      console.error(err);
-      setError('No se pudo actualizar el rol del usuario.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const [tagFilter, setTagFilter] = useState('ALL');
 
   const filteredUsers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+
     return users.filter((user) => {
-      const matchesSearch =
-        `${user.name || ''} ${user.lastName || ''} ${user.email || ''}`
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase());
+      const tags = getUserTags(user);
+      const matchesSearch = !query || `${user.name || ''} ${user.lastName || ''} ${user.email || ''} ${user.phone || ''} ${tags.map((t) => t.name).join(' ')}`
+        .toLowerCase()
+        .includes(query);
 
-      const matchesStatus =
-        statusFilter === 'ALL'
-          ? true
-          : statusFilter === 'ACTIVE'
-          ? user.active
-          : !user.active;
-
+      const matchesStatus = statusFilter === 'ALL' ? true : statusFilter === 'ACTIVE' ? user.active : !user.active;
       const matchesRole = roleFilter === 'ALL' ? true : user.role === roleFilter;
+      const matchesClassify = classifyFilter === 'ALL' ? true : classifyFilter === 'EMPTY' ? !user.classify : user.classify === classifyFilter;
+      const matchesTag = tagFilter === 'ALL' ? true : tags.some((tag) => String(tag.id) === String(tagFilter));
 
-      return matchesSearch && matchesStatus && matchesRole;
+      return matchesSearch && matchesStatus && matchesRole && matchesClassify && matchesTag;
     });
-  }, [users, searchTerm, statusFilter, roleFilter]);
+  }, [users, searchTerm, statusFilter, roleFilter, classifyFilter, tagFilter]);
 
   return (
     <Layout>
-      <div className="admin-page">
-        {/* Header */}
-        <div
-          className="admin-page-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-end',
-            gap: '1rem',
-            marginBottom: '1rem',
-          }}
-        >
+      <div className="admin-page admin-crm-page">
+        <section className="admin-crm-hero">
           <div>
-            <h1 style={{ marginBottom: 6 }}>Gestión de usuarios</h1>
-            <p className="admin-page-subtitle" style={{ margin: 0 }}>
-              Administra los usuarios del coworking: activar / desactivar cuentas, revisar datos y filtrar por estado.
-            </p>
+            <p className="admin-crm-eyebrow">Administración</p>
+            <h1>Usuarios</h1>
+            <p>Consulta, segmenta y administra las cuentas del coworking desde una vista más clara tipo CRM.</p>
           </div>
-
-          <button
-            type="button"
-            className="pill-button"
-            onClick={() => navigate('/admin/usuarios/nuevo')}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            + Nuevo usuario
+          <button type="button" className="admin-crm-primary" onClick={() => navigate('/admin/usuarios/nuevo')}>
+            <FiUserPlus /> Nuevo usuario
           </button>
-        </div>
+        </section>
 
-        {/* Usuarios sin classify */}
-        <div style={{ marginBottom: '1.5rem' }}>
+        <section className="admin-crm-stats">
+          <article className="admin-crm-stat-card"><span>Total usuarios</span><strong>{stats.total}</strong></article>
+          <article className="admin-crm-stat-card"><span>Activos</span><strong>{stats.active}</strong></article>
+          <article className="admin-crm-stat-card"><span>Administradores</span><strong>{stats.admins}</strong></article>
+          <article className="admin-crm-stat-card"><span>Sin clasificar</span><strong>{stats.unclassified}</strong></article>
+        </section>
+
+        <div className="admin-crm-alert-wrap">
           <AdminUsersWithoutClassify />
         </div>
 
-        {/* Filtros */}
-        <div className="admin-card" style={{ marginBottom: '1.25rem' }}>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              alignItems: 'center',
-            }}
-          >
-            <div style={{ flex: '1 1 260px' }}>
-              <label className="admin-label">Buscar</label>
-              <input
-                type="text"
-                className="admin-input"
-                placeholder="Nombre, apellido o email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+        <section className="admin-crm-card admin-crm-filters">
+          <div className="admin-crm-search">
+            <FiSearch />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, email, teléfono o tag..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
 
-            <div style={{ flex: '0 0 180px' }}>
-              <label className="admin-label">Estado</label>
-              <select
-                className="admin-input"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
+          <div className="admin-crm-filter-grid">
+            <label>
+              Estado
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="ALL">Todos</option>
                 <option value="ACTIVE">Activos</option>
                 <option value="INACTIVE">Inactivos</option>
               </select>
-            </div>
-
-            <div style={{ flex: '0 0 180px' }}>
-              <label className="admin-label">Rol</label>
-              <select
-                className="admin-input"
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-              >
+            </label>
+            <label>
+              Rol
+              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
                 <option value="ALL">Todos</option>
                 <option value="ADMIN">Admin</option>
                 <option value="CLIENT">Cliente</option>
               </select>
-            </div>
-
-            <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
-              <button
-                className="pill-button-outline"
-                type="button"
-                onClick={fetchUsers}
-                disabled={loading}
-                style={{
-                  height: 36,
-                  borderRadius: 999,
-                  padding: '0 14px',
-                  fontWeight: 700,
-                }}
-              >
-                {loading ? 'Cargando...' : 'Recargar'}
-              </button>
-            </div>
+            </label>
+            <label>
+              Clasificación
+              <select value={classifyFilter} onChange={(e) => setClassifyFilter(e.target.value)}>
+                <option value="ALL">Todas</option>
+                <option value="GOOD">Premium</option>
+                <option value="REGULAR">Regular</option>
+                <option value="BAD">Bloqueado</option>
+                <option value="EMPTY">Sin clasificar</option>
+              </select>
+            </label>
+            <label>
+              Tag
+              <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+                <option value="ALL">Todos</option>
+                {tagOptions.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+              </select>
+            </label>
           </div>
-        </div>
 
-        {/* Error */}
-        {error && (
-          <div className="admin-card" style={{ marginBottom: '1rem', borderLeft: '4px solid #f97373' }}>
-            <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p>
+          <div className="admin-crm-filter-footer">
+            <span>{filteredUsers.length} usuario{filteredUsers.length === 1 ? '' : 's'} encontrado{filteredUsers.length === 1 ? '' : 's'}</span>
+            <button type="button" className="admin-crm-secondary" onClick={fetchUsers} disabled={loading}>
+              <FiRefreshCw /> {loading ? 'Cargando...' : 'Recargar'}
+            </button>
           </div>
-        )}
+        </section>
 
-        {/* Tabla */}
-        <div className="admin-card">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 12,
-              marginBottom: '0.9rem',
-            }}
-          >
-            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>
-              Usuarios ({filteredUsers.length})
-            </h2>
+        {error ? <div className="admin-crm-message admin-crm-message--error">{error}</div> : null}
 
-            {saving && (
-              <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-                Guardando cambios...
-              </span>
-            )}
+        <section className="admin-crm-card">
+          <div className="admin-crm-card-head">
+            <div>
+              <h2>Listado de usuarios</h2>
+              <p>Vista compacta con estado, rol, clasificación y tags principales.</p>
+            </div>
+            {savingId ? <span className="admin-crm-saving">Guardando cambios...</span> : null}
           </div>
 
           {loading ? (
-            <p style={{ color: '#6b7280', margin: 0 }}>Cargando usuarios...</p>
+            <div className="admin-crm-empty"><FiUsers /><strong>Cargando usuarios...</strong></div>
           ) : filteredUsers.length === 0 ? (
-            <p style={{ color: '#6b7280', margin: 0 }}>
-              No hay usuarios que coincidan con el filtro.
-            </p>
+            <div className="admin-crm-empty"><FiUsers /><strong>No hay usuarios para mostrar</strong><p>Cambia los filtros o crea un nuevo usuario.</p></div>
           ) : (
-            <div className="admin-table-wrapper">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Email</th>
-                    <th>Teléfono</th>
-                    <th>Rol</th>
-                    <th>Estado</th>
-                    <th style={{ width: 260, textAlign: 'right' }}>Acciones</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredUsers.map((u) => {
-                    const isAdmin = u.role === 'ADMIN';
-
-                    return (
-                      <tr key={u.id}>
-                        <td style={{ fontWeight: 600, color: '#0f172a' }}>
-                          {`${u.name || ''} ${u.lastName || ''}`.trim() || '—'}
-                        </td>
-
-                        <td style={{ color: '#0f172a' }}>{u.email}</td>
-
-                        <td style={{ color: '#0f172a' }}>{u.phone || '—'}</td>
-
-                        <td>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '0.25rem 0.7rem',
-                              borderRadius: 999,
-                              fontSize: '0.8rem',
-                              fontWeight: 700,
-                              background: isAdmin ? '#eef2ff' : '#f1f5f9',
-                              color: isAdmin ? '#4338ca' : '#0f172a',
-                              border: `1px solid ${isAdmin ? '#c7d2fe' : '#e2e8f0'}`,
-                            }}
-                          >
-                            {isAdmin ? 'Admin' : 'Cliente'}
-                          </span>
-                        </td>
-
-                        <td>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '0.25rem 0.7rem',
-                              borderRadius: 999,
-                              fontSize: '0.8rem',
-                              fontWeight: 700,
-                              background: u.active ? '#ecfdf5' : '#fef2f2',
-                              color: u.active ? '#166534' : '#b91c1c',
-                              border: `1px solid ${u.active ? '#bbf7d0' : '#fecaca'}`,
-                            }}
-                          >
-                            {u.active ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </td>
-
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            {/*<button
-                              type="button"
-                              onClick={() => handleToggleRole(u)}
-                              disabled={saving}
-                              style={{
-                                height: 34,
-                                padding: '0 12px',
-                                borderRadius: 999,
-                                border: '1px solid #d1d5db',
-                                background: '#ffffff',
-                                cursor: saving ? 'not-allowed' : 'pointer',
-                                fontSize: '0.85rem',
-                                fontWeight: 700,
-                                color: '#0f172a',
-                                opacity: saving ? 0.7 : 1,
-                              }}
-                            >
-                              {isAdmin ? 'Pasar a cliente' : 'Hacer admin'}
-                            </button> */}
-
-                            <button
-                              type="button"
-                              onClick={() => handleToggleActive(u)}
-                              disabled={saving}
-                              style={{
-                                height: 30,
-                                padding: '0 12px',
-                                borderRadius: 999,
-                                border: `0px solid ${u.active ? '#fecaca' : '#bbf7d0'}`,
-                                background: u.active ? '#fff1f2' : '#ecfdf5',
-                                cursor: saving ? 'not-allowed' : 'pointer',
-                                fontSize: '0.85rem',
-                                fontWeight: 400,
-                                color: u.active ? '#b91c1c' : '#166534',
-                                opacity: saving ? 0.7 : 1,
-                                width: '55%',
-                              }}
-                            >
-                              {u.active ? 'Desactivar' : 'Activar'}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/admin/usuarios/${u.id}`)}
-                              style={{
-                                height: 30,
-                                padding: '0 12px',
-                                borderRadius: 999,
-                                border: '0px solid #49af70ff',
-                                background: '#dcfce7',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem',
-                                fontWeight: 400,
-                                color: '#0f172a',
-                              }}
-                            >
-                              Editar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="admin-crm-user-list">
+              {filteredUsers.map((user) => {
+                const tags = getUserTags(user);
+                return (
+                  <article key={user.id} className="admin-crm-user-row">
+                    <div className="admin-crm-avatar">{getInitials(user)}</div>
+                    <div className="admin-crm-user-main">
+                      <div className="admin-crm-user-title">
+                        <button type="button" onClick={() => navigate(`/admin/usuarios/${user.id}`)}>{fullName(user)}</button>
+                        <StatusBadge active={user.active} />
+                      </div>
+                      <div className="admin-crm-user-meta">
+                        <span>{user.email || 'Sin email'}</span>
+                        <span>{user.phone || 'Sin teléfono'}</span>
+                      </div>
+                      <div className="admin-crm-chip-row">
+                        <RoleBadge role={user.role} />
+                        <ClassifyBadge classify={user.classify} />
+                        {tags.slice(0, 4).map((tag) => <span key={tag.id} className="admin-crm-tag">{tag.name}</span>)}
+                        {tags.length > 4 ? <span className="admin-crm-tag">+{tags.length - 4}</span> : null}
+                      </div>
+                    </div>
+                    <div className="admin-crm-row-actions">
+                      <button type="button" className="admin-crm-secondary" onClick={() => navigate(`/admin/usuarios/${user.id}`)}>Editar</button>
+                      <button
+                        type="button"
+                        className={user.active ? 'admin-crm-danger-soft' : 'admin-crm-success-soft'}
+                        onClick={() => handleToggleActive(user)}
+                        disabled={savingId === user.id}
+                      >
+                        {user.active ? 'Desactivar' : 'Activar'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </Layout>
   );

@@ -116,7 +116,7 @@ export default function OperationsUserBatchImport() {
   };
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card" style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Alta masiva de usuarios</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>
         Importá CSV/TXT, generá preview, creá usuarios y enviá activación.

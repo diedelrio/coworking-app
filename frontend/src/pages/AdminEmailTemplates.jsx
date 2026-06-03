@@ -162,7 +162,7 @@ export default function AdminEmailTemplates() {
 
   return (
     <Layout>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem' }}>
+      <div style={{ maxWidth: 'none', margin: '0 auto', padding: '1rem' }}>
         <h1 style={{ marginTop: 0 }}>Email Templates</h1>
         <p style={{ marginTop: 0, color: '#6b7280' }}>
           Edita asunto y cuerpo de emails sin tocar código.

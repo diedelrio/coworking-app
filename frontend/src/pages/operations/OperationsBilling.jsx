@@ -88,7 +88,7 @@ export default function OperationsBilling() {
   const billingHasSomethingToInvoice = !!billingPreview?.count;
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card" style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Facturación</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>
         RF-OPER-02 — Generación manual de liquidaciones para reservas COMPLETED/PENALIZED no facturadas.

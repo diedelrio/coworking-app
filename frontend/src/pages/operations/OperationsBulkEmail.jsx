@@ -94,7 +94,7 @@ export default function OperationsBulkEmail() {
 
       <AlertBanner error={error} message={message} />
 
-      <div style={{ display: 'grid', gap: '0.75rem', maxWidth: 720 }}>
+      <div className="admin-card" style={{ display: 'grid', gap: '0.75rem', maxWidth: 720 }}>
         <div style={{ display: 'grid', gap: '0.25rem' }}>
           <label style={{ fontSize: '0.9rem' }}>Template</label>
           <select

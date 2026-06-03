@@ -106,7 +106,7 @@ input:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+
 }
 
 .admin-header h1 {
@@ -392,7 +392,7 @@ input:focus {
   width: 100%;
   text-align: left;
   padding: 14px 14px;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.08);
   background: #fff;
   cursor: pointer;
@@ -518,38 +518,6 @@ input:focus {
   opacity: 0.9;
 }
 
-/* ---------- PILL BUTTONS ---------- 
-.pill-button {
-  border: none;
-   border-radius: 10px;
-  height: 40px;
-  padding: 0 16px;
-  background: #6366f1;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pill-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.pill-button-outline {
-  border: 1px solid rgba(0,0,0,0.14);
-   border-radius: 10px;
-  height: 40px;
-  padding: 0 16px;
-  background: #fff;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.pill-button-outline:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-Diego lo borro porque hay dos */
 /* ---------- Alerts ---------- */
 .form-error {
   margin: 10px 0 12px 0;
@@ -718,7 +686,7 @@ Diego lo borro porque hay dos */
 .dashboard-action-card {
   border: 1px solid rgba(0,0,0,0.10);
   background: #fff;
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 18px;
   display: flex;
   gap: 14px;
@@ -734,7 +702,7 @@ Diego lo borro porque hay dos */
 .dashboard-action-icon {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: rgba(37, 99, 235, 0.10);
@@ -990,8 +958,9 @@ Diego lo borro porque hay dos */
 }
 
 .settings-header {
-  max-width: 1100px;
-  margin: 0 auto 1rem;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 1rem;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1010,13 +979,15 @@ Diego lo borro porque hay dos */
 }
 
 .settings-error {
-  max-width: 1100px;
-  margin: 0 auto .75rem;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 .75rem;
 }
 
 .settings-card {
-  max-width: 1100px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 1.25rem;
 }
 
@@ -1319,7 +1290,7 @@ Diego lo borro porque hay dos */
 }
 
 .fc-admin-wrap .fc .fc-button {
-  border-radius: 0.75rem;
+  border-radius: 10px;
   border: 1px solid #d1d5db;
   background: #ffffff;
   color: #111827;
@@ -2453,3 +2424,499 @@ Diego lo borro porque hay dos */
 /**/
 .info { background:#ecfeff; border:1px solid #a5f3fc; padding:10px; border-radius:10px; }
 .success { background:#ecfdf5; border:1px solid #6ee7b7; padding:10px; border-radius:10px; }
+
+/* ===== Admin V3.1 - Usuarios CRM ===== */
+.admin-crm-page {
+  color: #102033;
+}
+
+.admin-crm-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-crm-hero--compact {
+  align-items: center;
+}
+
+.admin-crm-eyebrow {
+  margin: 0 0 0.35rem;
+  color: #5b46e8;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-crm-hero h1 {
+  margin: 0;
+  color: #102033;
+  font-size: clamp(1.9rem, 3vw, 2.8rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.admin-crm-hero p {
+  max-width: 720px;
+  margin: 0.65rem 0 0;
+  color: #667085;
+  line-height: 1.55;
+}
+
+.admin-crm-primary,
+.admin-crm-secondary,
+.admin-crm-danger-soft,
+.admin-crm-success-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.48rem;
+  min-height: 40px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.admin-crm-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #5b46e8, #4734c9);
+  box-shadow: 0 16px 30px rgba(91, 70, 232, 0.22);
+}
+
+.admin-crm-secondary {
+  color: #315a72;
+  background: #fff;
+  border-color: rgba(49, 90, 114, 0.18);
+}
+
+.admin-crm-danger-soft {
+  color: #b91c1c;
+  background: #fff1f2;
+  border-color: #fecaca;
+}
+
+.admin-crm-success-soft {
+  color: #166534;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.admin-crm-primary:disabled,
+.admin-crm-secondary:disabled,
+.admin-crm-danger-soft:disabled,
+.admin-crm-success-soft:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-crm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.admin-crm-stat-card,
+.admin-crm-card {
+  border: 1px solid rgba(16, 32, 51, 0.10);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 40px rgba(16, 32, 51, 0.07);
+}
+
+.admin-crm-stat-card {
+  padding: 1rem;
+}
+
+.admin-crm-stat-card span {
+  color: #667085;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.admin-crm-stat-card strong {
+  display: block;
+  margin-top: 0.4rem;
+  color: #102033;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.admin-crm-card {
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-crm-alert-wrap {
+  margin-bottom: 1rem;
+}
+
+.admin-crm-filters {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.admin-crm-search {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 48px;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(16, 32, 51, 0.12);
+  border-radius: 1rem;
+  background: #fff;
+  color: #667085;
+}
+
+.admin-crm-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  color: #102033;
+  background: transparent;
+}
+
+.admin-crm-search input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-crm-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-crm-filter-grid label,
+.admin-user-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.36rem;
+  color: #344054;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.admin-crm-filter-grid select,
+.admin-user-form-grid input,
+.admin-user-form-grid select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(16, 32, 51, 0.13);
+  border-radius: 0.9rem;
+  background: #fff;
+  color: #102033;
+  padding: 0 0.85rem;
+  box-sizing: border-box;
+}
+
+.admin-crm-filter-footer,
+.admin-crm-card-head,
+.admin-crm-user-title,
+.admin-crm-user-meta,
+.admin-crm-chip-row,
+.admin-crm-row-actions {
+  display: flex;
+  align-items: center;
+}
+
+.admin-crm-filter-footer {
+  justify-content: space-between;
+  gap: 1rem;
+  color: #667085;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.admin-crm-message {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  font-weight: 800;
+}
+
+.admin-crm-message--error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.admin-crm-message--success {
+  color: #166534;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+}
+
+.admin-crm-card-head {
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.admin-crm-card-head h2,
+.admin-user-form-section-head h2 {
+  margin: 0;
+  color: #102033;
+  font-size: 1.08rem;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.admin-crm-card-head p,
+.admin-user-form-section-head p {
+  margin: 0.28rem 0 0;
+  color: #667085;
+  font-size: 0.9rem;
+}
+
+.admin-crm-saving {
+  color: #667085;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.admin-crm-user-list {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.admin-crm-user-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid rgba(16, 32, 51, 0.09);
+  border-radius: 1.1rem;
+  background: #fff;
+}
+
+.admin-crm-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #3478f6, #6846e8);
+  font-weight: 950;
+  box-shadow: 0 10px 22px rgba(52, 120, 246, 0.20);
+}
+
+.admin-crm-user-main {
+  min-width: 0;
+}
+
+.admin-crm-user-title {
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.admin-crm-user-title button {
+  border: 0;
+  padding: 0;
+  color: #102033;
+  background: transparent;
+  font-size: 1rem;
+  font-weight: 950;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-crm-user-meta {
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  margin-top: 0.32rem;
+  color: #667085;
+  font-size: 0.86rem;
+}
+
+.admin-crm-chip-row {
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin-top: 0.58rem;
+}
+
+.admin-crm-badge,
+.admin-crm-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 0.62rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 900;
+  border: 1px solid transparent;
+}
+
+.admin-crm-badge--green { color: #166534; background: #ecfdf5; border-color: #bbf7d0; }
+.admin-crm-badge--red { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.admin-crm-badge--purple { color: #4338ca; background: #eef2ff; border-color: #c7d2fe; }
+.admin-crm-badge--blue { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.admin-crm-badge--amber { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+.admin-crm-badge--slate { color: #334155; background: #f1f5f9; border-color: #e2e8f0; }
+
+.admin-crm-tag {
+  color: #315a72;
+  background: rgba(49, 90, 114, 0.08);
+  border-color: rgba(49, 90, 114, 0.16);
+}
+
+.admin-crm-row-actions {
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-crm-empty {
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  min-height: 150px;
+  color: #667085;
+  text-align: center;
+}
+
+.admin-crm-empty svg {
+  font-size: 1.7rem;
+}
+
+.admin-crm-empty strong {
+  color: #102033;
+}
+
+.admin-crm-empty p {
+  margin: 0;
+}
+
+.admin-user-form-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-user-form-card {
+  margin-bottom: 0;
+}
+
+.admin-user-form-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-user-form-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 1rem;
+  color: #5b46e8;
+  background: rgba(91, 70, 232, 0.10);
+}
+
+.admin-user-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-user-form-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-user-compliance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-user-compliance-grid div {
+  padding: 0.85rem;
+  border: 1px dashed rgba(49, 90, 114, 0.22);
+  border-radius: 1rem;
+  background: rgba(49, 90, 114, 0.035);
+}
+
+.admin-user-compliance-grid strong,
+.admin-user-compliance-grid span {
+  display: block;
+}
+
+.admin-user-compliance-grid strong {
+  color: #102033;
+  font-size: 0.9rem;
+}
+
+.admin-user-compliance-grid span {
+  margin-top: 0.28rem;
+  color: #667085;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.admin-user-form-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.9rem 0;
+  background: linear-gradient(180deg, rgba(246,248,251,0), #f6f8fb 28%);
+}
+
+@media (max-width: 1100px) {
+  .admin-crm-stats,
+  .admin-crm-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-user-compliance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-crm-hero,
+  .admin-crm-card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-crm-stats,
+  .admin-crm-filter-grid,
+  .admin-user-form-grid,
+  .admin-user-form-grid--three {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-crm-user-row {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .admin-crm-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .admin-user-form-footer {
+    flex-direction: column-reverse;
+  }
+
+  .admin-user-form-footer button {
+    width: 100%;
+  }
+}

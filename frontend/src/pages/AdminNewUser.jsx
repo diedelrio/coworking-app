@@ -1,107 +1,81 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { FiArrowLeft, FiCheckCircle, FiShield, FiTag, FiUser } from 'react-icons/fi';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import TagsMultiSelect from '../components/TagsMultiSelect';
 
+const EMPTY_FORM = {
+  name: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  role: 'CLIENT',
+  classify: 'GOOD',
+  active: true,
+};
+
 export default function AdminNewUser() {
   const { id } = useParams();
   const navigate = useNavigate();
-
   const isEditMode = id && id !== 'nuevo';
 
-  const [form, setForm] = useState({
-    name: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    role: 'CLIENT',
-    classify: 'GOOD', // ✅ NUEVO: para mostrar/editar classify
-    active: true,
-  });
-
+  const [form, setForm] = useState(EMPTY_FORM);
   const [availableTags, setAvailableTags] = useState([]);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [history, setHistory] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
-    // Cargar tags disponibles (para create y edit)
-    loadTags();
+    let mounted = true;
 
-    if (isEditMode) loadUserAndHistory();
-    else setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  const loadTags = async () => {
-    try {
-      const res = await api.get('/admin/tags');
-      setAvailableTags(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error('Error cargando tags', err);
-      setAvailableTags([]);
-    }
-  };
-
-  const loadUserAndHistory = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      setSuccess('');
-
-      // Detalle de usuario (sin password)
-      const userRes = await api.get(`/users/${id}`);
-      const user = userRes.data;
-
-      setForm({
-        name: user.name || '',
-        lastName: user.lastName || '',
-        email: user.email || '',
-        phone: user.phone || '',
-        role: user.role || 'CLIENT',
-        classify: user.classify ?? '', // ✅ FIX: si viene null/undefined queda vacío
-        active: user.active ?? true,
-      });
-
-      // Tags asignados
-      const currentTagIds = Array.isArray(user.userTags)
-        ? user.userTags
-            .map((ut) => ut?.tag?.id)
-            .filter((x) => Number.isFinite(Number(x)))
-            .map((x) => Number(x))
-        : [];
-      setSelectedTagIds(currentTagIds);
-
-      // Historia de cambios
-      setLoadingHistory(true);
+    async function load() {
       try {
-        const historyRes = await api.get(`/users/${id}/history`);
-        setHistory(historyRes.data || []);
-      } catch (historyErr) {
-        console.error('Error cargando history', historyErr);
-        // No es crítico
+        setLoading(true);
+        setError('');
+        setSuccess('');
+
+        const tagsRes = await api.get('/admin/tags');
+        if (!mounted) return;
+        setAvailableTags(Array.isArray(tagsRes.data) ? tagsRes.data : []);
+
+        if (isEditMode) {
+          const userRes = await api.get(`/users/${id}`);
+          if (!mounted) return;
+          const user = userRes.data || {};
+          setForm({
+            name: user.name || '',
+            lastName: user.lastName || '',
+            email: user.email || '',
+            phone: user.phone || '',
+            role: user.role || 'CLIENT',
+            classify: user.classify || 'GOOD',
+            active: user.active ?? true,
+          });
+          const ids = Array.isArray(user.userTags)
+            ? user.userTags.map((ut) => ut?.tag?.id).filter((x) => Number.isFinite(x))
+            : [];
+          setSelectedTagIds(ids);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!mounted) return;
+        setError(isEditMode ? 'No se pudo cargar el usuario.' : 'No se pudieron cargar los datos iniciales.');
       } finally {
-        setLoadingHistory(false);
+        if (mounted) setLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-      setError('No se pudo cargar el usuario.');
-    } finally {
-      setLoading(false);
     }
-  };
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [id, isEditMode]);
 
   const handleChange = (field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -111,46 +85,29 @@ export default function AdminNewUser() {
     setSuccess('');
 
     try {
+      const payload = {
+        name: form.name,
+        lastName: form.lastName,
+        email: form.email,
+        phone: form.phone,
+        role: form.role,
+        classify: form.classify || null,
+        active: form.active,
+        tagIds: selectedTagIds,
+      };
+
       if (isEditMode) {
-        await api.put(`/users/${id}`, {
-          name: form.name,
-          lastName: form.lastName,
-          email: form.email,
-          phone: form.phone,
-          role: form.role,
-          classify: form.classify || null, // ✅ NUEVO: enviar classify
-          active: form.active,
-          tagIds: selectedTagIds,
-        });
-
+        await api.put(`/users/${id}`, payload);
         setSuccess('Usuario actualizado correctamente.');
-        await loadUserAndHistory();
       } else {
-        const res = await api.post('/users', {
-          name: form.name,
-          lastName: form.lastName,
-          email: form.email,
-          phone: form.phone,
-          role: form.role,
-          tagIds: selectedTagIds,
-          // Para usuario nuevo, el backend debería generar clave temporal
-          // o requerir otro flujo. Aquí NO manejamos password.
-        });
-
+        const res = await api.post('/users', payload);
         setSuccess('Usuario creado correctamente.');
         const created = res.data;
-        if (created && created.id) {
-          navigate(`/admin/usuarios/${created.id}`, { replace: true });
-        }
+        if (created?.id) navigate(`/admin/usuarios/${created.id}`, { replace: true });
       }
     } catch (err) {
       console.error(err);
-      const msg =
-        err?.response?.data?.message ||
-        (isEditMode
-          ? 'No se pudo actualizar el usuario.'
-          : 'No se pudo crear el usuario.');
-      setError(msg);
+      setError(err?.response?.data?.message || (isEditMode ? 'No se pudo actualizar el usuario.' : 'No se pudo crear el usuario.'));
     } finally {
       setSaving(false);
     }
@@ -158,258 +115,77 @@ export default function AdminNewUser() {
 
   return (
     <Layout>
-      <div className="admin-page">
-        <div
-          className="admin-page-header"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
+      <div className="admin-page admin-crm-page admin-user-form-page">
+        <section className="admin-crm-hero admin-crm-hero--compact">
           <div>
-            <h1>{isEditMode ? 'Detalle de usuario' : 'Nuevo usuario'}</h1>
-            <p className="admin-page-subtitle">
-              {isEditMode
-                ? 'Consulta y modifica los datos del usuario. La contraseña no es visible ni editable.'
-                : 'Crea un nuevo usuario del coworking. La contraseña se gestionará por un flujo separado.'}
-            </p>
+            <p className="admin-crm-eyebrow">Usuarios</p>
+            <h1>{isEditMode ? 'Editar usuario' : 'Nuevo usuario'}</h1>
+            <p>{isEditMode ? 'Actualiza datos, permisos, clasificación y tags.' : 'Crea una nueva cuenta y deja preparada su segmentación administrativa.'}</p>
           </div>
-          <button
-            type="button"
-            className="pill-button"
-            onClick={() => navigate('/admin/usuarios')}
-          >
-            ← Volver
+          <button type="button" className="admin-crm-secondary" onClick={() => navigate('/admin/usuarios')}>
+            <FiArrowLeft /> Volver
           </button>
-        </div>
+        </section>
 
-        {error && (
-          <div
-            className="admin-card"
-            style={{
-              marginBottom: '1rem',
-              borderLeft: '4px solid #f97373',
-            }}
-          >
-            <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p>
-          </div>
-        )}
-
-        {success && (
-          <div
-            className="admin-card"
-            style={{
-              marginBottom: '1rem',
-              borderLeft: '4px solid #4ade80',
-            }}
-          >
-            <p style={{ color: '#166534', margin: 0 }}>{success}</p>
-          </div>
-        )}
+        {error ? <div className="admin-crm-message admin-crm-message--error">{error}</div> : null}
+        {success ? <div className="admin-crm-message admin-crm-message--success">{success}</div> : null}
 
         {loading ? (
-          <div className="admin-card">
-            <p>Cargando datos del usuario...</p>
-          </div>
+          <section className="admin-crm-card admin-crm-empty"><FiUser /><strong>Cargando usuario...</strong></section>
         ) : (
-          <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-            <form onSubmit={handleSubmit} >
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '1rem',
-                }}
-              >
-                <div className="form-group"> 
-                  <label>Nombre</label>
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => handleChange('name', e.target.value)}
-                    placeholder="Nombre"
-                    required
-                  />
-                </div>
-
-              <div className="form-group">
-                  <label>Apellidos</label>
-                  <input
-                    type="text"
-                    value={form.lastName}
-                    onChange={(e) => handleChange('lastName', e.target.value)}
-                    placeholder="Apellidos"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Email</label>
-                  <input
-                    type="email"
-
-                    value={form.email}
-                    onChange={(e) => handleChange('email', e.target.value)}
-                    placeholder="tuemail@ejemplo.com"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Teléfono (opcional)</label>
-                  <input
-                    type="tel"
-                    
-                    value={form.phone}
-                    onChange={(e) => handleChange('phone', e.target.value)}
-                    placeholder="Ej: 600 123 123"
-                  />
-                </div>
-
-                <div >
-                  <label>Rol</label>
-                  <select
-                    className="admin-input"
-                    value={form.role}
-                    onChange={(e) => handleChange('role', e.target.value)}
-                  >
-                    <option value="CLIENT">Cliente</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
-                </div>
-
-                {/* ✅ Tags (segmentación) */}
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <TagsMultiSelect
-                    tags={availableTags}
-                    value={selectedTagIds}
-                    onChange={setSelectedTagIds}
-                  />
-                </div>
-
-                {/* ✅ NUEVO: Classify (solo visible en edición) */}
-                {isEditMode && (
-                  <div>
-                    <label className="admin-label">Classify</label>
-                    <select
-                      className="admin-input"
-                      value={form.classify}
-                      onChange={(e) => handleChange('classify', e.target.value)}
-                    >
-                      <option value="">(Sin clasificar)</option>
-                      <option value="GOOD">Good</option>
-                      <option value="REGULAR">Regular</option>
-                      <option value="BAD">Bad</option>
-                    </select>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: '0.8rem',
-                        color: '#6b7280',
-                      }}
-                    >
-                      Solo visible para administradores.
-                    </div>
-                  </div>
-                )}
-
-                {isEditMode && (
-                  <div>
-                    <label className="admin-label">Estado</label>
-                    <select
-                      className="admin-input"
-                      value={form.active ? 'ACTIVE' : 'INACTIVE'}
-                      onChange={(e) =>
-                        handleChange('active', e.target.value === 'ACTIVE')
-                      }
-                    >
-                      <option value="ACTIVE">Activo</option>
-                      <option value="INACTIVE">Inactivo</option>
-                    </select>
-                  </div>
-                )}
+          <form onSubmit={handleSubmit} className="admin-user-form-shell">
+            <section className="admin-crm-card admin-user-form-card">
+              <div className="admin-user-form-section-head">
+                <span className="admin-user-form-icon"><FiUser /></span>
+                <div><h2>Información personal</h2><p>Datos básicos para identificar al usuario.</p></div>
               </div>
 
-              {/* Nota: no mostramos ni gestionamos password */}
-              <div
-                style={{
-                  marginTop: '1rem',
-                  fontSize: '0.8rem',
-                  color: '#6b7280',
-                }}
-              >
-                La contraseña del usuario no se muestra ni se edita desde esta
-                pantalla.
+              <div className="admin-user-form-grid">
+                <label>Nombre *<input value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder="Nombre" required /></label>
+                <label>Apellido *<input value={form.lastName} onChange={(e) => handleChange('lastName', e.target.value)} placeholder="Apellido" required /></label>
+                <label>Email *<input type="email" value={form.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="usuario@email.com" required /></label>
+                <label>Teléfono<input value={form.phone} onChange={(e) => handleChange('phone', e.target.value)} placeholder="+34 600 000 000" /></label>
+              </div>
+            </section>
+
+            <section className="admin-crm-card admin-user-form-card">
+              <div className="admin-user-form-section-head">
+                <span className="admin-user-form-icon"><FiShield /></span>
+                <div><h2>Acceso y estado</h2><p>Rol operativo y disponibilidad de la cuenta.</p></div>
               </div>
 
-              <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
-                <button type="submit" className="pill-button" disabled={saving}>
-                  {saving
-                    ? isEditMode
-                      ? 'Guardando cambios...'
-                      : 'Creando usuario...'
-                    : isEditMode
-                    ? 'Guardar cambios'
-                    : 'Crear usuario'}
-                </button>
+              <div className="admin-user-form-grid admin-user-form-grid--three">
+                <label>Rol *<select value={form.role} onChange={(e) => handleChange('role', e.target.value)}><option value="CLIENT">Cliente</option><option value="ADMIN">Administrador</option></select></label>
+                <label>Clasificación *<select value={form.classify} onChange={(e) => handleChange('classify', e.target.value)}><option value="GOOD">Premium</option><option value="REGULAR">Regular</option><option value="BAD">Bloqueado</option></select></label>
+                <label>Estado *<select value={form.active ? 'ACTIVE' : 'INACTIVE'} onChange={(e) => handleChange('active', e.target.value === 'ACTIVE')}><option value="ACTIVE">Activo</option><option value="INACTIVE">Inactivo</option></select></label>
               </div>
-            </form>
-          </div>
-        )}
+            </section>
 
-        {/* Historial de cambios */}
-        {isEditMode && (
-          <div className="admin-card">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '0.75rem',
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: '1rem' }}>Historial de cambios</h2>
-              {loadingHistory && (
-                <span style={{ fontSize: '0.85rem', opacity: 0.8 }}>
-                  Cargando historial...
-                </span>
-              )}
+            <section className="admin-crm-card admin-user-form-card">
+              <div className="admin-user-form-section-head">
+                <span className="admin-user-form-icon"><FiTag /></span>
+                <div><h2>Tags y segmentación</h2><p>Usa tags para filtros, reportes y futuras comunicaciones.</p></div>
+              </div>
+              <TagsMultiSelect tags={availableTags} value={selectedTagIds} onChange={setSelectedTagIds} showLabel={false} disabled={saving} />
+            </section>
+
+            <section className="admin-crm-card admin-user-form-card admin-user-compliance-card">
+              <div className="admin-user-form-section-head">
+                <span className="admin-user-form-icon"><FiCheckCircle /></span>
+                <div><h2>Consentimientos</h2><p>Preparado para el próximo módulo legal.</p></div>
+              </div>
+              <div className="admin-user-compliance-grid">
+                <div><strong>Términos y condiciones</strong><span>No disponible todavía</span></div>
+                <div><strong>Comunicaciones comerciales</strong><span>No disponible todavía</span></div>
+                <div><strong>Comunicaciones sociales</strong><span>No disponible todavía</span></div>
+              </div>
+            </section>
+
+            <div className="admin-user-form-footer">
+              <button type="button" className="admin-crm-secondary" onClick={() => navigate('/admin/usuarios')} disabled={saving}>Cancelar</button>
+              <button type="submit" className="admin-crm-primary" disabled={saving}>{saving ? 'Guardando...' : isEditMode ? 'Guardar cambios' : 'Crear usuario'}</button>
             </div>
-
-            {history && history.length > 0 ? (
-              <div className="admin-table-wrapper">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Campo</th>
-                      <th>Valor anterior</th>
-                      <th>Valor nuevo</th>
-                      <th>Modificado por</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((h) => (
-                      <tr key={h.id}>
-                        <td>{new Date(h.createdAt).toLocaleString()}</td>
-                        <td>{h.field}</td>
-                        <td>{h.oldValue ?? '-'}</td>
-                        <td>{h.newValue ?? '-'}</td>
-                        <td>{h.changedByName || h.changedBy || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p style={{ fontSize: '0.9rem', color: '#6b7280' }}>
-                {loadingHistory
-                  ? 'Cargando...'
-                  : 'Aún no hay registros de cambios para este usuario.'}
-              </p>
-            )}
-          </div>
+          </form>
         )}
       </div>
     </Layout>

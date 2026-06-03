@@ -121,7 +121,7 @@ export default function OperationsCompleteReservations() {
   };
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card" style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Completar reservas</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>RF-OPER-01 — Pasar reservas ACTIVE a COMPLETED según filtros o selección.</p>
 

@@ -193,7 +193,7 @@ export default function OperationsOfficeClosures() {
   };
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card"style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Cierres del coworking</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>
         Gestioná cierres/feriados. Afecta disponibilidad y validación de reservas.
