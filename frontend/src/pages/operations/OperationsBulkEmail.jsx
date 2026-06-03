@@ -94,10 +94,10 @@ export default function OperationsBulkEmail() {
 
       <AlertBanner error={error} message={message} />
 
-      <div className="admin-card" style={{ display: 'grid', gap: '0.75rem', maxWidth: 720 }}>
+      <div className="admin-card operations-bulk-email-card">
         <div style={{ display: 'grid', gap: '0.25rem' }}>
           <label style={{ fontSize: '0.9rem' }}>Template</label>
-          <select
+          <select  className="operations-bulk-email-select"
             value={templateKey}
             onChange={(e) => setTemplateKey(e.target.value)}
             disabled={loadingMeta}
@@ -117,6 +117,7 @@ export default function OperationsBulkEmail() {
           <label style={{ fontSize: '0.9rem' }}>Segmento</label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
+              className="operations-bulk-email-submit"
               type="button"
               onClick={() => setAudienceType('CLIENT')}
               style={{

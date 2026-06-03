@@ -96,10 +96,10 @@ export default function OperationsBulkTokenRegen() {
 
       <AlertBanner error={error} message={message} />
 
-      <div style={{ display: 'grid', gap: '0.75rem', maxWidth: 720 }}>
+      <div className="operations-bulk-token-card">
         <div style={{ display: 'grid', gap: '0.25rem' }}>
           <label style={{ fontSize: '0.9rem' }}>Tipo de token</label>
-          <select
+          <select className="operations-bulk-token-select"
             value={tokenType}
             onChange={(e) => setTokenType(e.target.value)}
             style={{ padding: '0.6rem', borderRadius: '0.75rem', border: '1px solid #e5e7eb' }}
@@ -111,7 +111,7 @@ export default function OperationsBulkTokenRegen() {
 
         <div style={{ display: 'grid', gap: '0.25rem' }}>
           <label style={{ fontSize: '0.9rem' }}>Template</label>
-          <select
+          <select className="operations-bulk-token-select"
             value={templateKey}
             onChange={(e) => setTemplateKey(e.target.value)}
             disabled={loadingMeta}
@@ -130,7 +130,7 @@ export default function OperationsBulkTokenRegen() {
         <div style={{ display: 'grid', gap: '0.25rem' }}>
           <label style={{ fontSize: '0.9rem' }}>Segmento</label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button
+            <button 
               type="button"
               onClick={() => setAudienceType('CLIENT')}
               style={{
@@ -172,7 +172,7 @@ export default function OperationsBulkTokenRegen() {
           </div>
 
           {audienceType === 'CLASSIFY' && (
-            <select
+            <select className="operations-bulk-token-select"
               value={classify}
               onChange={(e) => setClassify(e.target.value)}
               style={{ padding: '0.6rem', borderRadius: '0.75rem', border: '1px solid #e5e7eb' }}
@@ -186,7 +186,7 @@ export default function OperationsBulkTokenRegen() {
           )}
 
           {audienceType === 'TAG' && (
-            <select
+            <select className="operations-bulk-token-select"
               value={tagSlug}
               onChange={(e) => setTagSlug(e.target.value)}
               disabled={loadingMeta}
@@ -203,6 +203,7 @@ export default function OperationsBulkTokenRegen() {
         </div>
 
         <button
+          className="operations-bulk-token-submit"
           type="button"
           onClick={execute}
           disabled={!canRun || loadingRun}

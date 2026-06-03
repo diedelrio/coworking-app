@@ -96,7 +96,13 @@ export default function OperationsBilling() {
 
       <AlertBanner error={error} message={message} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: '0.75rem', maxWidth: 900 }}>
+      <div
+        className="operations-billing-filters"
+        style={{
+          gap: '0.75rem',
+          maxWidth: 900
+        }}
+      >
         <div>
           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Usuario (opcional)</label>
           <select

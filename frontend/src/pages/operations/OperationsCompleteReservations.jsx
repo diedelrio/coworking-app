@@ -127,7 +127,13 @@ export default function OperationsCompleteReservations() {
 
       <AlertBanner error={error} message={message} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+      <div
+        className="operations-complete-filters"
+        style={{
+          gap: '0.75rem',
+          marginBottom: '0.75rem'
+        }}
+      >
         <div>
           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Usuario</label>
           <select value={filterUserId} onChange={(e) => setFilterUserId(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>

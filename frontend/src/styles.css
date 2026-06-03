@@ -1008,7 +1008,7 @@ input:focus {
 
 .settings-input,
 .settings-textarea {
-  width: auto;
+  width: 320px;
   padding: .6rem .75rem;
   border-radius: 12px;
   border: 1px solid #e5e7eb;
@@ -2917,6 +2917,462 @@ input:focus {
   }
 
   .admin-user-form-footer button {
+    width: 100%;
+  }
+}
+/* ===== Admin Reservation Detail responsive ===== */
+.admin-reservation-detail-page {
+  width: 100%;
+}
+
+.admin-reservation-detail-shell {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.admin-reservation-detail-card {
+  width: 100%;
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .admin-reservation-detail-shell {
+    max-width: none;
+  }
+
+  .admin-reservation-detail-card {
+    padding: 14px;
+  }
+
+  .admin-reservation-detail-card .admin-card {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+/* =========================================================
+   ADMIN SETTINGS - MOBILE OPTIMIZATION
+   ========================================================= */
+
+@media (max-width: 768px) {
+  /* Selector de regla */
+  .admin-settings-selector,
+  .admin-settings-select,
+  .admin-settings-filter select {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  /* Botón Crear Regla */
+  .admin-settings-create-btn {
+    width: auto !important;
+    min-width: 180px;
+    max-width: 220px;
+    align-self: flex-start;
+    padding: 0.75rem 1.25rem;
+  }
+
+  /* Si el botón está dentro de un contenedor flex */
+  .admin-settings-actions {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* Evita que los inputs se vean gigantes */
+  .admin-settings-filters input,
+  .admin-settings-filters select {
+    max-width: 180px;
+  }
+
+  /* Texto de cantidad de reglas */
+  .admin-settings-count {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: #64748b;
+  }
+}
+@media (max-width: 768px) {
+  .responsive-title {
+    /* Permite que el texto baje de línea de forma natural */
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    
+    /* Asegura que no ignore los márgenes laterales del contenedor */
+    max-width: 100%; 
+    
+    /* Opcional: Reduce un poco el tamaño base para pantallas pequeñas */
+    font-size: 1.5rem; 
+    line-height: 1.2;
+  }
+}
+/* =========================================================
+   ADMIN OPERATIONS - RESPONSIVE SELECTOR LAYOUT
+   ========================================================= */
+
+.admin-operations-page {
+  width: 100%;
+}
+
+.admin-operations-header {
+  margin-bottom: 1rem;
+}
+
+.admin-operations-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.admin-operations-header p {
+  margin: 0;
+  color: #6b7280;
+}
+
+.admin-operations-selector-card {
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.admin-operations-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #374151;
+}
+
+.admin-operations-select {
+  width: 100%;
+  max-width: 360px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 0 0.8rem;
+  font-size: 0.95rem;
+}
+
+.admin-operations-selected-desc {
+  margin: 0.65rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.admin-operations-detail-card {
+  width: 100%;
+  padding: 1.25rem;
+}
+
+.admin-operations-detail-head {
+  margin-bottom: 1rem;
+}
+
+.admin-operations-detail-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.admin-operations-detail-head p {
+  margin: 0;
+  color: #6b7280;
+}
+
+/* Desktop: selector compacto en línea */
+@media (min-width: 769px) {
+  .admin-operations-selector-card {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 1rem;
+    align-items: end;
+  }
+
+  .admin-operations-label {
+    grid-column: 1 / -1;
+  }
+
+  .admin-operations-selected-desc {
+    margin: 0;
+    align-self: center;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .admin-operations-header h1 {
+    font-size: 1.7rem;
+  }
+
+  .admin-operations-select {
+    max-width: 280px;
+  }
+
+  .admin-operations-detail-card {
+    padding: 1rem;
+  }
+}
+/* =========================================================
+   OPERACIONES - ALTA MASIVA USUARIOS RESPONSIVE
+   ========================================================= */
+
+.operations-user-batch-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px auto auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+@media (max-width: 768px) {
+  .operations-user-batch-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-user-batch-toolbar input,
+  .operations-user-batch-toolbar select,
+  .operations-user-batch-toolbar button {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+/* =========================================================
+   OPERACIONES - ENVÍO MASIVO EMAILS RESPONSIVE
+   ========================================================= */
+
+.operations-bulk-email-card {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 720px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.operations-bulk-email-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+}
+
+.operations-bulk-email-submit {
+  width: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #111827;
+  background: #111827;
+  color: white;
+  cursor: pointer;
+}
+
+.operations-bulk-email-submit:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .operations-bulk-email-card {
+    max-width: 100%;
+    padding: 1rem;
+  }
+
+  .operations-bulk-email-select,
+  .operations-bulk-email-submit {
+    width: 100%;
+  }
+
+  .operations-bulk-email-card button {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+/* =========================================================
+   OPERACIONES - REGENERAR TOKENS RESPONSIVE
+   ========================================================= */
+
+.operations-bulk-token-card {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 720px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.operations-bulk-token-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+}
+
+.operations-bulk-token-submit {
+  width: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #111827;
+  background: #111827;
+  color: white;
+  cursor: pointer;
+}
+
+.operations-bulk-token-submit:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .operations-bulk-token-card {
+    max-width: 100%;
+    padding: 1rem;
+  }
+
+  .operations-bulk-token-select,
+  .operations-bulk-token-submit {
+    width: 100%;
+  }
+
+  .operations-bulk-token-card button {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+/* =========================================================
+   OPERACIONES - CIERRES DE OFICINA RESPONSIVE
+   ========================================================= */
+
+.operations-office-closures-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.operations-office-closures-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.operations-office-closures-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .operations-office-closures-filters,
+  .operations-office-closures-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-office-closures-filters input,
+  .operations-office-closures-filters select,
+  .operations-office-closures-filters button,
+  .operations-office-closures-form-grid input,
+  .operations-office-closures-form-grid select,
+  .operations-office-closures-form-grid button {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .operations-office-closures-filters > div:last-child {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .operations-office-closures-actions {
+    flex-direction: column;
+  }
+
+  .operations-office-closures-actions button {
+    width: 100%;
+  }
+}
+/* =========================================================
+   ADMIN USERS - USUARIOS SIN CLASIFICACIÓN MOBILE
+   ========================================================= */
+
+@media (max-width: 768px) {
+  .admin-crm-alert-wrap .admin-card {
+    overflow: hidden;
+  }
+
+  .admin-crm-alert-wrap table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 0.75rem;
+  }
+
+  .admin-crm-alert-wrap table thead {
+    display: none;
+  }
+
+  .admin-crm-alert-wrap table tbody,
+  .admin-crm-alert-wrap table tr,
+  .admin-crm-alert-wrap table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-crm-alert-wrap table tr {
+    padding: 0.85rem;
+    border: 1px solid rgba(16, 32, 51, 0.10);
+    border-radius: 10px;
+    background: #ffffff;
+  }
+
+  .admin-crm-alert-wrap table td {
+    padding: 0.25rem 0;
+    border: 0;
+    word-break: break-word;
+  }
+
+  .admin-crm-alert-wrap table td:nth-child(1)::before {
+    content: "Nombre";
+  }
+
+  .admin-crm-alert-wrap table td:nth-child(2)::before {
+    content: "Email";
+  }
+
+  .admin-crm-alert-wrap table td:nth-child(3)::before {
+    content: "Creado";
+  }
+
+  .admin-crm-alert-wrap table td:nth-child(4)::before {
+    content: "Acción";
+  }
+
+  .admin-crm-alert-wrap table td::before {
+    display: block;
+    margin-bottom: 0.15rem;
+    color: #667085;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .admin-crm-alert-wrap table td:last-child {
+    padding-top: 0.6rem;
+  }
+
+  .admin-crm-alert-wrap table td:last-child button {
     width: 100%;
   }
 }

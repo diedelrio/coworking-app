@@ -184,15 +184,14 @@ export default function AdminReservationDetails() {
 
   return (
     <Layout>
-       <div className="admin-container" style={{ display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: '75%', maxWidth: 1200 }}>
+       <div className="admin-page admin-reservation-detail-page">
+          <div className="admin-reservation-detail-shell">
             <h1 margin-bottom='0.25rem'>Detalle de Reserva</h1>
           
           <div
-            className="admin-card"
+            className="admin-card admin-reservation-detail-card"
             style={{
               padding: 18,
-              width: '75%',
               maxWidth: 1200,   // evita que se haga gigante en pantallas grandes
             }}
           >
