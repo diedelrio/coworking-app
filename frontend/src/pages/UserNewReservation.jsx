@@ -1,246 +1,118 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axiosClient";
-import Header from "../components/Header";
+import ClientLayout from "../portals/client/layout/ClientLayout";
 import ReservationTimeFields from "../components/ReservationTimeFields";
 import { getCurrentUser } from "../utils/auth";
-import {
-  buildStartTimeOptions,
-  buildEndTimeOptions,
-  minutesBetween,
-} from "../utils/timeUtils";
+import { buildStartTimeOptions, buildEndTimeOptions, minutesBetween } from "../utils/timeUtils";
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+/* ── helpers ── */
+function pad2(n) { return String(n).padStart(2, "0"); }
 
-/**
- * Convierte cualquier formato razonable a "HH:MM" SIN aplicar timezone:
- * - "09:00" -> "09:00"
- * - "09:00:00" -> "09:00"
- * - "2026-02-06T09:00:00.000Z" -> "09:00"   (extrae del string, NO new Date())
- * - Date/number -> usa getHours/getMinutes
- */
 function toHHMM(v) {
   if (!v) return "";
-
   if (typeof v === "string") {
-    // 1) "HH:MM" o "HH:MM:SS" (ya es hora local de negocio)
     const m1 = v.match(/^(\d{2}:\d{2})/);
     if (m1) return m1[1];
-
-    // 2) ISO con zona horaria (Z o ±HH:MM) -> convertir a hora local del navegador
-    // Ej: "2026-02-10T16:00:00.000Z" o "2026-02-10T16:00:00+00:00"
     const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(v);
     if (hasTZ) {
       const d = new Date(v);
-      if (!Number.isNaN(d.getTime())) {
-        return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-      }
+      if (!Number.isNaN(d.getTime())) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     }
-
-    // 3) ISO sin TZ o formatos raros: último intento (no recomendado pero evita romper)
     const d = new Date(v);
-    if (!Number.isNaN(d.getTime())) {
-      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-    }
-
+    if (!Number.isNaN(d.getTime())) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     return v;
   }
-
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-
-/**
- * Convierte cualquier formato razonable a "YYYY-MM-DD" sin corrimientos por TZ:
- * - "2026-02-06" -> "2026-02-06"
- * - "2026-02-06T00:00:00.000Z" -> "2026-02-06" (extrae string)
- * - Date/number -> yyyy-mm-dd con Date local
- */
 function toYMD(dateLike) {
   if (!dateLike) return "";
-
-  // Si viene string con hora + timezone, convertir a Date y formatear en local (Madrid)
   if (typeof dateLike === "string") {
     const hasTime = dateLike.includes("T");
     const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(dateLike);
-
-    // ISO con TZ -> usar Date (corrige el "día -1")
     if (hasTime && hasTZ) {
       const d = new Date(dateLike);
-      if (!Number.isNaN(d.getTime())) {
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-      }
+      if (!Number.isNaN(d.getTime()))
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
-
-    // "YYYY-MM-DD" puro -> devolver tal cual
     const m = dateLike.match(/^(\d{4}-\d{2}-\d{2})$/);
     if (m) return m[1];
-
-    // "YYYY-MM-DD..." sin TZ -> último intento
     const d = new Date(dateLike);
-    if (!Number.isNaN(d.getTime())) {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
-
+    if (!Number.isNaN(d.getTime()))
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return "";
   }
-
-  // Date/number
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-
 
 function nextBusinessDayYMD(ymd) {
   const d = new Date(`${ymd}T00:00:00`);
-  // 0=Sun,6=Sat
-  do {
-    d.setDate(d.getDate() + 1);
-  } while (d.getDay() === 0 || d.getDay() === 6);
+  do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
   return toYMD(d);
 }
 
-function isValidHHMM(v) {
-  return typeof v === "string" && /^\d{2}:\d{2}$/.test(v);
-}
-function formatEUR(value) {
-  const num = Number(value || 0);
-  return new Intl.NumberFormat("es-ES", {
-    style: "currency",
-    currency: "EUR",
-  }).format(num);
-}
+function isValidHHMM(v) { return typeof v === "string" && /^\d{2}:\d{2}$/.test(v); }
+function isSharedSpaceType(t) { return t === "FLEX_DESK" || t === "SHARED_TABLE"; }
 
-function isSharedSpaceType(spaceType) {
-  return spaceType === "FLEX_DESK" || spaceType === "SHARED_TABLE";
-}
-
+/* ── component ── */
 export default function UserNewReservation() {
   const user = getCurrentUser();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const editId = params.get("edit");
-  const modeParam = params.get("mode"); // "edit" | null
-  // Desde la lista (Ver detalles) abrimos en modo lectura por defecto.
-  const [detailMode, setDetailMode] = useState(
-    () => Boolean(editId) && modeParam !== "edit"
-  );
-
-  useEffect(() => {
-    setDetailMode(Boolean(editId) && modeParam !== "edit");
-  }, [editId, modeParam]);
-
-  const qDate = params.get("date");
+  const editId    = params.get("edit");
+  const modeParam = params.get("mode");
+  const qDate  = params.get("date");
   const qStart = params.get("start");
-  const qEnd = params.get("end");
+  const qEnd   = params.get("end");
   const hasPrefillParams = Boolean(qDate || qStart || qEnd);
 
-  const [spaces, setSpaces] = useState([]);
-  const [loadingSpaces, setLoadingSpaces] = useState(true);
-  const [spacesError, setSpacesError] = useState("");
+  const [detailMode, setDetailMode] = useState(() => Boolean(editId) && modeParam !== "edit");
+  useEffect(() => { setDetailMode(Boolean(editId) && modeParam !== "edit"); }, [editId, modeParam]);
 
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [success, setSuccess] = useState("");
-  // form
-  const [spaceId, setSpaceId] = useState("");
-  const [date, setDate] = useState(toYMD(new Date()));
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
-  const [attendees, setAttendees] = useState(1);
-  const [purpose, setPurpose] = useState("");
-  const [notes, setNotes] = useState("");
-  // settings (para combos de horas)
-  const [settings, setSettings] = useState(null);
+  const [spaces, setSpaces]                   = useState([]);
+  const [loadingSpaces, setLoadingSpaces]     = useState(true);
+  const [spacesError, setSpacesError]         = useState("");
+  const [saving, setSaving]                   = useState(false);
+  const [formError, setFormError]             = useState("");
+  const [success, setSuccess]                 = useState("");
+  const [spaceId, setSpaceId]                 = useState("");
+  const [date, setDate]                       = useState(toYMD(new Date()));
+  const [startTime, setStartTime]             = useState("09:00");
+  const [endTime, setEndTime]                 = useState("10:00");
+  const [attendees, setAttendees]             = useState(1);
+  const [purpose, setPurpose]                 = useState("");
+  const [notes, setNotes]                     = useState("");
+  const [settings, setSettings]               = useState(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
-
-  // time options + flags UX
   const [startTimeOptions, setStartTimeOptions] = useState([]);
-  const [endTimeOptions, setEndTimeOptions] = useState([]);
-  const [timeError, setTimeError] = useState("");
-  const [timeWarning, setTimeWarning] = useState("");
-  const [timeEditable, setTimeEditable] = useState(true);
-
-  // Meta de la reserva cargada (para decidir si se puede editar desde "detalles")
-  const [loadedStatus, setLoadedStatus] = useState(null);
-  const [loadedStartISO, setLoadedStartISO] = useState(null);
-  const [createLocked, setCreateLocked] = useState(false);
+  const [endTimeOptions, setEndTimeOptions]     = useState([]);
+  const [timeError, setTimeError]               = useState("");
+  const [timeWarning, setTimeWarning]           = useState("");
+  const [timeEditable, setTimeEditable]         = useState(true);
+  const [loadedStatus, setLoadedStatus]         = useState(null);
+  const [loadedStartISO, setLoadedStartISO]     = useState(null);
+  const [createLocked, setCreateLocked]         = useState(false);
   const [autoShiftedToNextDay, setAutoShiftedToNextDay] = useState(false);
-
-const isLoadedFuture = useMemo(() => {
-  if (!editId || !date || !startTime) return false;
-
-  // Comparamos SOLO por negocio: fecha + hora local
-  const now = new Date();
-
-  const [hh, mm] = startTime.split(":").map(Number);
-  const d = new Date(date);
-  d.setHours(hh, mm, 0, 0);
-
-  return d.getTime() > now.getTime();
-}, [editId, date, startTime]);
-
-
-  // Para habilitar edición desde "detalle" SOLO depende de reglas de negocio de la reserva cargada.
-  // No lo atamos a `timeEditable` porque ese flag está pensado para bloquear la creación cuando
-  // el usuario elige HOY y ya no hay horarios; en modo detalle queremos poder abrir y, si corresponde,
-  // habilitar edición.
-  const canEditLoadedReservation =
-    Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
-  const readOnly = Boolean(editId)
-    ? detailMode || !canEditLoadedReservation
-    : false;
-  const showEnableEdit =
-    Boolean(editId) && detailMode && canEditLoadedReservation;
-  const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
-
-
-
-  // recurrencia
-  const [recurring, setRecurring] = useState(false);
-  const [repeat, setRepeat] = useState("WEEKLY"); // DAILY | WEEKLY | MONTHLY
-  const [endRule, setEndRule] = useState("DATE"); // DATE | COUNT
-  const [repeatEndDate, setRepeatEndDate] = useState("");
-  const [repeatCount, setRepeatCount] = useState(4);
-
-  const [loadedSeriesId, setLoadedSeriesId] = useState(null);
-
-  // ---- edición de recurrencias (aplicar cambios) ----
+  const [recurring, setRecurring]               = useState(false);
+  const [repeat, setRepeat]                     = useState("WEEKLY");
+  const [endRule, setEndRule]                   = useState("DATE");
+  const [repeatEndDate, setRepeatEndDate]       = useState("");
+  const [repeatCount, setRepeatCount]           = useState(4);
+  const [loadedSeriesId, setLoadedSeriesId]     = useState(null);
   const [showApplyScopeModal, setShowApplyScopeModal] = useState(false);
-  const [applyScope, setApplyScope] = useState("ONE"); // ONE | SERIES
-  const [pendingSubmitMode, setPendingSubmitMode] = useState(null); // UPDATE
-
-  // pricing snapshot para UI (en edit se congela)
+  const [applyScope, setApplyScope]             = useState("ONE");
+  const [pendingSubmitMode, setPendingSubmitMode] = useState(null);
   const [hourlyRateSnapshot, setHourlyRateSnapshot] = useState(null);
+  const [originalStartTime, setOriginalStartTime]   = useState(null);
 
-  // para edición: la hora original (NO se usa para limitar el combo)
-  const [originalStartTime, setOriginalStartTime] = useState(null);
+  const selectedSpace = useMemo(() => spaces.find((s) => String(s.id) === String(spaceId)) || null, [spaces, spaceId]);
+  const shared = useMemo(() => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false), [selectedSpace]);
 
-  const selectedSpace = useMemo(
-    () => spaces.find((s) => String(s.id) === String(spaceId)) || null,
-    [spaces, spaceId]
-  );
-
-  const shared = useMemo(
-    () => (selectedSpace ? isSharedSpaceType(selectedSpace.type) : false),
-    [selectedSpace]
-  );
-
-  // duration + total (UI)
   const durationMinutes = useMemo(() => {
     const diff = minutesBetween(startTime, endTime);
     return Number.isFinite(diff) ? diff : 0;
@@ -249,616 +121,299 @@ const isLoadedFuture = useMemo(() => {
   const durationHoursLabel = useMemo(() => {
     if (durationMinutes <= 0) return "—";
     const hours = durationMinutes / 60;
-    const pretty = Number.isInteger(hours)
-      ? String(hours)
-      : String(Math.round(hours * 10) / 10);
-    return `${pretty} horas`;
+    return `${Number.isInteger(hours) ? hours : Math.round(hours * 10) / 10} horas`;
   }, [durationMinutes]);
 
-  const totalAmount = useMemo(() => {
-    const rate =
-      hourlyRateSnapshot != null
-        ? Number(hourlyRateSnapshot)
-        : selectedSpace?.hourlyRate != null
-        ? Number(selectedSpace.hourlyRate)
-        : 0;
+  const isLoadedFuture = useMemo(() => {
+    if (!editId || !date || !startTime) return false;
+    const [hh, mm] = startTime.split(":").map(Number);
+    const d = new Date(date);
+    d.setHours(hh, mm, 0, 0);
+    return d.getTime() > Date.now();
+  }, [editId, date, startTime]);
 
-    const hours = Math.max(0, durationMinutes) / 60;
-    const qty = shared ? Math.max(1, Number(attendees || 1)) : 1;
-    return rate * hours * qty;
-  }, [hourlyRateSnapshot, selectedSpace, durationMinutes, attendees, shared]);
+  const canEditLoadedReservation = Boolean(editId) && loadedStatus === "ACTIVE" && isLoadedFuture;
+  const readOnly = Boolean(editId) ? detailMode || !canEditLoadedReservation : false;
+  const showEnableEdit = Boolean(editId) && detailMode && canEditLoadedReservation;
+  const showNotEditableHint = Boolean(editId) && !canEditLoadedReservation;
 
-  // ---- styles inline para dejar la UI alineada aunque el CSS global varíe ----
-  const recurStyles = useMemo(
-    () => ({
-      grid: {
-        display: "grid",
-        gridTemplateColumns: "1.2fr 1fr",
-        gap: 24,
-        alignItems: "start",
-      },
-      blockTitle: { margin: 0, fontSize: 13, fontWeight: 800 },
-      optionList: { display: "grid", gap: 12, marginTop: 10 },
-      optionCard: (selected) => ({
-        display: "grid",
-        gridTemplateColumns: "24px 1fr",
-        gap: 10,
-        padding: 12,
-        borderRadius: 14,
-        border: selected ? "1px solid #b9ccff" : "1px solid #e6e9ef",
-        background: selected ? "#f3f7ff" : "#fafbfc",
-      }),
-      optionTitle: {
-        fontWeight: 700,
-        fontSize: 13,
-        color: "#2a2f3a",
-        marginBottom: 8,
-      },
-      input: {
-        width: "100%",
-        height: 40,
-        padding: "8px 10px",
-        borderRadius: 12,
-        border: "1px solid #e6e9ef",
-        background: "#fff",
-      },
-      labelMuted: { color: "#5b6472", fontSize: 12, marginTop: 4 },
-    }),
-    []
-  );
+  const recurrenceSummary = useMemo(() => {
+    if (!recurring) return null;
+    const patternLabel = repeat === "DAILY" ? "Diaria" : repeat === "MONTHLY" ? "Mismo día todos los meses" : "Mismo día todas las semanas";
+    const endLabel = endRule === "COUNT"
+      ? `${Math.max(1, Number(repeatCount || 1))} ocurrencias`
+      : repeatEndDate ? `hasta ${repeatEndDate}` : "(sin fin)";
+    return { patternLabel, endLabel };
+  }, [recurring, repeat, endRule, repeatCount, repeatEndDate]);
 
-  // cargar spaces
+  // Load spaces
   useEffect(() => {
     (async () => {
       try {
-        setLoadingSpaces(true);
-        setSpacesError("");
+        setLoadingSpaces(true); setSpacesError("");
         const res = await api.get("/spaces/active");
         setSpaces(Array.isArray(res.data) ? res.data : []);
-      } catch (e) {
-        console.error(e);
-        setSpacesError("No se pudieron cargar los espacios.");
-      } finally {
-        setLoadingSpaces(false);
-      }
+      } catch (e) { setSpacesError("No se pudieron cargar los espacios."); }
+      finally { setLoadingSpaces(false); }
     })();
   }, []);
 
-  // cargar settings públicos (horarios + reglas)
+  // Load settings
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoadingSettings(true);
         const res = await api.get("/public/settings");
-        // backend suele devolver { settings: {...} }
         const s = res?.data?.settings || res?.data || {};
         if (mounted) setSettings(s);
-      } catch (e) {
-        console.error(e);
-        if (mounted) setSettings({});
-      } finally {
-        if (mounted) setLoadingSettings(false);
-      }
+      } catch (e) { if (mounted) setSettings({}); }
+      finally { if (mounted) setLoadingSettings(false); }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // ✅ Prefill desde calendario (BUG-0004): /user/reservar?date=YYYY-MM-DD&start=HH:MM&end=HH:MM
+  // Prefill from calendar
   useEffect(() => {
-    if (editId) return;
-    if (!hasPrefillParams) return;
-
+    if (editId || !hasPrefillParams) return;
     if (qDate) setDate(qDate);
     if (isValidHHMM(qStart)) setStartTime(qStart);
     if (isValidHHMM(qEnd)) setEndTime(qEnd);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
 
-  // cargar reserva si edit
+  // Load reservation for edit/detail
   useEffect(() => {
     if (!editId) return;
-
     (async () => {
       try {
         setFormError("");
         const res = await api.get(`/reservations/${editId}`);
         const r = res.data;
-
         setSpaceId(String(r.spaceId));
         setDate(toYMD(r.date));
-
         const st = toHHMM(r.startTime);
         const et = toHHMM(r.endTime);
-        setStartTime(st);
-        setEndTime(et);
-
-        // ✅ Para reglas de edición desde "detalle"
+        setStartTime(st); setEndTime(et);
         setLoadedStatus(r.status ?? null);
-        // Construimos un datetime local (suficiente para comparar contra Date.now())
         const ymd = toYMD(r.date);
-        if (st && /^\d{2}:\d{2}$/.test(st)) {
-          setLoadedStartISO(`${ymd}T${st}:00`);
-        } else {
-          setLoadedStartISO(`${ymd}T00:00:00`);
-        }
-
-        // guardamos la original por si la querés para algo, pero NO limitamos el combo
+        setLoadedStartISO(st && /^\d{2}:\d{2}$/.test(st) ? `${ymd}T${st}:00` : `${ymd}T00:00:00`);
         setOriginalStartTime(st);
-
         setAttendees(Number(r.attendees ?? 1));
         setPurpose(r.purpose ?? "");
         setNotes(r.notes ?? "");
-
-        // recurrencia
         setLoadedSeriesId(r.seriesId ?? null);
         setRecurring(Boolean(r.seriesId));
         setRepeat((r.recurrencePattern || "WEEKLY").toUpperCase());
-        if (r.recurrenceEndDate) {
-          setEndRule("DATE");
-          setRepeatEndDate(toYMD(r.recurrenceEndDate));
-        } else if (r.recurrenceCount) {
-          setEndRule("COUNT");
-          setRepeatCount(Number(r.recurrenceCount) || 1);
-        } else {
-          setEndRule("DATE");
-          setRepeatEndDate("");
-        }
-
-        // congelar precio aplicado
+        if (r.recurrenceEndDate) { setEndRule("DATE"); setRepeatEndDate(toYMD(r.recurrenceEndDate)); }
+        else if (r.recurrenceCount) { setEndRule("COUNT"); setRepeatCount(Number(r.recurrenceCount) || 1); }
+        else { setEndRule("DATE"); setRepeatEndDate(""); }
         setHourlyRateSnapshot(r.hourlyRateSnapshot ?? null);
-      } catch (e) {
-        console.error(e);
-        setFormError("No se pudo cargar la reserva para editar.");
-      }
+      } catch (e) { setFormError("No se pudo cargar la reserva para editar."); }
     })();
   }, [editId]);
 
-  // defaults recurrencia al cambiar fecha (solo create)
+  // Default recurrence end date
   useEffect(() => {
-    if (editId) return;
-    if (!recurring) return;
-    if (endRule !== "DATE") return;
-    if (repeatEndDate) return;
-
+    if (editId || !recurring || endRule !== "DATE" || repeatEndDate) return;
     const d = new Date(`${date}T00:00:00`);
     d.setMonth(d.getMonth() + 1);
     setRepeatEndDate(toYMD(d));
   }, [editId, recurring, endRule, repeatEndDate, date]);
 
-  const recurrenceSummary = useMemo(() => {
-    if (!recurring) return null;
-
-    const patternLabel =
-      repeat === "DAILY"
-        ? "Diaria"
-        : repeat === "MONTHLY"
-        ? "Mismo día todos los meses"
-        : "Mismo día todas las semanas";
-
-    const endLabel =
-      endRule === "COUNT"
-        ? `${Math.max(1, Number(repeatCount || 1))} ocurrencias`
-        : repeatEndDate
-        ? `hasta ${repeatEndDate}`
-        : "(sin fin)";
-
-    return { patternLabel, endLabel };
-  }, [recurring, repeat, endRule, repeatCount, repeatEndDate]);
-
-  // en create: al elegir espacio, setear snapshot SOLO para UI
+  // Snapshot hourly rate for new reservations
   useEffect(() => {
-    if (editId) return;
-    if (!selectedSpace) return;
+    if (editId || !selectedSpace) return;
     setHourlyRateSnapshot(selectedSpace.hourlyRate ?? 0);
   }, [editId, selectedSpace]);
 
-  // si no es shared, forzar attendees = 1
   useEffect(() => {
-    if (!selectedSpace) return;
-    if (!shared) setAttendees(1);
+    if (!selectedSpace || !shared) setAttendees(1);
   }, [shared, selectedSpace]);
 
-  // ===== construir combos de horas (inicio/fin) =====
+  // Build start time options
   useEffect(() => {
     if (!settings || !date) return;
-
-    setTimeError("");
-    setTimeWarning("");
-    setTimeEditable(true);
-
-    const result = buildStartTimeOptions({
-      mode: editId ? "edit" : "create",
-      selectedDateYMD: date,
-      now: new Date(),
-      settings,
-      // ✅ IMPORTANTE: en edición NO limitar por hora original.
-      // Si es día futuro, debe permitir cambiar 16 -> 10.
-      originalStartTime: null,
-    });
-
+    setTimeError(""); setTimeWarning(""); setTimeEditable(true);
+    const result = buildStartTimeOptions({ mode: editId ? "edit" : "create", selectedDateYMD: date, now: new Date(), settings, originalStartTime: null });
     const opts = result.options || [];
-
-    // ✅ En edición: NO pisar el valor cargado.
-    // Si no está en la lista (cambió grilla, etc.), lo agregamos para que el <select> lo muestre.
     let finalOpts = opts;
-    if (
-      editId &&
-      startTime &&
-      /^\d{2}:\d{2}$/.test(startTime) &&
-      !opts.includes(startTime)
-    ) {
+    if (editId && startTime && /^\d{2}:\d{2}$/.test(startTime) && !opts.includes(startTime))
       finalOpts = [startTime, ...opts];
-    }
-
     setStartTimeOptions(finalOpts);
     setTimeEditable(!!result.editable);
-
     if (result.error) setTimeError(result.error);
     if (result.warning) setTimeWarning(result.warning);
-
-    // ✅ Solo en CREATE hacemos auto-ajuste
     if (!editId) {
-      if (finalOpts.length) {
-        if (!finalOpts.includes(startTime)) setStartTime(finalOpts[0]);
-      } else {
-        // no hay opciones: limpiamos para evitar submit accidental
-        setStartTime("");
-        setEndTime("");
-      }
+      if (finalOpts.length) { if (!finalOpts.includes(startTime)) setStartTime(finalOpts[0]); }
+      else { setStartTime(""); setEndTime(""); }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, date, editId]);
 
-  // ✅ BUG-0003 (1): si al abrir el formulario es imposible reservar hoy (fuera de horario),
-  // setear automáticamente el próximo día laboral (solo en create y si NO vino una fecha por query).
+  // Auto shift to next business day
   useEffect(() => {
-    if (editId) return;
-    if (!settings) return;
-    if (hasPrefillParams && qDate) return;
-    if (autoShiftedToNextDay) return;
-
+    if (editId || !settings || (hasPrefillParams && qDate) || autoShiftedToNextDay) return;
     const today = toYMD(new Date());
     if (date !== today) return;
-
-    const result = buildStartTimeOptions({
-      mode: "create",
-      selectedDateYMD: date,
-      now: new Date(),
-      settings,
-    });
-
-    if (
-      !result?.options?.length &&
-      result?.error &&
-      String(result.error).includes("Ya no es posible reservar para hoy")
-    ) {
+    const result = buildStartTimeOptions({ mode: "create", selectedDateYMD: date, now: new Date(), settings });
+    if (!result?.options?.length && result?.error && String(result.error).includes("Ya no es posible reservar para hoy")) {
       setDate(nextBusinessDayYMD(today));
       setAutoShiftedToNextDay(true);
     }
   }, [editId, settings, date, hasPrefillParams, qDate, autoShiftedToNextDay]);
 
-  // ✅ BUG-0003 (1): si el usuario selecciona manualmente HOY y ya no hay horarios,
-  // dejar en readonly todo excepto la fecha (para que pueda elegir otra).
   useEffect(() => {
-    if (editId) {
-      setCreateLocked(false);
-      return;
-    }
-    const today = toYMD(new Date());
-    const lock = date === today && !timeEditable && !!timeError;
-    setCreateLocked(lock);
+    if (editId) { setCreateLocked(false); return; }
+    setCreateLocked(date === toYMD(new Date()) && !timeEditable && !!timeError);
   }, [editId, date, timeEditable, timeError]);
 
+  // Build end time options
   useEffect(() => {
-    if (!settings || !startTime) {
-      setEndTimeOptions([]);
-      return;
-    }
-
+    if (!settings || !startTime) { setEndTimeOptions([]); return; }
     const opts = buildEndTimeOptions({ startTime, settings });
-
-    // ✅ En edición: NO pisar endTime cargado; si falta en opciones, lo agregamos.
     let finalOpts = opts;
-    if (
-      editId &&
-      endTime &&
-      /^\d{2}:\d{2}$/.test(endTime) &&
-      !opts.includes(endTime)
-    ) {
+    if (editId && endTime && /^\d{2}:\d{2}$/.test(endTime) && !opts.includes(endTime))
       finalOpts = [endTime, ...opts];
-    }
-
     setEndTimeOptions(finalOpts);
-
-    // ✅ Solo en CREATE ajustamos
-    if (!editId && finalOpts.length && !finalOpts.includes(endTime)) {
-      setEndTime(finalOpts[0]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!editId && finalOpts.length && !finalOpts.includes(endTime)) setEndTime(finalOpts[0]);
   }, [settings, startTime, editId]);
 
   async function submit() {
-    setSuccess("");
-    setFormError("");
-
+    setSuccess(""); setFormError("");
     if (!spaceId) return setFormError("Seleccioná un espacio.");
     if (!date) return setFormError("Seleccioná una fecha.");
-    if (!startTime || !endTime)
-      return setFormError("Seleccioná hora inicio/fin.");
-
+    if (!startTime || !endTime) return setFormError("Seleccioná hora inicio/fin.");
     if (timeError) return setFormError(timeError);
-    if (readOnly) {
-      return setFormError(
-        detailMode
-          ? 'Esta reserva está en modo solo lectura. Tocá "Editar" para habilitar cambios (si está permitido).'
-          : "Esta reserva no puede modificarse por las reglas de negocio."
-      );
-    }
-
-    if (minutesBetween(startTime, endTime) <= 0) {
-      return setFormError("La hora fin debe ser mayor a inicio.");
-    }
-
-    // En edición de una reserva recurrente: preguntar alcance (ONE vs SERIES)
-    if (editId && loadedSeriesId) {
-      setPendingSubmitMode("UPDATE");
-      setApplyScope("ONE");
-      setShowApplyScopeModal(true);
-      return;
-    }
-
+    if (readOnly) return setFormError(detailMode ? 'Tocá "Editar" para habilitar cambios.' : "Esta reserva no puede modificarse.");
+    if (minutesBetween(startTime, endTime) <= 0) return setFormError("La hora fin debe ser mayor a inicio.");
+    if (editId && loadedSeriesId) { setPendingSubmitMode("UPDATE"); setApplyScope("ONE"); setShowApplyScopeModal(true); return; }
     await doSubmit("ONE");
   }
 
   async function doSubmit(scope) {
     try {
       setSaving(true);
-
       if (recurring) {
         if (!repeat) return setFormError("Seleccioná un patrón de recurrencia.");
-        if (endRule === "DATE") {
-          if (!repeatEndDate)
-            return setFormError(
-              "Seleccioná una fecha de fin para la recurrencia."
-            );
-        } else {
+        if (endRule === "DATE" && !repeatEndDate) return setFormError("Seleccioná una fecha de fin.");
+        if (endRule === "COUNT") {
           const n = Number(repeatCount || 0);
-          if (!Number.isInteger(n) || n < 1 || n > 100) {
-            return setFormError(
-              "La cantidad de ocurrencias debe ser un número entre 1 y 100."
-            );
-          }
+          if (!Number.isInteger(n) || n < 1 || n > 100) return setFormError("La cantidad debe ser entre 1 y 100.");
         }
       }
-
       const payload = {
-        spaceId: Number(spaceId),
-        date,
-        startTime,
-        endTime,
+        spaceId: Number(spaceId), date, startTime, endTime,
         attendees: Number(attendees || 1),
         purpose: purpose ? String(purpose).trim() : null,
         notes: notes ? String(notes).trim() : null,
       };
-
       if (recurring) {
         payload.recurrenceEnabled = true;
-        payload.recurrencePattern = repeat; // DAILY | WEEKLY | MONTHLY
-        if (endRule === "DATE") {
-          payload.recurrenceEndDate = repeatEndDate;
-        } else {
-          payload.recurrenceCount = Math.max(1, Number(repeatCount || 1));
-        }
+        payload.recurrencePattern = repeat;
+        if (endRule === "DATE") payload.recurrenceEndDate = repeatEndDate;
+        else payload.recurrenceCount = Math.max(1, Number(repeatCount || 1));
       }
-
       if (editId) {
-        if (loadedSeriesId) payload.applyTo = scope; // ONE | SERIES
+        if (loadedSeriesId) payload.applyTo = scope;
         await api.put(`/reservations/${editId}`, payload);
         setSuccess("Reserva actualizada.");
       } else {
         await api.post("/reservations", payload);
         setSuccess("Reserva creada.");
       }
-
       setTimeout(() => navigate("/user"), 350);
     } catch (e) {
-      console.error(e);
-      const status = e?.response?.status;
       const data = e?.response?.data;
-      const msg =
-        data?.message ||
-        data?.error ||
-        (typeof data === "string" ? data : null) ||
-        e?.message ||
-        `Error guardando reserva (HTTP ${status || "?"})`;
-
-      setFormError(msg);
+      setFormError(data?.message || data?.error || (typeof data === "string" ? data : null) || e?.message || "Error guardando reserva");
     } finally {
       setSaving(false);
     }
   }
 
-  function onConfirmApplyScope() {
-    setShowApplyScopeModal(false);
-    if (pendingSubmitMode === "UPDATE") {
-      doSubmit(applyScope);
-    }
-    setPendingSubmitMode(null);
-  }
-
-  function onCancelApplyScope() {
-    setShowApplyScopeModal(false);
-    setPendingSubmitMode(null);
-  }
-
-  const timeFieldsDisabled =
-    saving ||
-    loadingSettings ||
-    readOnly ||
-    (!editId && createLocked) ||
-    (!editId && !timeEditable && !!timeError);
+  const timeFieldsDisabled = saving || loadingSettings || readOnly || (!editId && createLocked) || (!editId && !timeEditable && !!timeError);
 
   return (
-    <div>
-      <Header user={user} />
+    <ClientLayout user={user}>
+      <div className="client-page">
+        <div className="sn-reserve-wrapper">
 
-      <div className="page-container">
-        <div className="dashboard-container">
-          {/* Header tipo mock */}
-          <div className="user-reserve-header-wrap">
-            <div className="user-reserve-header">
-              <button
-                className="user-reserve-back"
-                onClick={() => navigate("/user")}
-              >
-                ←
-              </button>
-
-              <div className="user-reserve-title">
-                <h1>
-                  {editId
-                    ? readOnly
-                      ? "Detalle de Reserva"
-                      : "Editar Reserva"
-                    : "Nueva Reserva"}
-                </h1>
-                <p>
-                  {editId
-                    ? "Consulta el detalle de tu reserva"
-                    : "Crea una nueva reserva de espacio de coworking"}
-                </p>
-              </div>
+          {/* Header */}
+          <div className="sn-reserve-header">
+            <button className="sn-back-btn" onClick={() => navigate("/user")} aria-label="Volver">←</button>
+            <div>
+              <h1 className="sn-reserve-title">
+                {editId ? (readOnly ? "Detalle de reserva" : "Editar reserva") : "Nueva reserva"}
+              </h1>
+              <p className="sn-reserve-sub">
+                {editId ? "Consulta el detalle de tu reserva" : "Creá una nueva reserva de espacio de coworking"}
+              </p>
             </div>
           </div>
 
-          {spacesError ? (
-            <div
-              className="form-error"
-              style={{ maxWidth: 860, margin: "0 auto 12px" }}
-            >
-              <b>Error</b>
-              <div>{spacesError}</div>
-            </div>
-          ) : null}
+          {/* Alerts */}
+          {spacesError && <div className="sn-alert sn-alert--error" style={{ marginBottom: '0.85rem' }}><strong>Error:</strong> {spacesError}</div>}
+          {formError   && <div className="sn-alert sn-alert--error" style={{ marginBottom: '0.85rem' }}>{formError}</div>}
+          {success     && <div className="sn-alert sn-alert--success" style={{ marginBottom: '0.85rem' }}>{success}</div>}
 
-          {formError ? (
-            <div
-              className="form-error"
-              style={{ maxWidth: 860, margin: "0 auto 12px" }}
-            >
-              {formError}
-            </div>
-          ) : null}
-
-          {editId ? (
-            <div
-              className="admin-card"
-              style={{ maxWidth: 860, margin: "0 auto 12px", padding: 14 }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div style={{ fontWeight: 900 }}>
+          {/* Edit mode banner */}
+          {editId && (
+            <div className="sn-card" style={{ marginBottom: '0.85rem', padding: '0.9rem 1.1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--sn-ink)' }}>
                     {detailMode ? "Modo detalle" : "Modo edición"}
                   </div>
-                  {showNotEditableHint ? (
-                    <div style={{ opacity: 0.8, fontSize: 13 }}>
-                      Esta reserva no se puede editar (solo reservas <b>ACTIVAS</b>{" "}
-                      y <b>futuras</b>).
-                    </div>
-                  ) : (
-                    <div style={{ opacity: 0.8, fontSize: 13 }}>
-                      {detailMode
-                        ? "Podés habilitar la edición si la reserva cumple las reglas de negocio."
-                        : "Estás editando esta reserva."}
-                    </div>
-                  )}
+                  <div style={{ fontSize: '0.82rem', color: 'var(--sn-muted)', marginTop: '0.15rem' }}>
+                    {showNotEditableHint
+                      ? "Solo se pueden editar reservas ACTIVAS y futuras."
+                      : detailMode ? "Podés habilitar la edición si la reserva cumple las reglas." : "Estás editando esta reserva."}
+                  </div>
                 </div>
-
-                {showEnableEdit ? (
-                  <button
-                    type="button"
-                    className="pill-button"
-                    onClick={() => setDetailMode(false)}
-                    disabled={saving}
-                  >
+                {showEnableEdit && (
+                  <button className="sn-btn sn-btn--primary sn-btn--sm" type="button" onClick={() => setDetailMode(false)} disabled={saving}>
                     Habilitar edición
                   </button>
-                ) : null}
+                )}
               </div>
             </div>
-          ) : null}
+          )}
 
-          {success ? (
-            <div
-              className="success"
-              style={{ maxWidth: 860, margin: "0 auto 12px" }}
-            >
-              {success}
-            </div>
-          ) : null}
-
-          {/* Card central */}
-          <div className="user-reserve-card">
-            <div className="user-reserve-card-head">
-              <div className="title">Detalles de la Reserva</div>
-              <p className="sub">
-                {editId
-                  ? detailMode
-                    ? "Revisa la información de la reserva seleccionada."
-                    : "Modificá los datos de tu reserva."
-                  : "Completa la información a continuación para crear tu reserva"}
+          {/* Main card */}
+          <div className="sn-card sn-reserve-card">
+            <div className="sn-reserve-card-head">
+              <div className="sn-reserve-card-title">Detalles de la reserva</div>
+              <p className="sn-reserve-card-sub">
+                {editId ? (detailMode ? "Revisá la información de la reserva." : "Modificá los datos de tu reserva.") : "Completá la información para crear tu reserva."}
               </p>
             </div>
 
-            <div className="user-reserve-grid">
+            <div className="sn-form-grid">
               {/* Espacio */}
-              <div className="user-reserve-field full">
-                <label>Espacio *</label>
+              <div className="sn-field full">
+                <label className="sn-label">Espacio *</label>
                 <select
+                  className="sn-select"
                   value={spaceId}
                   onChange={(e) => setSpaceId(e.target.value)}
                   disabled={loadingSpaces || saving || createLocked || readOnly}
                 >
-                  <option value="">
-                    {loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}
-                  </option>
+                  <option value="">{loadingSpaces ? "Cargando..." : "Seleccioná un espacio"}</option>
                   {spaces.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} • {s.capacity} persona(s)
-                    </option>
+                    <option key={s.id} value={s.id}>{s.name} · {s.capacity} persona(s)</option>
                   ))}
                 </select>
-
-                {selectedSpace ? (
-                  <div className="space-info-card">
-                    <div className="space-info-row">
-                      <span>👥 Capacidad: {selectedSpace.capacity}</span>
-                      
-                    </div>
-                    {selectedSpace.description ? (
-                      <p className="space-info-desc">
-                        {selectedSpace.description}
-                      </p>
-                    ) : null}
+                {selectedSpace && (
+                  <div className="sn-space-info">
+                    👥 Capacidad: <strong>{selectedSpace.capacity}</strong>
+                    {selectedSpace.description && <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: 'var(--sn-muted)' }}>{selectedSpace.description}</p>}
                   </div>
-                ) : null}
+                )}
               </div>
 
               {/* Fecha */}
-              <div className="user-reserve-field full">
-                <label>Fecha *</label>
+              <div className="sn-field full">
+                <label className="sn-label">Fecha *</label>
                 <input
+                  className="sn-input"
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
@@ -866,211 +421,132 @@ const isLoadedFuture = useMemo(() => {
                 />
               </div>
 
-              {/* Hora inicio / fin */}
+              {/* Horas */}
               <ReservationTimeFields
                 startTime={startTime}
                 endTime={endTime}
                 setStartTime={setStartTime}
                 setEndTime={setEndTime}
                 disabled={timeFieldsDisabled}
-                // ✅ nuevos props (ver patch del componente)
                 startOptions={startTimeOptions}
                 endOptions={endTimeOptions}
-                // En modo detalle (solo lectura) NO mostramos errores/advertencias de edición/creación.
                 error={readOnly ? "" : timeError}
                 warning={readOnly ? "" : timeWarning}
                 halfDayMinutes={settings?.HALF_DAY_MINUTES}
               />
 
               {/* Recurrencia */}
-              <div className="user-reserve-field full">
-                <div className="recurrence-card">
-                  <div className="recurrence-head">
+              <div className="sn-field full">
+                <div className="sn-recurrence-card">
+                  <div className="sn-recurrence-head">
                     <div>
-                      <div className="title">Haz recurrente tu reserva</div>
-                      <div className="sub">
-                        Configura una cita recurrente y programada para esta
-                        reserva
-                      </div>
+                      <div className="sn-recurrence-title">Reserva recurrente</div>
+                      <div className="sn-recurrence-sub">Configurá una cita programada y repetida</div>
                     </div>
-                    <label className="toggle-switch" title="Activar recurrencia">
-                      <input
-                        type="checkbox"
-                        checked={recurring}
-                        onChange={(e) => setRecurring(e.target.checked)}
-                        disabled={saving || readOnly}
-                      />
-                      <span className="toggle-slider" />
+                    <label className="sn-toggle">
+                      <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} disabled={saving || readOnly} />
+                      <span className="sn-toggle-slider" />
                     </label>
                   </div>
 
-                  {recurring ? (
-                    <div className="recurrence-body">
-                      <div style={recurStyles.grid}>
-                        {/* Izquierda: Repetir */}
+                  {recurring && (
+                    <div className="sn-recurrence-body">
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.25rem', alignItems: 'start' }}>
+                        {/* Patrón */}
                         <div>
-                          <div style={recurStyles.blockTitle}>Repetir</div>
-                          <div style={recurStyles.labelMuted}>
-                            Elige el patrón de recurrencia
-                          </div>
-                          <div style={{ marginTop: 10 }}>
-                            <select
-                              value={repeat}
-                              onChange={(e) => setRepeat(e.target.value)}
-                              disabled={saving || readOnly}
-                              style={recurStyles.input}
-                            >
-                              <option value="DAILY">Diaria</option>
-                              <option value="WEEKLY">
-                                Mismo día todas las semanas
-                              </option>
-                              <option value="MONTHLY">
-                                Mismo día todos los meses
-                              </option>
-                            </select>
-                          </div>
+                          <label className="sn-label" style={{ marginBottom: '0.4rem', display: 'block' }}>Repetir</label>
+                          <select
+                            className="sn-select"
+                            value={repeat}
+                            onChange={(e) => setRepeat(e.target.value)}
+                            disabled={saving || readOnly}
+                          >
+                            <option value="DAILY">Diaria</option>
+                            <option value="WEEKLY">Mismo día todas las semanas</option>
+                            <option value="MONTHLY">Mismo día todos los meses</option>
+                          </select>
                         </div>
 
-                        {/* Derecha: Regla de fin */}
+                        {/* Regla de fin */}
                         <div>
-                          <div style={recurStyles.blockTitle}>Regla de fin</div>
-                          <div style={recurStyles.labelMuted}>
-                            Define cuándo finaliza la recurrencia
-                          </div>
-
-                          <div style={recurStyles.optionList}>
-                            <div style={recurStyles.optionCard(endRule === "DATE")}>
-                              <input
-                                type="radio"
-                                name="endRule"
-                                checked={endRule === "DATE"}
-                                onChange={() => setEndRule("DATE")}
-                                disabled={saving || readOnly}
-                                style={{ marginTop: 3 }}
-                              />
+                          <label className="sn-label" style={{ marginBottom: '0.4rem', display: 'block' }}>Regla de fin</label>
+                          <div style={{ display: 'grid', gap: '0.65rem' }}>
+                            <label className={`sn-radio-card${endRule === "DATE" ? " sn-radio-card--selected" : ""}`}>
+                              <input type="radio" name="endRule" checked={endRule === "DATE"} onChange={() => setEndRule("DATE")} disabled={saving || readOnly} />
                               <div>
-                                <div style={recurStyles.optionTitle}>
-                                  Hasta una fecha
-                                </div>
+                                <div className="sn-radio-title">Hasta una fecha</div>
                                 <input
+                                  className="sn-input"
                                   type="date"
                                   value={repeatEndDate}
-                                  onChange={(e) =>
-                                    setRepeatEndDate(e.target.value)
-                                  }
+                                  onChange={(e) => setRepeatEndDate(e.target.value)}
                                   disabled={saving || endRule !== "DATE" || readOnly}
-                                  style={recurStyles.input}
+                                  style={{ marginTop: '0.45rem' }}
                                 />
                               </div>
-                            </div>
-
-                            <div style={recurStyles.optionCard(endRule === "COUNT")}>
-                              <input
-                                type="radio"
-                                name="endRule"
-                                checked={endRule === "COUNT"}
-                                onChange={() => setEndRule("COUNT")}
-                                disabled={saving || readOnly}
-                                style={{ marginTop: 3 }}
-                              />
+                            </label>
+                            <label className={`sn-radio-card${endRule === "COUNT" ? " sn-radio-card--selected" : ""}`}>
+                              <input type="radio" name="endRule" checked={endRule === "COUNT"} onChange={() => setEndRule("COUNT")} disabled={saving || readOnly} />
                               <div>
-                                <div style={recurStyles.optionTitle}>
-                                  Cantidad de ocurrencias
-                                </div>
+                                <div className="sn-radio-title">Cantidad de ocurrencias</div>
                                 <input
-                                  type="number"
-                                  min={1}
-                                  max={100}
+                                  className="sn-input"
+                                  type="number" min={1} max={100}
                                   value={repeatCount}
-                                  onChange={(e) =>
-                                    setRepeatCount(Number(e.target.value || 1))
-                                  }
+                                  onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
                                   disabled={saving || endRule !== "COUNT" || readOnly}
-                                  style={recurStyles.input}
+                                  style={{ marginTop: '0.45rem' }}
                                 />
                               </div>
-                            </div>
+                            </label>
                           </div>
                         </div>
                       </div>
 
-                      {recurrenceSummary ? (
-                        <div className="recurrence-summary">
-                          <div className="row">
-                            <div>
-                              <div className="k">Patrón</div>
-                              <div className="v">
-                                {recurrenceSummary.patternLabel}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="k">Inicio</div>
-                              <div className="v">{date}</div>
-                            </div>
-                            <div>
-                              <div className="k">Fin</div>
-                              <div className="v">{recurrenceSummary.endLabel}</div>
-                            </div>
+                      {recurrenceSummary && (
+                        <div className="sn-recurrence-summary">
+                          <div className="sn-recurrence-summary-row">
+                            <div className="sn-recurrence-summary-item"><div className="k">Patrón</div><div className="v">{recurrenceSummary.patternLabel}</div></div>
+                            <div className="sn-recurrence-summary-item"><div className="k">Inicio</div><div className="v">{date}</div></div>
+                            <div className="sn-recurrence-summary-item"><div className="k">Fin</div><div className="v">{recurrenceSummary.endLabel}</div></div>
                           </div>
-                          <div className="hint">
-                            Esta reserva se repetirá según la configuración
-                            seleccionada.
-                          </div>
+                          <div className="sn-recurrence-hint">Esta reserva se repetirá según la configuración seleccionada.</div>
                         </div>
-                      ) : null}
+                      )}
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </div>
 
-              {/*{/* Duración + Total 
-              {durationMinutes > 0 ? (
-                <div className="user-reserve-field full">
-                  <div className="pricing-summary">
-                    <div className="pricing-box">
-                      <span className="label">Duración</span>
-                      <span className="value">{durationHoursLabel}</span>
-                    </div>
-                    <div className="pricing-box" style={{ textAlign: "right" }}>
-                      <span className="label">Costo Total</span>
-                      <span className="value">{formatEUR(totalAmount)}</span>
-                    </div>
+              {/* Duración */}
+              {durationMinutes > 0 && (
+                <div className="sn-field full">
+                  <div className="sn-pricing">
+                    <div><div className="sn-pricing-label">Duración</div><div className="sn-pricing-value">{durationHoursLabel}</div></div>
                   </div>
                 </div>
-              ) : null}*/}
-              {/* Duración */}
-                {durationMinutes > 0 ? (
-                  <div className="user-reserve-field full">
-                    <div className="pricing-summary">
-                      <div className="pricing-box">
-                        <span className="label">Duración</span>
-                        <span className="value">{durationHoursLabel}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
+              )}
 
               {/* Asistentes */}
-              <div className="user-reserve-field full">
-                <label>Número de Asistentes</label>
+              <div className="sn-field full">
+                <label className="sn-label">Número de asistentes</label>
                 <input
-                  type="number"
-                  min={1}
+                  className="sn-input"
+                  type="number" min={1}
                   value={attendees}
                   onChange={(e) => setAttendees(Number(e.target.value || 1))}
                   disabled={saving || !shared || readOnly || createLocked}
                 />
-                <div className="user-reserve-help">
-                  {shared
-                    ? "En espacios compartidos podés indicar cuántos asistentes ocupan cupo."
-                    : "En espacios no compartidos, siempre es 1."}
+                <div className="sn-help" style={{ marginTop: '0.3rem' }}>
+                  {shared ? "En espacios compartidos podés indicar cuántos asistentes ocupan cupo." : "En espacios no compartidos, siempre es 1."}
                 </div>
               </div>
 
               {/* Propósito */}
-              <div className="user-reserve-field full">
-                <label>Propósito / Motivo</label>
+              <div className="sn-field full">
+                <label className="sn-label">Propósito / Motivo</label>
                 <input
+                  className="sn-input"
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   placeholder="ej. Reunión de equipo, Presentación a cliente"
@@ -1079,9 +555,10 @@ const isLoadedFuture = useMemo(() => {
               </div>
 
               {/* Notas */}
-              <div className="user-reserve-field full">
-                <label>Notas Adicionales</label>
+              <div className="sn-field full">
+                <label className="sn-label">Notas adicionales</label>
                 <textarea
+                  className="sn-textarea"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Algún requerimiento especial o nota..."
@@ -1090,196 +567,59 @@ const isLoadedFuture = useMemo(() => {
               </div>
             </div>
 
-            {/* Footer botones */}
-            <div className="user-reserve-footer">
-              <button
-                className="pill-button-outline"
-                onClick={() => navigate("/user")}
-                disabled={saving}
-              >
+            {/* Footer */}
+            <div className="sn-reserve-footer">
+              <button className="sn-btn sn-btn--outline" onClick={() => navigate("/user")} disabled={saving}>
                 {editId ? "Volver" : "Cancelar"}
               </button>
-
-              {showEnableEdit ? (
-                <button
-                  type="button"
-                  className="pill-button"
-                  onClick={() => {
-                    setFormError("");
-                    setDetailMode(false);
-                  }}
-                  disabled={saving}
-                >
+              {showEnableEdit && (
+                <button className="sn-btn sn-btn--outline" type="button" onClick={() => { setFormError(""); setDetailMode(false); }} disabled={saving}>
                   Editar
                 </button>
-              ) : null}
-
-              {!readOnly ? (
+              )}
+              {!readOnly && (
                 <button
-                  className="pill-button"
+                  className="sn-btn sn-btn--primary"
                   onClick={submit}
-                  disabled={
-                    saving ||
-                    loadingSpaces ||
-                    loadingSettings ||
-                    !!timeError ||
-                    readOnly ||
-                    createLocked
-                  }
+                  disabled={saving || loadingSpaces || loadingSettings || !!timeError || createLocked}
                 >
-                  {saving
-                    ? "Guardando..."
-                    : editId
-                    ? "Guardar cambios"
-                    : "Crear Reserva"}
+                  {saving ? "Guardando…" : editId ? "Guardar cambios" : "Crear reserva"}
                 </button>
-              ) : null}
+              )}
             </div>
           </div>
+
         </div>
 
-        {/* Modal: aplicar cambios a reserva recurrente */}
-        {showApplyScopeModal ? (
-          <div
-            onClick={onCancelApplyScope}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.35)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 9999,
-              padding: 16,
-            }}
-          >
-            <div
-              onClick={(ev) => ev.stopPropagation()}
-              style={{
-                width: "min(520px, 100%)",
-                background: "#fff",
-                borderRadius: 16,
-                boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-                padding: 18,
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>
-                  Aplicar cambios
-                </div>
-                <div style={{ color: "#5b6472", fontSize: 13 }}>
-                  Esta reserva es recurrente. ¿Querés aplicar los cambios solo a
-                  esta cita o a la serie?
-                </div>
-              </div>
+        {/* Modal scope */}
+        {showApplyScopeModal && (
+          <div className="sn-modal-overlay" onClick={() => { setShowApplyScopeModal(false); setPendingSubmitMode(null); }}>
+            <div className="sn-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="sn-modal-title">Aplicar cambios</div>
+              <div className="sn-modal-subtitle">Esta reserva es recurrente. ¿A qué ocurrencias querés aplicar los cambios?</div>
 
-              <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                    padding: 12,
-                    borderRadius: 12,
-                    border:
-                      applyScope === "ONE"
-                        ? "1px solid #7aa7ff"
-                        : "1px solid #e6e9ef",
-                    background: applyScope === "ONE" ? "#f3f7ff" : "#fafbfc",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="applyScope"
-                    value="ONE"
-                    checked={applyScope === "ONE"}
-                    onChange={() => setApplyScope("ONE")}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>
-                      Solo esta cita
-                    </div>
-                    <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
-                      Modifica únicamente la reserva seleccionada.
-                    </div>
-                  </div>
+              <div style={{ display: 'grid', gap: '0.65rem' }}>
+                <label className={`sn-radio-card${applyScope === "ONE" ? " sn-radio-card--selected" : ""}`}>
+                  <input type="radio" name="applyScope" value="ONE" checked={applyScope === "ONE"} onChange={() => setApplyScope("ONE")} />
+                  <div><div className="sn-radio-title">Solo esta cita</div><div className="sn-radio-desc">Modifica únicamente la reserva seleccionada.</div></div>
                 </label>
-
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                    padding: 12,
-                    borderRadius: 12,
-                    border:
-                      applyScope === "SERIES"
-                        ? "1px solid #7aa7ff"
-                        : "1px solid #e6e9ef",
-                    background: applyScope === "SERIES" ? "#f3f7ff" : "#fafbfc",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="applyScope"
-                    value="SERIES"
-                    checked={applyScope === "SERIES"}
-                    onChange={() => setApplyScope("SERIES")}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>
-                      Esta y las siguientes
-                    </div>
-                    <div style={{ color: "#5b6472", fontSize: 12, marginTop: 2 }}>
-                      Aplica el cambio a la serie a partir de esta ocurrencia.
-                    </div>
-                  </div>
+                <label className={`sn-radio-card${applyScope === "SERIES" ? " sn-radio-card--selected" : ""}`}>
+                  <input type="radio" name="applyScope" value="SERIES" checked={applyScope === "SERIES"} onChange={() => setApplyScope("SERIES")} />
+                  <div><div className="sn-radio-title">Esta y las siguientes</div><div className="sn-radio-desc">Aplica el cambio desde esta ocurrencia en adelante.</div></div>
                 </label>
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 10,
-                  marginTop: 16,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={onCancelApplyScope}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #e6e9ef",
-                    background: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={onConfirmApplyScope}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #7aa7ff",
-                    background: "#5b86ff",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 800,
-                  }}
-                >
+              <div className="sn-modal-footer">
+                <button className="sn-btn sn-btn--outline" onClick={() => { setShowApplyScopeModal(false); setPendingSubmitMode(null); }}>Cancelar</button>
+                <button className="sn-btn sn-btn--primary" onClick={() => { setShowApplyScopeModal(false); if (pendingSubmitMode === "UPDATE") doSubmit(applyScope); setPendingSubmitMode(null); }}>
                   Aplicar
                 </button>
               </div>
             </div>
           </div>
-        ) : null}
+        )}
+
       </div>
-    </div>
+    </ClientLayout>
   );
 }

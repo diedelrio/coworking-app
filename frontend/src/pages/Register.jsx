@@ -3,45 +3,27 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axiosClient';
 
 export default function Register() {
-  const [name, setName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [name, setName]           = useState('');
+  const [lastName, setLastName]   = useState('');
+  const [phone, setPhone]         = useState('');
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
   const [password2, setPassword2] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError('');
-    setSuccessMsg('');
-
-    if (password !== password2) {
-      setError('Las contraseñas no coinciden');
-      return;
-    }
-
+    setError(''); setSuccessMsg('');
+    if (password !== password2) { setError('Las contraseñas no coinciden'); return; }
     setLoading(true);
-
     try {
-      await api.post('/auth/register', {
-        name,
-        lastName,
-        phone,
-        email,
-        password,
-      });
-
-      setSuccessMsg('Cuenta creada correctamente. Ahora puedes iniciar sesión.');
-      // Opcional: redirigir automáticamente al login después de 1–2 segundos:
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
+      await api.post('/auth/register', { name, lastName, phone, email, password });
+      setSuccessMsg('Cuenta creada. Redirigiendo al login…');
+      setTimeout(() => navigate('/login'), 1500);
     } catch (err) {
-      console.error(err);
       setError(err.response?.data?.message || 'Error al crear la cuenta');
     } finally {
       setLoading(false);
@@ -49,107 +31,52 @@ export default function Register() {
   }
 
   return (
-    <div className="app-center">
-      <div className="card">
-              {/* Logo centrado */}
-        <img
-          src="/logoCoworking.png"
-          alt="Coworking Sinergia"
-          style={{ height: 64, width: 'auto', margin: '0 auto 12px', display: 'block' }}
-        />
-        <h1>Crear cuenta</h1>
-        <p>Regístrate para reservar espacios en el coworking.</p>
+    <div className="sn-auth-shell">
+      <div className="sn-auth-panel" style={{ maxWidth: 480 }}>
+        <div className="sn-auth-card">
+          <img src="/logoCoworking.png" alt="Coworking Sinergia" className="sn-auth-logo" />
+          <h1>Crear cuenta</h1>
+          <p>Regístrate para reservar espacios en el coworking.</p>
 
-        {error && <div className="error">{error}</div>}
-        {successMsg && (
-          <div
-            style={{
-              fontSize: '0.85rem',
-              marginBottom: '0.5rem',
-              color: '#166534',
-            }}
-          >
-            {successMsg}
+          {error      && <div className="sn-alert sn-alert--error"   style={{ marginBottom: '1rem' }}>{error}</div>}
+          {successMsg && <div className="sn-alert sn-alert--success" style={{ marginBottom: '1rem' }}>{successMsg}</div>}
+
+          <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            <div className="sn-field">
+              <label className="sn-label">Nombre *</label>
+              <input className="sn-input" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan" required />
+            </div>
+            <div className="sn-field">
+              <label className="sn-label">Apellidos *</label>
+              <input className="sn-input" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="García" required />
+            </div>
+            <div className="sn-field" style={{ gridColumn: '1 / -1' }}>
+              <label className="sn-label">Teléfono <span style={{ fontWeight: 400, color: 'var(--sn-muted)' }}>(opcional)</span></label>
+              <input className="sn-input" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="600 123 456" />
+            </div>
+            <div className="sn-field" style={{ gridColumn: '1 / -1' }}>
+              <label className="sn-label">Email *</label>
+              <input className="sn-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tuemail@ejemplo.com" required autoComplete="email" />
+            </div>
+            <div className="sn-field">
+              <label className="sn-label">Contraseña *</label>
+              <input className="sn-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+            </div>
+            <div className="sn-field">
+              <label className="sn-label">Repetir contraseña *</label>
+              <input className="sn-input" type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} placeholder="••••••••" required />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button className="sn-auth-btn" type="submit" disabled={loading}>
+                {loading ? 'Creando cuenta…' : 'Crear cuenta'}
+              </button>
+            </div>
+          </form>
+
+          <div className="sn-auth-links" style={{ justifyContent: 'center' }}>
+            <Link className="sn-auth-link" to="/login">Ya tengo cuenta → Iniciar sesión</Link>
           </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Nombre</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nombre"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Apellidos</label>
-            <input
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              placeholder="Apellidos"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Teléfono (opcional)</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Ej: 600 123 123"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="tuemail@ejemplo.com"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="********"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Repetir contraseña</label>
-            <input
-              type="password"
-              value={password2}
-              onChange={(e) => setPassword2(e.target.value)}
-              placeholder="********"
-              required
-            />
-          </div>
-
-          <button className="button" type="submit" disabled={loading}>
-            {loading ? 'Creando cuenta...' : 'Crear cuenta'}
-          </button>
-        </form>
-
-        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-          <Link className="link" to="/login">
-            Ya tengo cuenta
-          </Link>
         </div>
-        
       </div>
     </div>
   );
