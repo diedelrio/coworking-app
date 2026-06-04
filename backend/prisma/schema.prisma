@@ -8,30 +8,30 @@ datasource db {
 }
 
 model User {
-  id                  Int                  @id @default(autoincrement())
+  id                  Int                     @id @default(autoincrement())
   name                String
   lastName            String
   phone               String?
-  email               String               @unique
+  email               String                  @unique
   password            String
-  role                Role                 @default(CLIENT)
-  active              Boolean              @default(true)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  role                Role                    @default(CLIENT)
+  active              Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
   classify            UserClassify?
   maternalLastName    String?
   activationTokens    ActivationToken[]
   Liquidation         Liquidation[]
   passwordResetTokens PasswordResetToken[]
-  processRunsExecuted ProcessRun[]         @relation("ProcessRun_ExecutedBy")
+  processRunsExecuted ProcessRun[]            @relation("ProcessRun_ExecutedBy")
   reservations        Reservation[]
   settingHistories    SettingHistory[]
-  historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
-  history             UserHistory[]        @relation("UserHistory_User")
+  historyChanged      UserHistory[]           @relation("UserHistory_ChangedBy")
+  history             UserHistory[]           @relation("UserHistory_User")
   userTags            UserTag[]
   consentAcceptances  UserConsentAcceptance[]
+  popupMessageReads   UserPopupMessageRead[]
 }
-
 
 model UserHistory {
   id              Int      @id @default(autoincrement())
@@ -138,13 +138,14 @@ model UserTag {
 }
 
 model EmailTemplate {
-  id        Int      @id @default(autoincrement())
-  key       String   @unique
-  name      String
-  subject   String
-  body      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  name        String
+  subject     String
+  body        String
+  messageType String   @default("SYSTEM")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model PasswordResetToken {
@@ -235,21 +236,22 @@ model LiquidationItem {
 }
 
 model ConsentDefinition {
-  id                         Int                     @id @default(autoincrement())
-  key                        String                  @unique
-  title                      String
-  type                       ConsentType
-  version                    String
-  description                String?
-  active                     Boolean                 @default(true)
-  required                   Boolean                 @default(false)
-  requiresAcceptance         Boolean                 @default(true)
-  showDocumentsToUser        Boolean                 @default(true)
-  allowUserDownloadDocuments Boolean                 @default(true)
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
-  documents                  ConsentDocument[]
-  acceptances                UserConsentAcceptance[]
+  id                          Int                     @id @default(autoincrement())
+  key                         String                  @unique
+  title                       String
+  type                        ConsentType
+  version                     String
+  description                 String?
+  active                      Boolean                 @default(true)
+  required                    Boolean                 @default(false)
+  requiresAcceptance          Boolean                 @default(true)
+  showDocumentsToUser         Boolean                 @default(true)
+  allowUserDownloadDocuments  Boolean                 @default(true)
+  defaultAcceptedForNonAdmins Boolean                 @default(false)
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+  documents                   ConsentDocument[]
+  acceptances                 UserConsentAcceptance[]
 
   @@index([type])
   @@index([active])
@@ -288,6 +290,37 @@ model UserConsentAcceptance {
   @@index([userId])
   @@index([consentDefinitionId])
   @@index([acceptedAt])
+}
+
+model PopupMessage {
+  id                  Int                    @id @default(autoincrement())
+  title               String
+  description         String
+  portal              String                 @default("BOTH") // ADMIN | CLIENT | BOTH
+  category            String                 @default("SYSTEM") // SYSTEM | RELEASE | COMMERCIAL | SOCIAL | OTHER
+  active              Boolean                @default(true)
+  showFrom            DateTime?
+  showUntil           DateTime?
+  showOnce            Boolean                @default(true)
+  requireConfirmation Boolean                @default(true)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  reads               UserPopupMessageRead[]
+
+  @@index([active, showFrom, showUntil])
+  @@index([portal])
+}
+
+model UserPopupMessageRead {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  popupMessageId Int
+  readAt         DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  popupMessage   PopupMessage @relation(fields: [popupMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, popupMessageId])
+  @@index([popupMessageId])
 }
 
 enum ConsentType {

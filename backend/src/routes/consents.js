@@ -49,6 +49,7 @@ function selectConsent(includeAcceptances = false) {
     requiresAcceptance: true,
     showDocumentsToUser: true,
     allowUserDownloadDocuments: true,
+    defaultAcceptedForNonAdmins: true,
     createdAt: true,
     updatedAt: true,
     documents: {
@@ -84,6 +85,103 @@ function selectConsent(includeAcceptances = false) {
   };
 }
 
+
+async function applyDefaultAcceptanceForNonAdmins(tx, consent, source = 'ADMIN_DEFAULT') {
+  if (!consent?.id || !consent?.version) return { created: 0 };
+
+  const users = await tx.user.findMany({
+    where: {
+      active: true,
+      NOT: { role: 'ADMIN' },
+    },
+    select: { id: true },
+  });
+
+  if (!users.length) return { created: 0 };
+
+  // Evita duplicar aceptación automática para la misma versión cuando ya existe
+  // un registro posterior del usuario para este consentimiento y versión.
+  const existing = await tx.userConsentAcceptance.findMany({
+    where: {
+      consentDefinitionId: consent.id,
+      consentVersion: consent.version,
+      userId: { in: users.map((u) => u.id) },
+    },
+    select: { userId: true },
+  });
+  const existingUserIds = new Set(existing.map((row) => row.userId));
+
+  const data = users
+    .filter((user) => !existingUserIds.has(user.id))
+    .map((user) => ({
+      userId: user.id,
+      consentDefinitionId: consent.id,
+      consentVersion: consent.version,
+      accepted: true,
+      source,
+      ipAddress: null,
+      userAgent: null,
+    }));
+
+  if (!data.length) return { created: 0 };
+
+  const result = await tx.userConsentAcceptance.createMany({ data });
+  return { created: result.count || data.length };
+}
+
+
+// PUBLIC: consentimientos activos para registro anónimo
+router.get('/consents/public-active', async (req, res) => {
+  try {
+    const consents = await prisma.consentDefinition.findMany({
+      where: { active: true, requiresAcceptance: true },
+      orderBy: [{ required: 'desc' }, { type: 'asc' }, { title: 'asc' }],
+      select: selectConsent(false),
+    });
+
+    res.json(consents);
+  } catch (err) {
+    console.error('ERROR GET /consents/public-active', err);
+    res.status(500).json({ message: 'Error al obtener consentimientos activos' });
+  }
+});
+
+router.get('/consents/public-documents/:documentId/download', async (req, res) => {
+  try {
+    const documentId = Number(req.params.documentId);
+    if (!Number.isFinite(documentId)) return res.status(400).json({ message: 'ID inválido' });
+
+    const doc = await prisma.consentDocument.findUnique({
+      where: { id: documentId },
+      include: {
+        consentDefinition: {
+          select: {
+            active: true,
+            showDocumentsToUser: true,
+            allowUserDownloadDocuments: true,
+          },
+        },
+      },
+    });
+
+    if (!doc || !doc.active || !doc.contentBase64 || !doc.consentDefinition?.active) {
+      return res.status(404).json({ message: 'Documento no encontrado' });
+    }
+
+    if (!doc.consentDefinition.showDocumentsToUser || !doc.downloadEnabled || !doc.consentDefinition.allowUserDownloadDocuments) {
+      return res.status(403).json({ message: 'Documento no habilitado para descarga' });
+    }
+
+    const buffer = Buffer.from(doc.contentBase64, 'base64');
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('ERROR GET /consents/public-documents/:documentId/download', err);
+    res.status(500).json({ message: 'Error al descargar documento' });
+  }
+});
+
 // ADMIN: ABM de consentimientos
 router.get('/admin/consents', authRequired, requireAdmin, async (req, res) => {
   try {
@@ -105,22 +203,33 @@ router.post('/admin/consents', authRequired, requireAdmin, async (req, res) => {
     const normalizedType = VALID_TYPES.includes(type) ? type : 'OTHER';
     const documents = sanitizeDocuments(req.body.documents);
 
-    const created = await prisma.consentDefinition.create({
-      data: {
-        key: normalizeKey(key, title),
-        title: String(title).trim(),
-        type: normalizedType,
-        version: String(version).trim(),
-        description: description ? String(description).trim() : null,
-        active: normalizeBool(req.body.active, true),
-        required: normalizeBool(req.body.required, normalizedType === 'TERMS_AND_POLICIES'),
-        requiresAcceptance: normalizeBool(req.body.requiresAcceptance, true),
-        showDocumentsToUser: normalizeBool(req.body.showDocumentsToUser, true),
-        allowUserDownloadDocuments: normalizeBool(req.body.allowUserDownloadDocuments, true),
-        documents: documents.length ? { create: documents } : undefined,
-      },
-      select: selectConsent(true),
+    const defaultAcceptedForNonAdmins = normalizeBool(req.body.defaultAcceptedForNonAdmins, false);
+
+    const created = await prisma.$transaction(async (tx) => {
+      const consent = await tx.consentDefinition.create({
+        data: {
+          key: normalizeKey(key, title),
+          title: String(title).trim(),
+          type: normalizedType,
+          version: String(version).trim(),
+          description: description ? String(description).trim() : null,
+          active: normalizeBool(req.body.active, true),
+          required: normalizeBool(req.body.required, normalizedType === 'TERMS_AND_POLICIES'),
+          requiresAcceptance: normalizeBool(req.body.requiresAcceptance, true),
+          showDocumentsToUser: normalizeBool(req.body.showDocumentsToUser, true),
+          allowUserDownloadDocuments: normalizeBool(req.body.allowUserDownloadDocuments, true),
+          defaultAcceptedForNonAdmins,
+          documents: documents.length ? { create: documents } : undefined,
+        },
+      });
+
+      if (defaultAcceptedForNonAdmins && consent.active && consent.requiresAcceptance) {
+        await applyDefaultAcceptanceForNonAdmins(tx, consent, 'ADMIN_DEFAULT_CREATE');
+      }
+
+      return tx.consentDefinition.findUnique({ where: { id: consent.id }, select: selectConsent(true) });
     });
+
     res.status(201).json(created);
   } catch (err) {
     console.error('ERROR POST /admin/consents', err);
@@ -154,6 +263,7 @@ router.put('/admin/consents/:id', authRequired, requireAdmin, async (req, res) =
           requiresAcceptance: typeof req.body.requiresAcceptance === 'undefined' ? undefined : normalizeBool(req.body.requiresAcceptance, existing.requiresAcceptance),
           showDocumentsToUser: typeof req.body.showDocumentsToUser === 'undefined' ? undefined : normalizeBool(req.body.showDocumentsToUser, existing.showDocumentsToUser),
           allowUserDownloadDocuments: typeof req.body.allowUserDownloadDocuments === 'undefined' ? undefined : normalizeBool(req.body.allowUserDownloadDocuments, existing.allowUserDownloadDocuments),
+          defaultAcceptedForNonAdmins: typeof req.body.defaultAcceptedForNonAdmins === 'undefined' ? undefined : normalizeBool(req.body.defaultAcceptedForNonAdmins, existing.defaultAcceptedForNonAdmins),
         },
       });
 
@@ -164,6 +274,19 @@ router.put('/admin/consents/:id', authRequired, requireAdmin, async (req, res) =
             data: documents.map((doc) => ({ ...doc, consentDefinitionId: id })),
           });
         }
+      }
+
+      const nextDefaultAccepted = typeof req.body.defaultAcceptedForNonAdmins === 'undefined'
+        ? existing.defaultAcceptedForNonAdmins
+        : normalizeBool(req.body.defaultAcceptedForNonAdmins, existing.defaultAcceptedForNonAdmins);
+      const nextVersion = typeof version === 'undefined' ? existing.version : String(version).trim();
+      const shouldApplyDefault = nextDefaultAccepted
+        && consent.active
+        && consent.requiresAcceptance
+        && (!existing.defaultAcceptedForNonAdmins || nextVersion !== existing.version);
+
+      if (shouldApplyDefault) {
+        await applyDefaultAcceptanceForNonAdmins(tx, consent, 'ADMIN_DEFAULT_UPDATE');
       }
 
       return tx.consentDefinition.findUnique({ where: { id }, select: selectConsent(true) });

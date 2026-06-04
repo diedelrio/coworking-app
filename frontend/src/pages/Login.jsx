@@ -49,23 +49,31 @@ export default function Login() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <form
+            onSubmit={handleSubmit}
+            autoComplete="off"
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+          >
             <div className="sn-field">
-              <label className="sn-label">Email</label>
+              <label className="sn-label" htmlFor="sinergia-login-email">Email</label>
               <input
+                id="sinergia-login-email"
+                name="sinergia-login-email"
                 className="sn-input"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="tuemail@ejemplo.com"
                 required
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
 
             <div className="sn-field">
-              <label className="sn-label">Contraseña</label>
+              <label className="sn-label" htmlFor="sinergia-login-password">Contraseña</label>
               <input
+                id="sinergia-login-password"
+                name="sinergia-login-password"
                 className="sn-input"
                 type="password"
                 value={password}

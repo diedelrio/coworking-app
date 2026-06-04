@@ -23,6 +23,7 @@ function emptyForm() {
     requiresAcceptance: true,
     showDocumentsToUser: true,
     allowUserDownloadDocuments: true,
+    defaultAcceptedForNonAdmins: false,
     documents: [],
   };
 }
@@ -71,6 +72,7 @@ export default function AdminConsents() {
       requiresAcceptance: selected.requiresAcceptance !== false,
       showDocumentsToUser: selected.showDocumentsToUser !== false,
       allowUserDownloadDocuments: selected.allowUserDownloadDocuments !== false,
+      defaultAcceptedForNonAdmins: Boolean(selected.defaultAcceptedForNonAdmins),
       documents: (selected.documents || []).map((doc) => ({
         ...doc,
         existing: true,
@@ -213,7 +215,15 @@ export default function AdminConsents() {
             <label><input type="checkbox" checked={form.requiresAcceptance} onChange={(e) => setField('requiresAcceptance', e.target.checked)} /> Requiere aceptación explícita</label>
             <label><input type="checkbox" checked={form.showDocumentsToUser} onChange={(e) => setField('showDocumentsToUser', e.target.checked)} /> Mostrar documentos al usuario</label>
             <label><input type="checkbox" checked={form.allowUserDownloadDocuments} onChange={(e) => setField('allowUserDownloadDocuments', e.target.checked)} /> Permitir descarga</label>
+            <label><input type="checkbox" checked={form.defaultAcceptedForNonAdmins} onChange={(e) => setField('defaultAcceptedForNonAdmins', e.target.checked)} /> Aceptado por defecto para usuarios no administradores</label>
           </div>
+
+          {form.defaultAcceptedForNonAdmins ? (
+            <div className="admin-consents-default-notice">
+              Al guardar, los usuarios no administradores activos quedarán marcados como aceptados para esta versión.
+              Si luego un usuario no desea mantenerlo, podrá desmarcarlo desde su perfil cuando el consentimiento no sea obligatorio.
+            </div>
+          ) : null}
 
           <div className="admin-consents-documents">
             <div className="admin-consents-documents-head">
@@ -257,7 +267,7 @@ export default function AdminConsents() {
               <button key={item.id} type="button" className="admin-consents-list-item" onClick={() => setSelectedId(String(item.id))}>
                 <strong>{item.title}</strong>
                 <span>{typeLabel(item.type)} · {item.version} · {item.active ? 'Activo' : 'Inactivo'}</span>
-                <small>{item.documents?.length || 0} documento(s)</small>
+                <small>{item.documents?.length || 0} documento(s){item.defaultAcceptedForNonAdmins ? ' · default aceptado' : ''}</small>
               </button>
             ))}
           </div>

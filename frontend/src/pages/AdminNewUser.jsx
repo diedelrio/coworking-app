@@ -5,6 +5,89 @@ import api from '../api/axiosClient';
 import Layout from '../components/Layout';
 import TagsMultiSelect from '../components/TagsMultiSelect';
 
+
+const CONSENT_TYPE_LABELS = {
+  TERMS_AND_POLICIES: 'Términos y políticas',
+  COMMERCIAL_COMMUNICATIONS: 'Comunicaciones comerciales',
+  SOCIAL_COMMUNICATIONS: 'Comunicaciones sociales',
+  OTHER: 'Otro',
+};
+
+function formatConsentDate(value) {
+  if (!value) return 'Sin fecha';
+  try {
+    return new Intl.DateTimeFormat('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function latestAcceptanceByConsent(acceptances = []) {
+  const map = new Map();
+  acceptances.forEach((item) => {
+    const consentId = item?.consentDefinitionId || item?.consentDefinition?.id;
+    if (!consentId || map.has(consentId)) return;
+    map.set(consentId, item);
+  });
+  return map;
+}
+
+function getConsentStatus(consent, acceptance, role = 'CLIENT') {
+  const hasCurrentVersion = acceptance && acceptance.consentVersion === consent.version;
+  const accepted = hasCurrentVersion && acceptance.accepted === true;
+  const rejected = hasCurrentVersion && acceptance.accepted === false;
+  const defaultAccepted = !acceptance && role !== 'ADMIN' && consent.defaultAcceptedForNonAdmins;
+
+  if (accepted) {
+    return {
+      className: 'accepted',
+      label: 'Aceptado',
+      detail: `Aceptado el ${formatConsentDate(acceptance.acceptedAt)}`,
+      source: acceptance.source,
+    };
+  }
+
+  if (rejected) {
+    return {
+      className: 'rejected',
+      label: 'No aceptado',
+      detail: `Quitó aprobación el ${formatConsentDate(acceptance.acceptedAt)}`,
+      source: acceptance.source,
+    };
+  }
+
+  if (defaultAccepted) {
+    return {
+      className: 'default',
+      label: 'Aceptado por defecto',
+      detail: 'Se registrará como aceptado por defecto para usuarios no administradores.',
+      source: 'ADMIN_DEFAULT',
+    };
+  }
+
+  if (acceptance && acceptance.consentVersion !== consent.version) {
+    return {
+      className: 'pending',
+      label: 'Pendiente nueva versión',
+      detail: `Última versión aceptada/revisada: ${acceptance.consentVersion || 'sin versión'}`,
+      source: acceptance.source,
+    };
+  }
+
+  return {
+    className: consent.required ? 'pending' : 'neutral',
+    label: consent.required ? 'Pendiente obligatorio' : 'Pendiente',
+    detail: consent.required ? 'Debe ser aceptado por el usuario.' : 'El usuario podrá aceptarlo o rechazarlo desde su perfil.',
+    source: null,
+  };
+}
+
 const EMPTY_FORM = {
   name: '',
   lastName: '',
@@ -27,6 +110,8 @@ export default function AdminNewUser() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [consents, setConsents] = useState([]);
+  const [userConsentAcceptances, setUserConsentAcceptances] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -37,9 +122,13 @@ export default function AdminNewUser() {
         setError('');
         setSuccess('');
 
-        const tagsRes = await api.get('/admin/tags');
+        const [tagsRes, consentsRes] = await Promise.all([
+          api.get('/admin/tags'),
+          api.get('/admin/consents'),
+        ]);
         if (!mounted) return;
         setAvailableTags(Array.isArray(tagsRes.data) ? tagsRes.data : []);
+        setConsents((Array.isArray(consentsRes.data) ? consentsRes.data : []).filter((c) => c.active));
 
         if (isEditMode) {
           const userRes = await api.get(`/users/${id}`);
@@ -58,6 +147,16 @@ export default function AdminNewUser() {
             ? user.userTags.map((ut) => ut?.tag?.id).filter((x) => Number.isFinite(x))
             : [];
           setSelectedTagIds(ids);
+
+          try {
+            const userConsentsRes = await api.get(`/admin/users/${id}/consents`);
+            if (mounted) setUserConsentAcceptances(Array.isArray(userConsentsRes.data) ? userConsentsRes.data : []);
+          } catch (consentErr) {
+            console.warn('No se pudieron cargar aceptaciones del usuario', consentErr);
+            if (mounted) setUserConsentAcceptances([]);
+          }
+        } else {
+          setUserConsentAcceptances([]);
         }
       } catch (err) {
         console.error(err);
@@ -112,6 +211,9 @@ export default function AdminNewUser() {
       setSaving(false);
     }
   };
+
+  const acceptanceMap = latestAcceptanceByConsent(userConsentAcceptances);
+  const visibleConsents = consents.filter((consent) => consent.active);
 
   return (
     <Layout>
@@ -173,13 +275,44 @@ export default function AdminNewUser() {
             <section className="admin-crm-card admin-user-form-card admin-user-compliance-card">
               <div className="admin-user-form-section-head">
                 <span className="admin-user-form-icon"><FiCheckCircle /></span>
-                <div><h2>Consentimientos</h2><p>Preparado para el próximo módulo legal.</p></div>
+                <div>
+                  <h2>Consentimientos</h2>
+                  <p>
+                    Información legal visible para este usuario. La aceptación final la realiza el usuario desde su perfil.
+                  </p>
+                </div>
               </div>
-              <div className="admin-user-compliance-grid">
-                <div><strong>Términos y condiciones</strong><span>No disponible todavía</span></div>
-                <div><strong>Comunicaciones comerciales</strong><span>No disponible todavía</span></div>
-                <div><strong>Comunicaciones sociales</strong><span>No disponible todavía</span></div>
-              </div>
+
+              {visibleConsents.length ? (
+                <div className="admin-user-consent-list">
+                  {visibleConsents.map((consent) => {
+                    const status = getConsentStatus(consent, acceptanceMap.get(consent.id), form.role);
+
+                    return (
+                      <article key={consent.id} className={`admin-user-consent-item is-${status.className}`}>
+                        <div className="admin-user-consent-main">
+                          <div className="admin-user-consent-title-row">
+                            <strong>{consent.title}</strong>
+                            <span className={`admin-user-consent-status is-${status.className}`}>{status.label}</span>
+                          </div>
+                          <div className="admin-user-consent-meta">
+                            <span>{CONSENT_TYPE_LABELS[consent.type] || consent.type}</span>
+                            <span>Versión {consent.version}</span>
+                            {consent.required ? <span>Obligatorio</span> : <span>Opcional</span>}
+                            {consent.defaultAcceptedForNonAdmins ? <span>Default aceptado</span> : null}
+                          </div>
+                          <p>{status.detail}</p>
+                          {status.source ? <small>Origen: {status.source}</small> : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="admin-user-consent-empty">
+                  No hay consentimientos activos configurados.
+                </div>
+              )}
             </section>
 
             <div className="admin-user-form-footer">

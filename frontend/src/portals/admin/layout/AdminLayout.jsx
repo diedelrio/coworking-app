@@ -1,6 +1,8 @@
 import AdminHeader from './AdminHeader';
 import AdminSidebar from './AdminSidebar';
 import './adminLayout.css';
+import GlobalPopupMessages from '../../../components/GlobalPopupMessages';
+
 
 export default function AdminLayout({ children, user }) {
   return (
@@ -11,6 +13,7 @@ export default function AdminLayout({ children, user }) {
         <AdminSidebar />
         <main className="admin-portal-main">{children}</main>
       </div>
+      <GlobalPopupMessages portal="ADMIN" />
     </div>
   );
 }

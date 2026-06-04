@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import api from '../api/axiosClient';
 
+const MESSAGE_TYPE_OPTIONS = [
+  { value: 'SYSTEM', label: 'Del Sistema' },
+  { value: 'COMMERCIAL_COMMUNICATIONS', label: 'Comunicaciones Comerciales' },
+  { value: 'SOCIAL_COMMUNICATIONS', label: 'Comunicaciones Sociales' },
+];
+
+function messageTypeLabel(value) {
+  return MESSAGE_TYPE_OPTIONS.find((item) => item.value === value)?.label || 'Del Sistema';
+}
+
 export default function AdminEmailTemplates() {
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -24,6 +34,7 @@ export default function AdminEmailTemplates() {
     name: '',
     subject: '',
     body: '',
+    messageType: 'SYSTEM',
   });
 
   async function load() {
@@ -63,6 +74,7 @@ export default function AdminEmailTemplates() {
       name: selected.name || '',
       subject: selected.subject || '',
       body: selected.body || '',
+      messageType: selected.messageType || 'SYSTEM',
     });
   }, [selectedId, selected]);
 
@@ -76,6 +88,7 @@ export default function AdminEmailTemplates() {
       name: '',
       subject: '',
       body: '',
+      messageType: 'SYSTEM',
     });
   }
 
@@ -113,6 +126,7 @@ export default function AdminEmailTemplates() {
           name: form.name.trim(),
           subject: form.subject.trim(),
           body: form.body.trim(),
+          messageType: form.messageType || 'SYSTEM',
         });
 
         const created = res.data?.template;
@@ -145,6 +159,7 @@ export default function AdminEmailTemplates() {
         name: form.name.trim(),
         subject: form.subject.trim(),
         body: form.body.trim(),
+        messageType: form.messageType || 'SYSTEM',
       });
 
       const updated = res.data?.template;
@@ -159,7 +174,7 @@ export default function AdminEmailTemplates() {
   }
 
   const headerTitle = isCreating ? 'Nuevo Email Template' : (selected?.name || 'Email Templates');
-  const headerKey = isCreating ? '(crear nuevo)' : (selected?.key ? `key: ${selected.key}` : '');
+  const headerKey = isCreating ? '(crear nuevo)' : (selected?.key ? `key: ${selected.key} · tipo: ${messageTypeLabel(selected.messageType)}` : '');
 
   return (
     <Layout>
@@ -207,7 +222,7 @@ export default function AdminEmailTemplates() {
                     </option>
                     {items.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} · {t.key}
+                        {t.name} · {t.key} · {messageTypeLabel(t.messageType)}
                       </option>
                     ))}
                   </select>
@@ -270,6 +285,24 @@ export default function AdminEmailTemplates() {
                     style={{ padding: '0.65rem', borderRadius: 10, border: '1px solid #e5e7eb' }}
                     placeholder="Reserva pendiente de aprobación"
                   />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontWeight: 700 }}>Tipo de mensaje</span>
+                  <select
+                    value={form.messageType}
+                    onChange={(e) => setForm((p) => ({ ...p, messageType: e.target.value }))}
+                    style={{ padding: '0.65rem', borderRadius: 10, border: '1px solid #e5e7eb' }}
+                  >
+                    {MESSAGE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Los envíos masivos comerciales/sociales solo se enviarán a usuarios que hayan aceptado ese consentimiento.
+                  </span>
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>

@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axiosClient';
 import AlertBanner from './OperationsAlertBanner';
 
+const MESSAGE_TYPE_LABELS = {
+  SYSTEM: 'Del Sistema',
+  COMMERCIAL_COMMUNICATIONS: 'Comunicaciones Comerciales',
+  SOCIAL_COMMUNICATIONS: 'Comunicaciones Sociales',
+};
+
 const CLASSIFY_OPTIONS = [
   { value: 'GOOD', label: 'GOOD' },
   { value: 'REGULAR', label: 'REGULAR' },
@@ -23,6 +29,9 @@ export default function OperationsBulkEmail() {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [processRun, setProcessRun] = useState(null);
+  const [errorRows, setErrorRows] = useState([]);
+  const [successRows, setSuccessRows] = useState([]);
+  const [consentFilter, setConsentFilter] = useState(null);
 
   const canRun = useMemo(() => {
     if (!templateKey) return false;
@@ -56,6 +65,9 @@ export default function OperationsBulkEmail() {
     setError(null);
     setMessage(null);
     setProcessRun(null);
+    setErrorRows([]);
+    setSuccessRows([]);
+    setConsentFilter(null);
 
     if (!canRun) {
       setError('Completá template y segmento');
@@ -77,6 +89,9 @@ export default function OperationsBulkEmail() {
       });
 
       setProcessRun(res.data?.processRun || null);
+      setErrorRows(res.data?.errorRows || []);
+      setSuccessRows(res.data?.successRows || []);
+      setConsentFilter(res.data?.consentFilter || null);
       setMessage('Proceso ejecutado');
     } catch (e) {
       setError(e?.response?.data?.message || e.message || 'Error ejecutando');
@@ -106,11 +121,20 @@ export default function OperationsBulkEmail() {
             <option value="">Seleccionar…</option>
             {templates.map((t) => (
               <option key={t.key} value={t.key}>
-                {t.key} — {t.name}
+                {t.key} — {t.name} · {MESSAGE_TYPE_LABELS[t.messageType] || 'Del Sistema'}
               </option>
             ))}
           </select>
           {loadingMeta && <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>Cargando templates/tags…</span>}
+          {templateKey && (
+            <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>
+              Tipo de mensaje:{' '}
+              <b>{MESSAGE_TYPE_LABELS[templates.find((t) => t.key === templateKey)?.messageType] || 'Del Sistema'}</b>
+              {['COMMERCIAL_COMMUNICATIONS', 'SOCIAL_COMMUNICATIONS'].includes(templates.find((t) => t.key === templateKey)?.messageType) &&
+                ' · Se filtrará por consentimiento antes de enviar.'}
+            </span>
+          )}
+          
         </div>
 
         <div style={{ display: 'grid', gap: '0.25rem' }}>
@@ -219,6 +243,36 @@ export default function OperationsBulkEmail() {
               <div style={{ color: '#6b7280', fontSize: '0.85rem' }}>
                 Ejecutado: {processRun.executedAt ? new Date(processRun.executedAt).toLocaleString() : ''}
               </div>
+              {consentFilter && consentFilter.messageType !== 'SYSTEM' && (
+                <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+                  Filtro por consentimiento: {MESSAGE_TYPE_LABELS[consentFilter.messageType] || consentFilter.messageType}. 
+                  No enviados por consentimiento: <b>{consentFilter.blocked}</b>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {errorRows.length > 0 && (
+          <div style={{ border: '1px solid #fecaca', background: '#fff7f7', borderRadius: '1rem', padding: '0.75rem' }}>
+            <div style={{ fontWeight: 800, color: '#991b1b', marginBottom: '0.45rem' }}>
+              No enviados / errores ({errorRows.length})
+            </div>
+            <div style={{ display: 'grid', gap: '0.45rem', maxHeight: 220, overflow: 'auto' }}>
+              {errorRows.map((row, index) => (
+                <div key={`${row.email}-${index}`} style={{ fontSize: '0.86rem', color: '#374151' }}>
+                  <b>{row.email}</b>
+                  {row.name ? ` · ${row.name}` : ''} — {row.reason}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {successRows.length > 0 && (
+          <div style={{ border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: '1rem', padding: '0.75rem' }}>
+            <div style={{ fontWeight: 800, color: '#166534' }}>
+              Enviados correctamente: {successRows.length}
             </div>
           </div>
         )}

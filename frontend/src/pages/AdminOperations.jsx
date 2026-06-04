@@ -7,6 +7,7 @@ import OperationsUserBatchImport from './operations/OperationsUserBatchImport';
 import OperationsOfficeClosures from './operations/OperationsOfficeClosures';
 import OperationsBulkEmail from './operations/OperationsBulkEmail';
 import OperationsBulkTokenRegen from './operations/OperationsBulkTokenRegen';
+import OperationsPopupMessages from './operations/OperationsPopupMessages';
 
 export default function AdminOperations() {
   const processes = useMemo(
@@ -41,6 +42,13 @@ export default function AdminOperations() {
         desc: 'Regenerar tokens de activación/reset y reenviar por template.',
         component: <OperationsBulkTokenRegen />,
       },
+
+      {
+        id: 'popupMessages',
+        title: 'Mensajes emergentes',
+        desc: 'Crear y administrar pop-ups por portal, categoría y rango de fechas.',
+        component: <OperationsPopupMessages />,
+      },
       {
         id: 'closures',
         title: 'Cierres de oficina',
@@ -54,41 +62,60 @@ export default function AdminOperations() {
   const [activeId, setActiveId] = useState(processes[0]?.id || 'complete');
   const active = processes.find((p) => p.id === activeId) || processes[0];
 
- return (
-  <Layout>
-    <div className="admin-page admin-operations-page">
-      <div className="admin-operations-header">
-        <h1>Operaciones</h1>
-        <p>Centro de procesos de backoffice. Elegí una operación en el menú.</p>
-      </div>
+  return (
+    <Layout>
+      <div style={{ padding: '1.5rem', maxWidth: '90%', margin: '0 auto' }}>
+        <h1 style={{ marginBottom: '0.25rem' }}>Operaciones</h1>
+        <p style={{ marginTop: 0, color: '#6b7280' }}>Centro de procesos de backoffice. Elegí una operación en el menú.</p>
 
-      <div className="admin-card admin-operations-selector-card">
-        <label className="admin-operations-label">Proceso</label>
-
-        <select
-          className="admin-operations-select"
-          value={activeId}
-          onChange={(e) => setActiveId(e.target.value)}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '340px 1fr',
+            gap: '1rem',
+            alignItems: 'start'
+          }}
         >
-          {processes.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.title}
-            </option>
-          ))}
-        </select>
+          {/* Sidebar */}
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '0.75rem' }}>
+            <div style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '0.5rem' }}>Procesos</div>
 
-        <p className="admin-operations-selected-desc">{active?.desc}</p>
-      </div>
+            <div style={{ display: 'grid', gap: '0.5rem' }}>
+              {processes.map((p) => {
+                const isActive = p.id === activeId;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setActiveId(p.id)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '0.75rem',
+                      borderRadius: '0.8rem',
+                      border: '1px solid #e5e7eb',
+                      background: isActive ? '#eef2ff' : 'white',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, color: '#111827' }}>{p.title}</div>
+                    <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: 4 }}>{p.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      <div className="admin-card admin-operations-detail-card">
-        <div className="admin-operations-detail-head">
-          <h2>{active?.title}</h2>
-          <p>{active?.desc}</p>
+          {/* Main */}
+          <div>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#111827' }}>{active?.title}</div>
+              <div style={{ color: '#6b7280' }}>{active?.desc}</div>
+            </div>
+
+            {active?.component}
+          </div>
         </div>
-
-        {active?.component}
       </div>
-    </div>
-  </Layout>
-);
+    </Layout>
+  );
 }

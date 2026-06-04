@@ -1,0 +1,75 @@
+/* =========================================================
+   CLIENT CONSENT LOCK
+   Bloquea navegación cliente hasta aceptar consentimientos obligatorios
+   ========================================================= */
+
+.client-consent-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  font-weight: 700;
+  background: #fafaf9;
+}
+
+.client-consent-lock-banner {
+  width: min(100% - 28px, 1140px);
+  margin: 1rem auto 0;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #92400e;
+  box-sizing: border-box;
+}
+
+.client-consent-lock-banner strong {
+  color: #78350f;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.client-consent-lock-banner span {
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.client-sidebar__item--disabled,
+.client-bottom-nav__item--disabled {
+  cursor: not-allowed !important;
+  pointer-events: auto;
+  opacity: 0.42;
+  filter: grayscale(1);
+}
+
+.client-sidebar__item--disabled:hover,
+.client-bottom-nav__item--disabled:hover {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.client-bottom-nav__item--disabled {
+  color: #94a3b8 !important;
+}
+
+.client-sidebar__item--disabled {
+  color: #a8a29e !important;
+}
+
+@media (max-width: 768px) {
+  .client-consent-lock-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    width: calc(100% - 28px);
+    margin-top: 0.85rem;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .client-consent-lock-banner strong {
+    white-space: normal;
+  }
+}

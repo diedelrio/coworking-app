@@ -4,6 +4,7 @@ import Register from './pages/Register';
 import DashboardUser from './pages/DashboardUser';
 import DashboardAdmin from './pages/DashboardAdmin';
 import ProtectedRoute from './components/ProtectedRoute';
+import ClientConsentGuard from './components/ClientConsentGuard';
 import SpaceCalendar from './pages/SpaceCalendar';
 import UserReservations from './pages/UserReservations';
 import UserNewReservation from './pages/UserNewReservation';
@@ -38,7 +39,9 @@ function App() {
         path="/user"
         element={
           <ProtectedRoute roles={['CLIENT']}>
-            <DashboardUser />
+            <ClientConsentGuard>
+              <DashboardUser />
+            </ClientConsentGuard>
           </ProtectedRoute>
         }
       />
@@ -46,7 +49,9 @@ function App() {
         path="/user/reservas"
         element={
           <ProtectedRoute roles={['CLIENT']}>
-            <UserReservations />
+            <ClientConsentGuard>
+              <UserReservations />
+            </ClientConsentGuard>
           </ProtectedRoute>
         }
       />
@@ -54,7 +59,9 @@ function App() {
         path="/user/reservar"
         element={
           <ProtectedRoute roles={['CLIENT']}>
-            <UserNewReservation />
+            <ClientConsentGuard>
+              <UserNewReservation />
+            </ClientConsentGuard>
           </ProtectedRoute>
         }
       />
@@ -62,7 +69,9 @@ function App() {
         path="/user/perfil"
         element={
           <ProtectedRoute roles={['CLIENT']}>
-            <UserProfile />
+            <ClientConsentGuard>
+              <UserProfile />
+            </ClientConsentGuard>
           </ProtectedRoute>
         }
       />

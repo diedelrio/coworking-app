@@ -122,20 +122,31 @@ export default function UserProfile() {
   }
 
 
-  async function onAcceptConsent(consent) {
+  async function onChangeConsent(consent, nextAccepted) {
     if (!consent?.id) return;
-    const ok = window.confirm(`Confirmás la aceptación de: ${consent.title} (${consent.version})`);
+
+    if (consent.required && !nextAccepted) {
+      setError('Este consentimiento es obligatorio y no puede desmarcarse.');
+      return;
+    }
+
+    const message = nextAccepted
+      ? `Confirmás la aceptación de: ${consent.title} (${consent.version})`
+      : `Confirmás que querés quitar la aceptación de: ${consent.title} (${consent.version})`;
+    const ok = window.confirm(message);
     if (!ok) return;
+
     setSavingConsentId(consent.id);
     setError('');
     setNotice('');
     try {
-      await acceptConsent(consent.id, true);
+      await acceptConsent(consent.id, nextAccepted, nextAccepted ? 'USER_PROFILE' : 'USER_PROFILE_OPT_OUT');
       const { data } = await getActiveConsents();
       setActiveConsents(Array.isArray(data) ? data : []);
-      setNotice('Aceptación registrada correctamente.');
+      window.dispatchEvent(new Event('sinergia:consents-updated'));
+      setNotice(nextAccepted ? 'Aceptación registrada correctamente.' : 'Preferencia actualizada correctamente.');
     } catch (e) {
-      setError(e?.response?.data?.message || 'No se pudo registrar la aceptación.');
+      setError(e?.response?.data?.message || 'No se pudo actualizar el consentimiento.');
     } finally {
       setSavingConsentId(null);
     }
@@ -162,7 +173,7 @@ export default function UserProfile() {
         <div style={{ marginBottom: '1.25rem' }}>
           <span className="sn-eyebrow">Tu cuenta</span>
           <h1 className="sn-page-title">Mi perfil</h1>
-          <p className="sn-page-subtitle">Gestioná tu información personal y configuración de cuenta.</p>
+          <p className="sn-page-subtitle">Gestioná tu información personal, configuración de cuenta y consentimientos obligatorios.</p>
         </div>
 
         {loading ? (
@@ -296,14 +307,23 @@ export default function UserProfile() {
 
                           <div className="sn-consent-actions">
                             <label className="sn-consent-checkbox">
-                              <input type="checkbox" checked={accepted} readOnly />
-                              <span>{accepted ? `Aceptado el ${formatConsentDate(consent.userAcceptance?.acceptedAt)}` : 'Declaro que leí y acepto este consentimiento.'}</span>
+                              <input
+                                type="checkbox"
+                                checked={accepted}
+                                disabled={savingConsentId === consent.id || (consent.required && accepted)}
+                                onChange={(e) => onChangeConsent(consent, e.target.checked)}
+                              />
+                              <span>
+                                {accepted
+                                  ? `Aceptado el ${formatConsentDate(consent.userAcceptance?.acceptedAt)}`
+                                  : (consent.required ? 'Declaro que leí y acepto este consentimiento obligatorio.' : 'Acepto mantener este consentimiento activo.')}
+                              </span>
                             </label>
                             {!accepted && (
                               <button
                                 type="button"
                                 className="sn-btn sn-btn--primary sn-btn--sm"
-                                onClick={() => onAcceptConsent(consent)}
+                                onClick={() => onChangeConsent(consent, true)}
                                 disabled={savingConsentId === consent.id}
                               >
                                 {savingConsentId === consent.id ? 'Registrando…' : 'Aceptar'}
