@@ -13,6 +13,9 @@ const router = express.Router();
 router.post('/register', async (req, res) => {
   try {
     const { name, lastName, phone, email, password } = req.body;
+    const consentAcceptances = Array.isArray(req.body?.consentAcceptances)
+      ? req.body.consentAcceptances
+      : [];
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email y contraseña son obligatorios' });
@@ -23,17 +26,78 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'El email ya está registrado' });
     }
 
+    const activeConsents = await prisma.consentDefinition.findMany({
+      where: { active: true, requiresAcceptance: true },
+      select: {
+        id: true,
+        title: true,
+        version: true,
+        required: true,
+        defaultAcceptedForNonAdmins: true,
+      },
+    });
+
+    const acceptedByConsentId = new Map(
+      consentAcceptances
+        .filter((item) => item && Number.isFinite(Number(item.consentDefinitionId)))
+        .map((item) => [
+          Number(item.consentDefinitionId),
+          {
+            accepted: item.accepted === true || String(item.accepted).toLowerCase() === 'true',
+            consentVersion: item.consentVersion ? String(item.consentVersion) : null,
+          },
+        ])
+    );
+
+    const missingRequired = activeConsents.filter((consent) => {
+      if (!consent.required) return false;
+      const submitted = acceptedByConsentId.get(consent.id);
+      return !submitted || submitted.accepted !== true;
+    });
+
+    if (missingRequired.length) {
+      return res.status(400).json({
+        message: 'Debes aceptar los consentimientos obligatorios para crear la cuenta',
+        missingConsents: missingRequired.map((consent) => ({ id: consent.id, title: consent.title })),
+      });
+    }
+
     const hashed = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        lastName,
-        phone,
-        email,
-        password: hashed,
-        // rol CLIENT es por defecto
-      },
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          name,
+          lastName,
+          phone,
+          email,
+          password: hashed,
+          // rol CLIENT es por defecto
+        },
+      });
+
+      const acceptanceRows = activeConsents.map((consent) => {
+        const submitted = acceptedByConsentId.get(consent.id);
+        const accepted = submitted
+          ? submitted.accepted
+          : Boolean(consent.defaultAcceptedForNonAdmins);
+
+        return {
+          userId: createdUser.id,
+          consentDefinitionId: consent.id,
+          consentVersion: consent.version,
+          accepted,
+          source: 'REGISTER',
+          ipAddress: req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || null,
+          userAgent: req.headers['user-agent'] || null,
+        };
+      });
+
+      if (acceptanceRows.length) {
+        await tx.userConsentAcceptance.createMany({ data: acceptanceRows });
+      }
+
+      return createdUser;
     });
 
     res.status(201).json({ message: 'Usuario creado', user: { id: user.id, email: user.email } });

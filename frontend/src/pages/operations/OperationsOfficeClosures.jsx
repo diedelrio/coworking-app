@@ -193,7 +193,7 @@ export default function OperationsOfficeClosures() {
   };
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card"style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Cierres del coworking</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>
         Gestioná cierres/feriados. Afecta disponibilidad y validación de reservas.
@@ -202,15 +202,7 @@ export default function OperationsOfficeClosures() {
       <AlertBanner error={error} message={message} />
 
       {/* Filters */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-          gap: '0.75rem',
-          alignItems: 'end',
-          marginBottom: '1rem',
-        }}
-      >
+      <div className="operations-office-closures-filters">
         <div>
           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Desde</label>
           <input
@@ -283,14 +275,7 @@ export default function OperationsOfficeClosures() {
         </div>
 
         <form onSubmit={mode === 'create' ? submitCreate : submitEdit} style={{ marginTop: '0.75rem' }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: mode === 'create' ? 'repeat(3, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
-              gap: '0.75rem',
-              alignItems: 'end',
-            }}
-          >
+          <div className="operations-office-closures-form-grid">
             <div>
               <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
                 {mode === 'create' ? 'Fecha inicio' : 'Fecha'}
@@ -340,7 +325,7 @@ export default function OperationsOfficeClosures() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+          <div className="operations-office-closures-actions">
             <button
               type="submit"
               disabled={saving}

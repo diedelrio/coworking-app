@@ -175,6 +175,7 @@ export default function ReservationsCalendar({
       >
         {/* Ilustración */}
         <div
+          class="sn-hero-image-wrap"
           style={{
             flex: '0 0 220px',
             display: 'flex',
@@ -406,9 +407,9 @@ export default function ReservationsCalendar({
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start' }}>
+            <div className="sn-modal-columns" style={{ gap: '1.25rem', alignItems: 'flex-start' }}>
               {/* Reservas del día */}
-              <div style={{ flex: '1 1 auto', fontSize: '0.82rem' }}>
+              <div className="sn-modal-col-reservations" style={{ flex: '1 1 auto', fontSize: '0.82rem' }}>
                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>
                   Reservas de este día
                 </div>
@@ -469,7 +470,7 @@ export default function ReservationsCalendar({
 
               {/* Franjas */}
               {selectedDayInfo.isFuture ? (
-                <div style={{ flex: '0 0 230px', fontSize: '0.78rem' }}>
+                <div className="sn-modal-col-slots" style={{ flex: '0 0 230px', fontSize: '0.78rem' }}>
                   <div style={{ fontWeight: 600, marginBottom: '0.3rem' }}>
                     Franjas (09:00 – 18:00)
                   </div>

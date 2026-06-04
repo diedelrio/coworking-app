@@ -7,6 +7,7 @@ import OperationsUserBatchImport from './operations/OperationsUserBatchImport';
 import OperationsOfficeClosures from './operations/OperationsOfficeClosures';
 import OperationsBulkEmail from './operations/OperationsBulkEmail';
 import OperationsBulkTokenRegen from './operations/OperationsBulkTokenRegen';
+import OperationsPopupMessages from './operations/OperationsPopupMessages';
 
 export default function AdminOperations() {
   const processes = useMemo(
@@ -40,6 +41,13 @@ export default function AdminOperations() {
         title: 'Regenerar tokens + enviar',
         desc: 'Regenerar tokens de activación/reset y reenviar por template.',
         component: <OperationsBulkTokenRegen />,
+      },
+
+      {
+        id: 'popupMessages',
+        title: 'Mensajes emergentes',
+        desc: 'Crear y administrar pop-ups por portal, categoría y rango de fechas.',
+        component: <OperationsPopupMessages />,
       },
       {
         id: 'closures',

@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import api from '../api/axiosClient';
 
+const MESSAGE_TYPE_OPTIONS = [
+  { value: 'SYSTEM', label: 'Del Sistema' },
+  { value: 'COMMERCIAL_COMMUNICATIONS', label: 'Comunicaciones Comerciales' },
+  { value: 'SOCIAL_COMMUNICATIONS', label: 'Comunicaciones Sociales' },
+];
+
+function messageTypeLabel(value) {
+  return MESSAGE_TYPE_OPTIONS.find((item) => item.value === value)?.label || 'Del Sistema';
+}
+
 export default function AdminEmailTemplates() {
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -15,7 +25,7 @@ export default function AdminEmailTemplates() {
   const [isCreating, setIsCreating] = useState(false);
 
   const selected = useMemo(
-    () => items.find((x) => x.id === selectedId) || null,
+    () => items.find((x) => String(x.id) === String(selectedId)) || null,
     [items, selectedId]
   );
 
@@ -24,6 +34,7 @@ export default function AdminEmailTemplates() {
     name: '',
     subject: '',
     body: '',
+    messageType: 'SYSTEM',
   });
 
   async function load() {
@@ -35,7 +46,6 @@ export default function AdminEmailTemplates() {
       const data = res.data || [];
       setItems(data);
 
-      // Si estamos creando, no pisamos el form ni seleccionamos
       if (!isCreating) {
         const first = data[0];
         if (first) setSelectedId(first.id);
@@ -52,7 +62,6 @@ export default function AdminEmailTemplates() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cuando cambia el seleccionado, cargamos el form en modo edición
   useEffect(() => {
     if (!selected) return;
 
@@ -65,12 +74,13 @@ export default function AdminEmailTemplates() {
       name: selected.name || '',
       subject: selected.subject || '',
       body: selected.body || '',
+      messageType: selected.messageType || 'SYSTEM',
     });
   }, [selectedId, selected]);
 
   function startCreate() {
     setIsCreating(true);
-    setSelectedId(null);
+    setSelectedId('');
     setError('');
     setInfo('');
     setForm({
@@ -78,6 +88,7 @@ export default function AdminEmailTemplates() {
       name: '',
       subject: '',
       body: '',
+      messageType: 'SYSTEM',
     });
   }
 
@@ -86,10 +97,15 @@ export default function AdminEmailTemplates() {
     setError('');
     setInfo('');
 
-    // Volver a seleccionar algo (primer item) si existe
     if (items[0]) {
       setSelectedId(items[0].id);
     }
+  }
+
+  function handleSelectTemplate(value) {
+    if (!value) return;
+    setSelectedId(value);
+    setIsCreating(false);
   }
 
   async function saveOrCreate() {
@@ -99,7 +115,6 @@ export default function AdminEmailTemplates() {
 
     try {
       if (isCreating) {
-        // Validación mínima en frontend (el backend también valida)
         if (!form.key?.trim() || !form.name?.trim() || !form.subject?.trim() || !form.body?.trim()) {
           setSaving(false);
           setError('key, nombre, asunto y body son obligatorios');
@@ -111,6 +126,7 @@ export default function AdminEmailTemplates() {
           name: form.name.trim(),
           subject: form.subject.trim(),
           body: form.body.trim(),
+          messageType: form.messageType || 'SYSTEM',
         });
 
         const created = res.data?.template;
@@ -127,7 +143,6 @@ export default function AdminEmailTemplates() {
         return;
       }
 
-      // Modo edición
       if (!selected) {
         setSaving(false);
         setError('Selecciona un template para editar');
@@ -144,6 +159,7 @@ export default function AdminEmailTemplates() {
         name: form.name.trim(),
         subject: form.subject.trim(),
         body: form.body.trim(),
+        messageType: form.messageType || 'SYSTEM',
       });
 
       const updated = res.data?.template;
@@ -158,75 +174,78 @@ export default function AdminEmailTemplates() {
   }
 
   const headerTitle = isCreating ? 'Nuevo Email Template' : (selected?.name || 'Email Templates');
-  const headerKey = isCreating ? '(crear nuevo)' : (selected?.key ? `key: ${selected.key}` : '');
+  const headerKey = isCreating ? '(crear nuevo)' : (selected?.key ? `key: ${selected.key} · tipo: ${messageTypeLabel(selected.messageType)}` : '');
 
   return (
     <Layout>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem' }}>
-        <h1 style={{ marginTop: 0 }}>Email Templates</h1>
-        <p style={{ marginTop: 0, color: '#6b7280' }}>
-          Edita asunto y cuerpo de emails sin tocar código.
-        </p>
+      <div className="admin-page" style={{ width: '100%', maxWidth: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
+          <div>
+            <h1 style={{ margin: 0 }}>Email Templates</h1>
+            <p style={{ margin: '0.45rem 0 0', color: '#6b7280' }}>
+              Edita asunto y cuerpo de emails sin tocar código.
+            </p>
+          </div>
+        </div>
 
         {loading ? (
           <div className="admin-card">Cargando…</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '1rem' }}>
-            {/* LISTA */}
+          <div style={{ display: 'grid', gap: '1rem' }}>
             <div className="admin-card">
-              <h3 style={{ marginTop: 0 }}>Templates</h3>
-
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                {!isCreating ? (
-                  <button
-                    onClick={startCreate}
-                    className="pill-button"
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(260px, 1fr) auto',
+                  gap: '1rem',
+                  alignItems: 'end',
+                }}
+                className="admin-email-template-selector-row"
+              >
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontWeight: 700 }}>Templates</span>
+                  <select
+                    value={isCreating ? '' : (selectedId || '')}
+                    onChange={(e) => handleSelectTemplate(e.target.value)}
+                    disabled={items.length === 0 || isCreating}
+                    style={{
+                      width: '100%',
+                      minHeight: 42,
+                      padding: '0 0.75rem',
+                      borderRadius: 10,
+                      border: '1px solid #e5e7eb',
+                      background: '#fff',
+                    }}
                   >
+                    <option value="">
+                      {isCreating ? 'Creando nuevo template…' : 'Selecciona un template…'}
+                    </option>
+                    {items.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} · {t.key} · {messageTypeLabel(t.messageType)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {!isCreating ? (
+                  <button onClick={startCreate} className="pill-button">
                     + Nuevo template
                   </button>
                 ) : (
-                  <button
-                    onClick={cancelCreate}
-                    className="pill-button"
-                  >
+                  <button onClick={cancelCreate} className="pill-button-outline">
                     Cancelar
                   </button>
                 )}
               </div>
 
-              {items.length === 0 ? (
-                <p style={{ color: '#6b7280' }}>No hay templates.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {items.map((t) => {
-                    const active = t.id === selectedId && !isCreating;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => setSelectedId(t.id)}
-                        disabled={isCreating} // mientras creás, bloqueamos para evitar confusión
-                        style={{
-                          textAlign: 'left',
-                          padding: '0.75rem',
-                          borderRadius: '12px',
-                          border: active ? '2px solid #111827' : '1px solid #e5e7eb',
-                          background: active ? '#f3f4f6' : 'white',
-                          cursor: isCreating ? 'not-allowed' : 'pointer',
-                          opacity: isCreating ? 0.6 : 1,
-                        }}
-                      >
-                        <div style={{ fontWeight: 800 }}>{t.name}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>{t.key}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+              {items.length === 0 && !isCreating && (
+                <p style={{ margin: '0.75rem 0 0', color: '#6b7280' }}>No hay templates.</p>
               )}
             </div>
 
-            {/* EDITOR (UNO SOLO) */}
             <div className="admin-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{ marginTop: 0, marginBottom: 4 }}>{headerTitle}</h3>
                   <div style={{ fontSize: 12, color: '#6b7280' }}>{headerKey}</div>
@@ -238,11 +257,10 @@ export default function AdminEmailTemplates() {
                   className="pill-button"
                 >
                   {saving ? (isCreating ? 'Creando…' : 'Guardando…') : (isCreating ? 'Crear' : 'Guardar')}
-                </button> 
+                </button>
               </div>
 
               <div style={{ marginTop: '1rem', display: 'grid', gap: '0.75rem' }}>
-                {/* KEY: editable solo en creación */}
                 {isCreating ? (
                   <label style={{ display: 'grid', gap: 6 }}>
                     <span style={{ fontWeight: 700 }}>Key (único)</span>
@@ -270,6 +288,24 @@ export default function AdminEmailTemplates() {
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontWeight: 700 }}>Tipo de mensaje</span>
+                  <select
+                    value={form.messageType}
+                    onChange={(e) => setForm((p) => ({ ...p, messageType: e.target.value }))}
+                    style={{ padding: '0.65rem', borderRadius: 10, border: '1px solid #e5e7eb' }}
+                  >
+                    {MESSAGE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Los envíos masivos comerciales/sociales solo se enviarán a usuarios que hayan aceptado ese consentimiento.
+                  </span>
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
                   <span style={{ fontWeight: 700 }}>Asunto</span>
                   <input
                     value={form.subject}
@@ -290,6 +326,8 @@ export default function AdminEmailTemplates() {
                       borderRadius: 10,
                       border: '1px solid #e5e7eb',
                       fontFamily: 'inherit',
+                      width: '100%',
+                      boxSizing: 'border-box',
                     }}
                     placeholder="Hola {{adminName}}, ..."
                   />
@@ -306,6 +344,19 @@ export default function AdminEmailTemplates() {
           </div>
         )}
       </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .admin-email-template-selector-row {
+            grid-template-columns: 1fr !important;
+          }
+
+          .admin-email-template-selector-row .pill-button,
+          .admin-email-template-selector-row .pill-button-outline {
+            width: 100%;
+          }
+        }
+      `}</style>
     </Layout>
   );
 }

@@ -37,21 +37,26 @@ export default function AdminSettings() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [detailSaving, setDetailSaving] = useState(false);
   const [error, setError] = useState('');
+  const [detailMessage, setDetailMessage] = useState('');
 
   // filtros
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ACTIVE');
+  const [selectedId, setSelectedId] = useState('');
 
-  // modal create/edit
+  // modal create
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null); // setting | null
-
   const [formKey, setFormKey] = useState('');
   const [formValueType, setFormValueType] = useState('STRING');
   const [formValue, setFormValue] = useState('');
-  const [formStatus, setFormStatus] = useState('ACTIVE');
   const [formDescription, setFormDescription] = useState('');
+
+  // detalle seleccionado
+  const [detailValue, setDetailValue] = useState('');
+  const [detailStatus, setDetailStatus] = useState('ACTIVE');
+  const [detailDescription, setDetailDescription] = useState('');
 
   // historial
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -96,35 +101,53 @@ export default function AdminSettings() {
       .sort((a, b) => safeString(a.key).localeCompare(safeString(b.key)));
   }, [rows, query, statusFilter]);
 
+  const selected = useMemo(() => {
+    if (!filtered.length) return null;
+    return filtered.find((r) => String(r.id) === String(selectedId)) || filtered[0];
+  }, [filtered, selectedId]);
+
+  useEffect(() => {
+    if (!filtered.length) {
+      setSelectedId('');
+      return;
+    }
+
+    const exists = filtered.some((r) => String(r.id) === String(selectedId));
+    if (!selectedId || !exists) {
+      setSelectedId(String(filtered[0].id));
+    }
+  }, [filtered, selectedId]);
+
+  useEffect(() => {
+    if (!selected) {
+      setDetailValue('');
+      setDetailStatus('ACTIVE');
+      setDetailDescription('');
+      return;
+    }
+
+    setDetailValue(prettyValue(selected.value, selected.valueType));
+    setDetailStatus(selected.status || 'ACTIVE');
+    setDetailDescription(selected.description || '');
+    setDetailMessage('');
+  }, [selected?.id]);
+
   function openCreate() {
-    setEditing(null);
     setFormKey('');
     setFormValueType('STRING');
     setFormValue('');
-    setFormStatus('ACTIVE');
     setFormDescription('');
     setModalOpen(true);
     setError('');
-  }
-
-  function openEdit(row) {
-    setEditing(row);
-    setFormKey(row.key || '');
-    setFormValueType(row.valueType || 'STRING');
-    setFormValue(prettyValue(row.value, row.valueType));
-    setFormStatus(row.status || 'ACTIVE');
-    setFormDescription(row.description || '');
-    setModalOpen(true);
-    setError('');
+    setDetailMessage('');
   }
 
   function closeModal() {
     setModalOpen(false);
-    setEditing(null);
     setSaving(false);
   }
 
-  async function onSave() {
+  async function onCreate() {
     try {
       setSaving(true);
       setError('');
@@ -133,27 +156,15 @@ export default function AdminSettings() {
         key: formKey.trim(),
         valueType: formValueType,
         value: formValueType === 'JSON' ? formValue.trim() : safeString(formValue).trim(),
-        status: formStatus,
         description: formDescription?.trim() || null,
       };
 
-      // validaciones mínimas
-      if (!editing) {
-        if (!payload.key || !payload.valueType || payload.value === '') {
-          setError('Completa Key, Tipo y Valor.');
-          setSaving(false);
-          return;
-        }
-      } else {
-        // en edición permitimos cambiar value/status/description; key y type quedan bloqueados en UI
-        if (payload.value === '') {
-          setError('El valor no puede estar vacío.');
-          setSaving(false);
-          return;
-        }
+      if (!payload.key || !payload.valueType || payload.value === '') {
+        setError('Completa Key, Tipo y Valor.');
+        setSaving(false);
+        return;
       }
 
-      // valida JSON si aplica
       if (payload.valueType === 'JSON') {
         try {
           JSON.parse(payload.value);
@@ -164,27 +175,60 @@ export default function AdminSettings() {
         }
       }
 
-      if (!editing) {
-        await api.post('/settings', {
-          key: payload.key,
-          value: payload.value,
-          valueType: payload.valueType,
-          description: payload.description,
-        });
-      } else {
-        await api.put(`/settings/${editing.id}`, {
-          value: payload.value,
-          status: payload.status,
-          description: payload.description,
-        });
+      const res = await api.post('/settings', payload);
+      await load();
+
+      if (res?.data?.id) {
+        setSelectedId(String(res.data.id));
       }
 
-      await load();
       closeModal();
     } catch (e) {
       console.error(e);
       setError('No se pudo guardar el setting.');
       setSaving(false);
+    }
+  }
+
+  async function onSaveSelected() {
+    if (!selected) return;
+
+    try {
+      setDetailSaving(true);
+      setError('');
+      setDetailMessage('');
+
+      const payload = {
+        value: selected.valueType === 'JSON' ? detailValue.trim() : safeString(detailValue).trim(),
+        status: detailStatus,
+        description: detailDescription?.trim() || null,
+      };
+
+      if (payload.value === '') {
+        setError('El valor no puede estar vacío.');
+        setDetailSaving(false);
+        return;
+      }
+
+      if (selected.valueType === 'JSON') {
+        try {
+          JSON.parse(payload.value);
+        } catch {
+          setError('El JSON no es válido.');
+          setDetailSaving(false);
+          return;
+        }
+      }
+
+      await api.put(`/settings/${selected.id}`, payload);
+      await load();
+      setSelectedId(String(selected.id));
+      setDetailMessage('Regla actualizada correctamente.');
+    } catch (e) {
+      console.error(e);
+      setError('No se pudo guardar el setting.');
+    } finally {
+      setDetailSaving(false);
     }
   }
 
@@ -224,16 +268,13 @@ export default function AdminSettings() {
               Configuración dinámica del sistema (horarios, validaciones y límites).
             </div>
           </div>
-
-          <button className="pill-button" type="button" onClick={openCreate} title="Crear setting">
-            + Crear Regla
-          </button>
         </div>
 
         {error ? <div className="error settings-error">{error}</div> : null}
+        {detailMessage ? <div className="form-success settings-error">{detailMessage}</div> : null}
 
-        <div className="admin-card settings-card">
-          <div className="settings-toolbar">
+        <div className="admin-card settings-card settings-selector-card">
+          <div className="settings-toolbar settings-toolbar--combo">
             <div className="settings-search">
               <div className="settings-label">Buscar</div>
               <input
@@ -258,70 +299,126 @@ export default function AdminSettings() {
                 ))}
               </select>
             </div>
+
+            <div className="settings-combo">
+              <div className="settings-label">Regla</div>
+              <select
+                className="settings-input"
+                value={selected?.id || ''}
+                onChange={(e) => setSelectedId(e.target.value)}
+                disabled={loading || filtered.length === 0}
+              >
+                {filtered.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.key}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="settings-create-action">
+              <button className="pill-button" type="button" onClick={openCreate}>
+                + Crear Regla
+              </button>
+            </div>
           </div>
 
+          <div className="settings-results-count">
+            {loading ? 'Cargando reglas...' : `${filtered.length} regla${filtered.length === 1 ? '' : 's'} encontrada${filtered.length === 1 ? '' : 's'}`}
+          </div>
+        </div>
+
+        <div className="admin-card settings-card settings-detail-card">
           {loading ? (
             <div className="settings-loading">Cargando settings...</div>
-          ) : filtered.length === 0 ? (
+          ) : !selected ? (
             <div className="settings-empty">No hay reglas configuradas todavía.</div>
           ) : (
-            <div className="settings-table-wrap">
-              <table className="admin-table settings-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '42%' }}>Key</th>
-                    <th style={{ width: '14%' }}>Tipo</th>
-                    <th style={{ width: '24%' }}>Valor</th>
-                    <th style={{ width: '10%' }}>Estado</th>
-                    <th style={{ width: '10%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => (
-                    <tr key={r.id}>
-                      <td className="settings-key">{r.key}</td>
-                      <td>{r.valueType}</td>
-                      <td className="settings-value">{safeString(r.value)}</td>
-                      <td>
-                        {r.status === 'ACTIVE' ? (
-                          <span className="badge green">Activo</span>
-                        ) : (
-                          <span className="badge">Inactivo</span>
-                        )}
-                      </td>
-                      <td className="settings-actions">
-                        <button
-                          type="button"
-                          className="pill-button-outline small"
-                          onClick={() => openHistory(r)}
-                        >
-                          Historial
-                        </button>
-                        <button
-                          type="button"
-                          className="pill-button-outline small"
-                          onClick={() => openEdit(r)}
-                        >
-                          Editar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="settings-detail-head">
+                <div>
+                  <h2 class="responsive-title">{selected.key}</h2>
+                  <p>
+                    Tipo: <strong>{selected.valueType}</strong>
+                  </p>
+                </div>
+
+                <div className="settings-detail-actions">
+                  <button
+                    type="button"
+                    className="pill-button-outline"
+                    onClick={() => openHistory(selected)}
+                  >
+                    Historial
+                  </button>
+                  <button
+                    type="button"
+                    className="pill-button"
+                    onClick={onSaveSelected}
+                    disabled={detailSaving}
+                  >
+                    {detailSaving ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-modal-grid settings-detail-grid">
+                <div className="settings-field">
+                  <label>Key</label>
+                  <input className="settings-input" value={selected.key || ''} disabled />
+                </div>
+
+                <div className="settings-field">
+                  <label>Tipo</label>
+                  <input className="settings-input" value={selected.valueType || ''} disabled />
+                </div>
+
+                <div className="settings-field">
+                  <label>Estado</label>
+                  <select
+                    className="settings-input"
+                    value={detailStatus}
+                    onChange={(e) => setDetailStatus(e.target.value)}
+                    disabled={detailSaving}
+                  >
+                    <option value="ACTIVE">ACTIVO</option>
+                    <option value="INACTIVE">INACTIVO</option>
+                  </select>
+                </div>
+
+                <div className="settings-field">
+                  <label>Descripción</label>
+                  <input
+                    className="settings-input"
+                    value={detailDescription}
+                    onChange={(e) => setDetailDescription(e.target.value)}
+                    disabled={detailSaving}
+                    placeholder="Ej: Hora de apertura del coworking (24h)"
+                  />
+                </div>
+
+                <div className="settings-field settings-field-full">
+                  <label>Valor</label>
+                  <textarea
+                    className="settings-textarea settings-detail-value"
+                    value={detailValue}
+                    onChange={(e) => setDetailValue(e.target.value)}
+                    rows={selected.valueType === 'JSON' ? 10 : 5}
+                    disabled={detailSaving}
+                  />
+                </div>
+              </div>
+            </>
           )}
         </div>
 
-        {/* ===== Modal Create/Edit ===== */}
+        {/* ===== Modal Create ===== */}
         {modalOpen && (
           <div className="settings-modal-overlay" onClick={closeModal}>
             <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
               <div className="settings-modal-header">
                 <div>
-                  <div className="settings-modal-title">
-                    {editing ? 'Editar Regla' : 'Nueva Regla'}
-                  </div>
+                  <div className="settings-modal-title">Nueva Regla</div>
                   <div className="settings-modal-subtitle">
                     Cambios impactan reglas en tiempo real (cache ~60s).
                   </div>
@@ -335,12 +432,12 @@ export default function AdminSettings() {
               <div className="settings-modal-body">
                 <div className="settings-modal-grid">
                   <div className="settings-field">
-                    <label>Key {editing ? '(no editable)' : '*'}</label>
+                    <label>Key *</label>
                     <input
                       className="settings-input"
                       value={formKey}
                       onChange={(e) => setFormKey(e.target.value)}
-                      disabled={!!editing || saving}
+                      disabled={saving}
                       placeholder="OFFICE_OPEN_HOUR"
                     />
                   </div>
@@ -351,7 +448,7 @@ export default function AdminSettings() {
                       className="settings-input"
                       value={formValueType}
                       onChange={(e) => setFormValueType(e.target.value)}
-                      disabled={!!editing || saving}
+                      disabled={saving}
                     >
                       {VALUE_TYPES.map((t) => (
                         <option key={t.value} value={t.value}>
@@ -373,20 +470,7 @@ export default function AdminSettings() {
                     />
                   </div>
 
-                  <div className="settings-field">
-                    <label>Estado</label>
-                    <select
-                      className="settings-input"
-                      value={formStatus}
-                      onChange={(e) => setFormStatus(e.target.value)}
-                      disabled={saving}
-                    >
-                      <option value="ACTIVE">ACTIVO</option>
-                      <option value="INACTIVE">INACTIVO</option>
-                    </select>
-                  </div>
-
-                  <div className="settings-field">
+                  <div className="settings-field settings-field-full">
                     <label>Descripción</label>
                     <input
                       className="settings-input"
@@ -410,7 +494,7 @@ export default function AdminSettings() {
                 >
                   Cancelar
                 </button>
-                <button className="pill-button" type="button" onClick={onSave} disabled={saving}>
+                <button className="pill-button" type="button" onClick={onCreate} disabled={saving}>
                   {saving ? 'Guardando…' : 'Guardar'}
                 </button>
               </div>

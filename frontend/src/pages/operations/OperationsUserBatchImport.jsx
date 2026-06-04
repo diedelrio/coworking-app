@@ -116,7 +116,7 @@ export default function OperationsUserBatchImport() {
   };
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
+    <div className="admin-card" style={{ border: '1px solid #e5e7eb', borderRadius: '1rem', padding: '1rem' }}>
       <h2 style={{ marginTop: 0 }}>Alta masiva de usuarios</h2>
       <p style={{ marginTop: 6, color: '#6b7280' }}>
         Importá CSV/TXT, generá preview, creá usuarios y enviá activación.
@@ -124,7 +124,7 @@ export default function OperationsUserBatchImport() {
 
       <AlertBanner error={error} message={message} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px auto auto', gap: '0.75rem', alignItems: 'end' }}>
+      <div className="operations-user-batch-toolbar">
         <div>
           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Archivo</label>
           <input

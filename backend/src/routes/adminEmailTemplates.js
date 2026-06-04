@@ -4,6 +4,13 @@ const { authRequired, requireAdmin } = require('../middlewares/auth');
 
 const router = express.Router();
 
+const VALID_MESSAGE_TYPES = ['SYSTEM', 'COMMERCIAL_COMMUNICATIONS', 'SOCIAL_COMMUNICATIONS'];
+
+function normalizeMessageType(value) {
+  const type = String(value || 'SYSTEM').toUpperCase();
+  return VALID_MESSAGE_TYPES.includes(type) ? type : 'SYSTEM';
+}
+
 /**
  * GET /api/admin/email-templates
  * Lista templates (para tabla).
@@ -26,7 +33,7 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
  */
 router.post('/', authRequired, requireAdmin, async (req, res) => {
   try {
-    const { key, name, subject, body } = req.body || {};
+    const { key, name, subject, body, messageType } = req.body || {};
 
     if (!key?.trim() || !name?.trim() || !subject?.trim() || !body?.trim()) {
       return res.status(400).json({ message: 'key, name, subject y body son obligatorios' });
@@ -38,6 +45,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
         name: name.trim(),
         subject: subject.trim(),
         body: body.trim(),
+        messageType: normalizeMessageType(messageType),
       },
     });
 
@@ -83,7 +91,7 @@ router.get('/:id', authRequired, requireAdmin, async (req, res) => {
 router.put('/:id', authRequired, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, subject, body } = req.body || {};
+    const { name, subject, body, messageType } = req.body || {};
 
     if (!name?.trim() || !subject?.trim() || !body?.trim()) {
       return res.status(400).json({ message: 'name, subject y body son obligatorios' });
@@ -95,6 +103,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
         name: name.trim(),
         subject: subject.trim(),
         body: body.trim(),
+        messageType: normalizeMessageType(messageType),
       },
     });
 

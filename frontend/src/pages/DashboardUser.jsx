@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FaPlus, FaTimes, FaEdit } from 'react-icons/fa';
 import api from '../api/axiosClient';
-import Header from '../components/Header';
+import ClientLayout from '../portals/client/layout/ClientLayout';
 import { getCurrentUser } from '../utils/auth';
 
-function pad2(n) {
-  return String(n).padStart(2, '0');
-}
+/* ── helpers ── */
+function pad2(n) { return String(n).padStart(2, '0'); }
 
 function toHHMM(value) {
   if (!value) return '';
@@ -23,82 +23,56 @@ function toHHMM(value) {
 function formatDateES(dateLike) {
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return String(dateLike || '');
-  return new Intl.DateTimeFormat('es-ES', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(d);
-}
-
-function formatEUR(value) {
-  const num = Number(value || 0);
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+  return new Intl.DateTimeFormat('es-ES', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(d);
 }
 
 function statusLabel(status) {
-  switch (status) {
-    case 'ACTIVE':
-      return 'Activa';
-    case 'PENDING':
-      return 'Pendiente';
-    case 'CANCELLED':
-      return 'Cancelada';
-    case 'REJECTED':
-      return 'Rechazada';
-    default:
-      return status || '—';
-  }
+  const map = { ACTIVE: 'Activa', PENDING: 'Pendiente', CANCELLED: 'Cancelada', REJECTED: 'Rechazada' };
+  return map[status] || status || '—';
+}
+
+function statusClass(status) {
+  const map = { ACTIVE: 'active', PENDING: 'pending', CANCELLED: 'cancelled', REJECTED: 'rejected' };
+  return `sn-status sn-status--${map[status] || 'cancelled'}`;
 }
 
 function isUpcoming(res) {
-  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
-  if (!statusOk) return false;
-
+  if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
   const d = new Date(res?.date);
   if (Number.isNaN(d.getTime())) return false;
-
   const today = new Date();
   const today0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const date0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
   return date0 >= today0;
 }
 
-
-
 function isWithinNextDays(res, maxDays) {
-  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
-  if (!statusOk) return false;
-
+  if (!isUpcoming(res)) return false;
   const d = new Date(res?.date);
-  if (Number.isNaN(d.getTime())) return false;
-
   const today = new Date();
   const today0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const date0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
   const end = new Date(today0);
-  // maxDays=7 => incluye hoy + 6
   end.setDate(end.getDate() + Math.max(0, Number(maxDays || 0) - 1));
-
   return date0 >= today0 && date0 <= end;
 }
-function isToday(res) {
-  const statusOk = res?.status === 'ACTIVE' || res?.status === 'PENDING';
-  if (!statusOk) return false;
 
+function isToday(res) {
+  if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
   const d = new Date(res?.date);
   if (Number.isNaN(d.getTime())) return false;
-
   const today = new Date();
-  return (
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  );
+  return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
 }
 
+function canEdit(res) {
+  if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
+  const start = new Date(res?.startTime);
+  if (!Number.isNaN(start.getTime())) return start > new Date();
+  return isUpcoming(res);
+}
+
+/* ── component ── */
 export default function DashboardUser() {
   const user = getCurrentUser();
   const navigate = useNavigate();
@@ -106,11 +80,11 @@ export default function DashboardUser() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
   const [maxDaysUpcoming, setMaxDaysUpcoming] = useState(7);
-
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailRes, setDetailRes] = useState(null);
+
+  const firstName = useMemo(() => user?.name?.split(' ')[0] || 'ahí', [user]);
 
   async function fetchReservations() {
     const res = await api.get('/reservations/my');
@@ -126,302 +100,203 @@ export default function DashboardUser() {
 
   useEffect(() => {
     let mounted = true;
-
     async function load() {
       try {
         setLoading(true);
         setError('');
         await Promise.all([fetchReservations(), fetchPublicSettings()]);
       } catch (err) {
-        console.error(err);
-        if (!mounted) return;
-        setError(err?.response?.data?.message || 'Error al cargar tus reservas');
+        if (mounted) setError(err?.response?.data?.message || 'Error al cargar tus reservas');
       } finally {
         if (mounted) setLoading(false);
       }
     }
-
     load();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const totalCount = reservations.length;
 
-  const upcoming = useMemo(() => {
-    return reservations
+  const upcoming = useMemo(() =>
+    reservations
       .filter(isUpcoming)
       .filter((r) => isWithinNextDays(r, maxDaysUpcoming))
       .sort((a, b) => {
-        const da = new Date(a.date);
-        const db = new Date(b.date);
-        const ta = toHHMM(a.startTime);
-        const tb = toHHMM(b.startTime);
-        if (da.getTime() !== db.getTime()) return da.getTime() - db.getTime();
-        return ta.localeCompare(tb);
-      });
-  }, [reservations, maxDaysUpcoming]);
+        const da = new Date(a.date), db = new Date(b.date);
+        if (da.getTime() !== db.getTime()) return da - db;
+        return toHHMM(a.startTime).localeCompare(toHHMM(b.startTime));
+      }),
+    [reservations, maxDaysUpcoming]
+  );
 
   const todayCount = useMemo(() => reservations.filter(isToday).length, [reservations]);
-  const upcomingCount = upcoming.length;
-  const upcomingTop = useMemo(() => upcoming, [upcoming]);
-
-  function canEdit(res) {
-    if (!(res?.status === 'ACTIVE' || res?.status === 'PENDING')) return false;
-
-    const start = new Date(res?.startTime);
-    if (!Number.isNaN(start.getTime())) return start > new Date();
-
-    return isUpcoming(res);
-  }
 
   async function cancelReservation(id) {
     if (!window.confirm('¿Querés cancelar esta reserva?')) return;
-
     try {
       await api.patch(`/reservations/${id}/cancel`);
       await fetchReservations();
     } catch (e) {
-      const status = e?.response?.status;
       const data = e?.response?.data;
-      const msg =
-        data?.message ||
-        data?.error ||
-        (typeof data === 'string' ? data : null) ||
-        e?.message ||
-        `No se pudo cancelar (HTTP ${status || '?'})`;
-      alert(msg);
+      alert(data?.message || data?.error || e?.message || 'No se pudo cancelar');
     }
   }
 
   if (loading) {
     return (
-      <div>
-        <Header user={user} />
-        <div style={{ padding: '2rem 1rem', display: 'flex', justifyContent: 'center' }}>
-          Cargando tu panel...
+      <ClientLayout user={user}>
+        <div className="client-page" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
+          <div style={{ color: 'var(--sn-muted)', fontWeight: 600 }}>Cargando tu panel…</div>
         </div>
-      </div>
+      </ClientLayout>
     );
   }
 
   return (
-    <div>
-      <Header user={user} />
+    <ClientLayout user={user}>
+      <div className="client-page">
 
-      <div className="page-container dashboard-page">
-        <div className="dashboard-container">
-          {/* Top header row (mock) */}
-          <div className="dashboard-user-top">
-            <div className="dashboard-header">
-              <h1>Bienvenido</h1>
-              <p>Gestioná tus espacios de trabajo, reservas y próximos turnos.</p>
-              {error ? <div className="form-error">{error}</div> : null}
-            </div>
+        {/* Hero */}
+        <div className="sn-dashboard-hero">
+          <div>
+            <span className="sn-eyebrow">Tu espacio de trabajo</span>
+            <h1 className="sn-page-title">Hola, {firstName}</h1>
+            <p className="sn-page-subtitle">
+              Gestioná tus reservas, revisá tus próximos turnos y creá nuevos espacios de trabajo en segundos.
+            </p>
+            {error && <div className="sn-alert sn-alert--error" style={{ marginTop: '0.85rem' }}>{error}</div>}
+          </div>
+          <button className="sn-btn sn-btn--primary sn-btn--lg" onClick={() => navigate('/user/reservar')}>
+            <FaPlus /> Nueva reserva
+          </button>
+        </div>
 
-            <button className="pill-button" onClick={() => navigate('/user/reservar')}>
-              Nueva reserva
-            </button>
+        {/* KPI grid */}
+        <div className="sn-kpi-grid" style={{ marginBottom: '1.25rem' }}>
+          <div className="sn-card sn-kpi-card sn-kpi-card--slate">
+            <div className="sn-kpi-label">Reservas totales</div>
+            <div className="sn-kpi-value">{totalCount}</div>
+            <div className="sn-kpi-help">Historial completo incluyendo canceladas.</div>
           </div>
 
-          {/* KPIs (mock) */}
-          <div className="dashboard-kpis">
-            <div className="user-card card-accent card-accent--grey">
-              <div className="kpi-title">Reservas totales</div>
-              <div className="kpi-value">{totalCount}</div>
-              <div className="kpi-sub">Incluye canceladas y rechazadas.</div>
-            </div>
-
-            <div className="user-card card-accent card-accent--blue">
-              <div className="kpi-title">Próximas</div>
-              <div className="kpi-value">{upcomingCount}</div>
-              <div className="kpi-sub">Activas o pendientes desde hoy.</div>
-            </div>
-
-            <div className="user-card card-accent card-accent--green">
-              <div className="kpi-title">Hoy</div>
-              <div className="kpi-value">{todayCount}</div>
-              <div className="kpi-sub">Reservas activas o pendientes para hoy.</div>
-            </div>
+          <div className="sn-card sn-kpi-card sn-kpi-card--green">
+            <div className="sn-kpi-label">Próximas</div>
+            <div className="sn-kpi-value">{upcoming.length}</div>
+            <div className="sn-kpi-help">Activas o pendientes en los próximos {maxDaysUpcoming} días.</div>
           </div>
 
-          {/* Próximas reservas (mock) */}
-          <div className="user-card">
-            <div className="dashboard-section-head">
+          <div className="sn-card sn-kpi-card sn-kpi-card--amber">
+            <div className="sn-kpi-label">Hoy</div>
+            <div className="sn-kpi-value">{todayCount}</div>
+            <div className="sn-kpi-help">Reservas activas o pendientes para hoy.</div>
+          </div>
+        </div>
+
+        {/* Upcoming reservations */}
+        <div className="sn-card">
+          <div className="sn-section">
+            <div className="sn-section-head">
               <div>
-                <div className="dashboard-section-title">Próximas reservas</div>
-                <div className="dashboard-section-sub">
-                  Accedé rápido a tus próximas reservas y gestioná cambios.
-                </div>
-                <div className="dashboard-section-sub" style={{ marginTop: 4, opacity: 0.8 }}>
-                  Se muestran las reservas programadas para los próximos <strong>{maxDaysUpcoming}</strong> días.
-                </div>
+                <h2 className="sn-section-title">Próximas reservas</h2>
+                <p className="sn-section-subtitle">
+                  Tus próximas <strong>{maxDaysUpcoming}</strong> días. Podés gestionar cambios desde aquí.
+                </p>
               </div>
-
-              <button className="dashboard-link" onClick={() => navigate('/user/reservas')}>
+              <button className="sn-btn sn-btn--ghost" onClick={() => navigate('/user/reservas')}>
                 Ver todas →
               </button>
             </div>
 
-            {upcomingTop.length === 0 ? (
-              <div className="dashboard-empty">
-                <div style={{ fontWeight: 900 }}>Todavía no tenés reservas próximas</div>
-                <div style={{ marginTop: 6, opacity: 0.75 }}>
-                  Creá una nueva reserva para verlas aquí.
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <button className="pill-button" onClick={() => navigate('/user/reservar')}>
-                    Nueva reserva
-                  </button>
-                </div>
+            {upcoming.length === 0 ? (
+              <div className="sn-empty">
+                <strong>Sin reservas próximas</strong>
+                <p>Creá una nueva reserva para verla aquí y gestionarla desde tu panel.</p>
+                <button className="sn-btn sn-btn--primary" onClick={() => navigate('/user/reservar')}>
+                  <FaPlus /> Nueva reserva
+                </button>
               </div>
             ) : (
-              <div className="upcoming-list">
-                {upcomingTop.map((r) => (
-                  <div
-                    key={r.id}
-                    className={`user-card upcoming-card card-accent ${isToday(r) ? 'card-accent--green' : 'card-accent--blue'}`}
-                    style={{ padding: 14 }}
-                  >
-                    <div className="upcoming-card-top">
-                      <div className="upcoming-info">
-                        <div className="upcoming-title" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          <span>{r?.space?.name || `Espacio #${r.spaceId}`}</span>
-                          <span className={`status-pill status-${r.status}`}>{statusLabel(r.status)}</span>
-                        </div>
-
-                        <div className="upcoming-meta">
-                          <span>{formatDateES(r.date)}</span>
-                          <span>
-                            {toHHMM(r.startTime)}–{toHHMM(r.endTime)}
-                          </span>
-                          <span>👥 {r.attendees ?? 1}</span>
-                          {/*{r.totalAmount != null ? <span>💶 {formatEUR(r.totalAmount)}</span> : null} --elimino el precio por ahora */}
-                        </div>
+              <div className="sn-reservation-list">
+                {upcoming.map((r) => (
+                  <article key={r.id} className="sn-res-card">
+                    <div>
+                      <div className="sn-res-title">
+                        <span>{r?.space?.name || `Espacio #${r.spaceId}`}</span>
+                        <span className={statusClass(r.status)}>{statusLabel(r.status)}</span>
                       </div>
-
-                      <div className="upcoming-actions upcoming-actions--inline">
+                      <div className="sn-res-meta">
+                        <span className="sn-res-meta-chip">📅 {formatDateES(r.date)}</span>
+                        <span className="sn-res-meta-chip">🕐 {toHHMM(r.startTime)}–{toHHMM(r.endTime)}</span>
+                        <span className="sn-res-meta-chip">👥 {r.attendees ?? 1}</span>
+                      </div>
+                    </div>
+                    <div className="sn-res-actions">
                       <button
-                        className="pill-button-outline"
-                        type="button"
-                        onClick={() => {
-                          setDetailRes(r);
-                          setDetailOpen(true);
-                        }}
+                        className="sn-btn sn-btn--outline sn-btn--sm"
+                        onClick={() => { setDetailRes(r); setDetailOpen(true); }}
                       >
-                        Ver detalles
+                        Ver
                       </button>
-
                       <button
-                        className="pill-button-outline"
-                        type="button"
+                        className="sn-btn sn-btn--outline sn-btn--sm"
                         disabled={!canEdit(r)}
-                        // Desde el dashboard, el CTA "Editar" debe abrir directamente en modo edición
                         onClick={() => navigate(`/user/reservar?edit=${r.id}&mode=edit`)}
                       >
-                        Editar
+                        <FaEdit />
                       </button>
-
                       <button
-                        className="pill-button-red"
-                        type="button"
+                        className="sn-btn sn-btn--danger sn-btn--sm"
                         disabled={!canEdit(r)}
                         onClick={() => cancelReservation(r.id)}
                       >
-                        Cancelar
+                        <FaTimes />
                       </button>
                     </div>
-                    </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Modal Detalle (si ya tenés modal-overlay/modal-card en CSS, queda ok) */}
-        {detailOpen && detailRes ? (
-          <div className="modal-overlay" onClick={() => setDetailOpen(false)}>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        {/* Detail modal */}
+        {detailOpen && detailRes && (
+          <div className="sn-modal-overlay" onClick={() => setDetailOpen(false)}>
+            <div className="sn-modal" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: '0.9rem' }}>
                 <div>
-                  <div style={{ fontWeight: 900, fontSize: 18 }}>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--sn-ink)' }}>
                     {detailRes?.space?.name || `Reserva #${detailRes.id}`}
                   </div>
-                  <div style={{ marginTop: 6, opacity: 0.75 }}>
-                    {formatDateES(detailRes.date)} • {toHHMM(detailRes.startTime)}–{toHHMM(detailRes.endTime)}
+                  <div style={{ marginTop: '0.25rem', fontSize: '0.84rem', color: 'var(--sn-muted)' }}>
+                    {formatDateES(detailRes.date)} · {toHHMM(detailRes.startTime)}–{toHHMM(detailRes.endTime)}
                   </div>
                 </div>
-
-                <span className={`status-pill status-${detailRes.status}`}>
-                  {statusLabel(detailRes.status)}
-                </span>
+                <span className={statusClass(detailRes.status)}>{statusLabel(detailRes.status)}</span>
               </div>
 
-              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-                {detailRes.seriesId ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Recurrencia:{' '}
-                    <b>
-                      {String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'DAILY'
-                        ? 'Diaria'
-                        : String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'MONTHLY'
-                          ? 'Mismo día todos los meses'
-                          : 'Mismo día todas las semanas'}
-                    </b>
-                    {detailRes.recurrenceCount ? (
-                      <span> • Fin: <b>{detailRes.recurrenceCount} ocurrencias</b></span>
-                    ) : detailRes.recurrenceEndDate ? (
-                      <span> • Fin: <b>{String(detailRes.recurrenceEndDate).slice(0, 10)}</b></span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div style={{ opacity: 0.85 }}>
-                  Participantes: <b>{detailRes.attendees ?? 1}</b>
-                </div>
-
-                {detailRes.durationMinutes != null ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Duración: <b>{detailRes.durationMinutes} min</b>
-                  </div>
-                ) : null}
-
-                {/*{detailRes.hourlyRateSnapshot != null ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Precio aplicado: <b>{formatEUR(detailRes.hourlyRateSnapshot)}</b>
-                  </div>
-                ) : null}
-
-                {detailRes.totalAmount != null ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Total: <b>{formatEUR(detailRes.totalAmount)}</b>
-                  </div>
-                ) : null} --elimino el precio por ahora */}
-
-                {detailRes.purpose ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Propósito: <b>{detailRes.purpose}</b>
-                  </div>
-                ) : null}
-
-                {detailRes.notes ? (
-                  <div style={{ opacity: 0.85 }}>
-                    Notas: <b>{detailRes.notes}</b>
-                  </div>
-                ) : null}
+              <div style={{ display: 'grid', gap: '0.6rem', fontSize: '0.88rem', color: 'var(--sn-ink-2)' }}>
+                {detailRes.seriesId && (
+                  <div>Recurrencia: <strong>
+                    {String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'DAILY' ? 'Diaria'
+                      : String(detailRes.recurrencePattern || 'WEEKLY').toUpperCase() === 'MONTHLY' ? 'Mensual'
+                      : 'Semanal'}
+                  </strong></div>
+                )}
+                <div>Participantes: <strong>{detailRes.attendees ?? 1}</strong></div>
+                {detailRes.durationMinutes != null && <div>Duración: <strong>{detailRes.durationMinutes} min</strong></div>}
+                {detailRes.purpose && <div>Propósito: <strong>{detailRes.purpose}</strong></div>}
+                {detailRes.notes && <div>Notas: <strong>{detailRes.notes}</strong></div>}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                <button className="pill-button-outline" onClick={() => setDetailOpen(false)}>
-                  Cerrar
-                </button>
+              <div className="sn-modal-footer">
+                <button className="sn-btn sn-btn--outline" onClick={() => setDetailOpen(false)}>Cerrar</button>
               </div>
             </div>
           </div>
-        ) : null}
+        )}
+
       </div>
-    </div>
+    </ClientLayout>
   );
 }

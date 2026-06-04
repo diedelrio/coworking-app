@@ -13,12 +13,14 @@ const settingsRouter = require('./routes/settings');
 const adminEmailTemplates = require('./routes/adminEmailTemplates');
 const adminOperations = require('./routes/adminOperations');
 const adminTags = require('./routes/adminTags');
+const consentsRoutes = require('./routes/consents');
+const popupMessagesRoutes = require('./routes/popupMessages');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '12mb' }));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -34,6 +36,8 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/admin/email-templates', adminEmailTemplates);
 app.use('/api/admin/operations', adminOperations);
 app.use('/api/admin/tags', adminTags);
+app.use('/api', consentsRoutes);
+app.use('/api', popupMessagesRoutes);
 
 // ✅ Public routes (login/register screens)
 app.use('/api/public', publicRoutes);
