@@ -22,6 +22,7 @@ import UserProfile from './pages/UserProfile';
 import AdminUserProfile from './pages/AdminUserProfile';
 import AdminUsersReport from './pages/reports/AdminUsersReport';
 import AdminReservationsReport from './pages/reports/AdminReservationsReport';
+import AdminConsents from './pages/AdminConsents';
 
 function App() {
   return (
@@ -96,6 +97,14 @@ function App() {
         element={
           <ProtectedRoute roles={['ADMIN']}>
             <AdminOperations />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/consentimientos"
+        element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminConsents />
           </ProtectedRoute>
         }
       />

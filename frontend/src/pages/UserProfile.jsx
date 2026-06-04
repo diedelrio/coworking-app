@@ -1,12 +1,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosClient';
+import { acceptConsent, consentDocumentUrl, getActiveConsents } from '../api/consents';
 import ClientLayout from '../portals/client/layout/ClientLayout';
 
 function getInitials(name, lastName) {
   const a = (name || '').trim()[0] || '';
   const b = (lastName || '').trim()[0] || '';
   return (a + b).toUpperCase();
+}
+
+function formatConsentDate(value) {
+  if (!value) return 'No disponible todavía';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No disponible todavía';
+  return date.toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getConsentStatus(user, acceptedKeys = [], dateKeys = []) {
+  const accepted = acceptedKeys.some((key) => user?.[key] === true);
+  const acceptedAt = dateKeys.map((key) => user?.[key]).find(Boolean);
+
+  return {
+    accepted: accepted || Boolean(acceptedAt),
+    acceptedAt,
+  };
 }
 
 export default function UserProfile() {
@@ -18,6 +42,8 @@ export default function UserProfile() {
   const [notice, setNotice]     = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [user, setUser]         = useState(null);
+  const [activeConsents, setActiveConsents] = useState([]);
+  const [savingConsentId, setSavingConsentId] = useState(null);
 
   const [maternalLastName, setMaternalLastName] = useState('');
   const [phone, setPhone]                       = useState('');
@@ -25,14 +51,36 @@ export default function UserProfile() {
   const initials  = useMemo(() => (user ? getInitials(user.name, user.lastName) : ''), [user]);
   const roleLabel = useMemo(() => (user?.role === 'ADMIN' ? 'Administrador' : 'Cliente'), [user]);
 
+  const termsConsent = useMemo(() => getConsentStatus(
+    user,
+    ['termsAccepted', 'acceptedTerms', 'termsAndConditionsAccepted'],
+    ['termsAcceptedAt', 'acceptedTermsAt', 'termsAndConditionsAcceptedAt']
+  ), [user]);
+
+  const commercialConsent = useMemo(() => getConsentStatus(
+    user,
+    ['commercialConsentAccepted', 'marketingConsentAccepted', 'acceptsCommercialNotifications'],
+    ['commercialConsentAcceptedAt', 'marketingConsentAcceptedAt', 'commercialNotificationsAcceptedAt']
+  ), [user]);
+
+  const socialConsent = useMemo(() => getConsentStatus(
+    user,
+    ['socialConsentAccepted', 'socialNotificationsAccepted', 'acceptsSocialNotifications'],
+    ['socialConsentAcceptedAt', 'socialNotificationsAcceptedAt']
+  ), [user]);
+
   useEffect(() => {
     let mounted = true;
     async function load() {
       setLoading(true); setError(''); setNotice('');
       try {
-        const { data } = await api.get('/users/me');
+        const [{ data }, consentsResponse] = await Promise.all([
+          api.get('/users/me'),
+          getActiveConsents().catch(() => ({ data: [] })),
+        ]);
         if (!mounted) return;
         setUser(data);
+        setActiveConsents(Array.isArray(consentsResponse.data) ? consentsResponse.data : []);
         setMaternalLastName(data.maternalLastName || '');
         setPhone(data.phone || '');
       } catch (e) {
@@ -70,6 +118,26 @@ export default function UserProfile() {
       setError(e?.response?.data?.message || 'No se pudo actualizar tu perfil.');
     } finally {
       setSaving(false);
+    }
+  }
+
+
+  async function onAcceptConsent(consent) {
+    if (!consent?.id) return;
+    const ok = window.confirm(`Confirmás la aceptación de: ${consent.title} (${consent.version})`);
+    if (!ok) return;
+    setSavingConsentId(consent.id);
+    setError('');
+    setNotice('');
+    try {
+      await acceptConsent(consent.id, true);
+      const { data } = await getActiveConsents();
+      setActiveConsents(Array.isArray(data) ? data : []);
+      setNotice('Aceptación registrada correctamente.');
+    } catch (e) {
+      setError(e?.response?.data?.message || 'No se pudo registrar la aceptación.');
+    } finally {
+      setSavingConsentId(null);
     }
   }
 
@@ -181,6 +249,70 @@ export default function UserProfile() {
                     <button className="sn-btn sn-btn--primary" onClick={onSave} disabled={saving}>
                       {saving ? 'Actualizando…' : 'Guardar cambios'}
                     </button>
+                  </div>
+                )}
+              </div>
+
+
+              <div className="sn-card sn-profile-right sn-consent-card">
+                <div className="sn-profile-card-head">
+                  <div>
+                    <div className="sn-profile-card-title">Consentimientos</div>
+                    <div className="sn-profile-card-sub">Aceptá términos, políticas y permisos de comunicación vigentes.</div>
+                  </div>
+                </div>
+
+                {activeConsents.length === 0 ? (
+                  <div className="sn-empty">
+                    <strong>No hay consentimientos activos</strong>
+                    <p>Cuando el coworking publique términos o permisos, aparecerán aquí.</p>
+                  </div>
+                ) : (
+                  <div className="sn-consent-list">
+                    {activeConsents.map((consent) => {
+                      const accepted = consent.userAcceptance?.accepted === true
+                        && consent.userAcceptance?.consentVersion === consent.version;
+                      return (
+                        <div className="sn-consent-item" key={consent.id}>
+                          <div className="sn-consent-item-head">
+                            <div>
+                              <h4>{consent.title}</h4>
+                              <p>{consent.description || `Versión ${consent.version}`}</p>
+                            </div>
+                            <span className={`sn-user-consent-badge ${accepted ? 'is-accepted' : 'is-pending'}`}>
+                              {accepted ? 'Aceptado' : (consent.required ? 'Obligatorio' : 'Opcional')}
+                            </span>
+                          </div>
+
+                          {consent.showDocumentsToUser !== false && consent.documents?.length > 0 && (
+                            <div className="sn-consent-docs">
+                              {consent.documents.filter((doc) => doc.active).map((doc) => (
+                                <a key={doc.id} href={consentDocumentUrl(doc.id)} target="_blank" rel="noreferrer">
+                                  Descargar {doc.title || doc.fileName}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="sn-consent-actions">
+                            <label className="sn-consent-checkbox">
+                              <input type="checkbox" checked={accepted} readOnly />
+                              <span>{accepted ? `Aceptado el ${formatConsentDate(consent.userAcceptance?.acceptedAt)}` : 'Declaro que leí y acepto este consentimiento.'}</span>
+                            </label>
+                            {!accepted && (
+                              <button
+                                type="button"
+                                className="sn-btn sn-btn--primary sn-btn--sm"
+                                onClick={() => onAcceptConsent(consent)}
+                                disabled={savingConsentId === consent.id}
+                              >
+                                {savingConsentId === consent.id ? 'Registrando…' : 'Aceptar'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

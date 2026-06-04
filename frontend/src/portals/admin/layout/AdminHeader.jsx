@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { FaBars, FaChartBar, FaCog, FaHome, FaSignOutAlt, FaTimes, FaUserAlt, FaUserCircle, FaWrench } from 'react-icons/fa';
+import { FaBars, FaChartBar, FaClipboardCheck, FaCog, FaHome, FaSignOutAlt, FaTimes, FaUserAlt, FaUserCircle, FaWrench } from 'react-icons/fa';
 import { MdOutlineMarkEmailRead } from 'react-icons/md';
 import { HiChevronDown } from 'react-icons/hi2';
 import logo from '../../../images/logo.png';
@@ -140,6 +140,7 @@ export default function AdminHeader({ user }) {
               <AdminMobileNavLink to="/admin/email-templates" icon={<MdOutlineMarkEmailRead />} label="Email templates" onNavigate={closeMobileMenu} />
               <AdminMobileNavLink to="/admin/operaciones" icon={<FaWrench />} label="Operaciones" onNavigate={closeMobileMenu} />
               <AdminMobileNavLink to="/admin/usuarios" icon={<FaUserAlt />} label="Usuarios" onNavigate={closeMobileMenu} />
+              <AdminMobileNavLink to="/admin/consentimientos" icon={<FaClipboardCheck />} label="Consentimientos" onNavigate={closeMobileMenu} />
 
               <button
                 type="button"

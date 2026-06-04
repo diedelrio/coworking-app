@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FaChartBar, FaCog, FaHome, FaUserAlt, FaWrench } from 'react-icons/fa';
+import { FaChartBar, FaClipboardCheck, FaCog, FaHome, FaUserAlt, FaWrench } from 'react-icons/fa';
 import { MdOutlineMarkEmailRead } from 'react-icons/md';
 
 function AdminNavLink({ to, icon, label, end = false }) {
@@ -40,6 +40,7 @@ export default function AdminSidebar() {
         <AdminNavLink to="/admin/email-templates" icon={<MdOutlineMarkEmailRead />} label="Email templates" />
         <AdminNavLink to="/admin/operaciones" icon={<FaWrench />} label="Operaciones" />
         <AdminNavLink to="/admin/usuarios" icon={<FaUserAlt />} label="Usuarios" />
+        <AdminNavLink to="/admin/consentimientos" icon={<FaClipboardCheck />} label="Consentimientos" />
 
         <div className="admin-sidebar__group">
           <button

@@ -140,9 +140,10 @@ export default function AdminNewUser() {
                 <div><h2>Información personal</h2><p>Datos básicos para identificar al usuario.</p></div>
               </div>
 
-              <div className="admin-user-form-grid">
+              <div className="admin-user-form-grid admin-user-form-grid--three">
                 <label>Nombre *<input value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder="Nombre" required /></label>
-                <label>Apellido *<input value={form.lastName} onChange={(e) => handleChange('lastName', e.target.value)} placeholder="Apellido" required /></label>
+                <label>Apellido Paterno *<input value={form.lastName} onChange={(e) => handleChange('lastName', e.target.value)} placeholder="Apellido" required /></label>
+                <label>Apellido Materno<input value={form.middleName} onChange={(e) => handleChange('middleName', e.target.value)} placeholder="Apellido" /></label>
                 <label>Email *<input type="email" value={form.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="usuario@email.com" required /></label>
                 <label>Teléfono<input value={form.phone} onChange={(e) => handleChange('phone', e.target.value)} placeholder="+34 600 000 000" /></label>
               </div>
