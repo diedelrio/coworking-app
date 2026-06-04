@@ -29,7 +29,9 @@ model User {
   historyChanged      UserHistory[]        @relation("UserHistory_ChangedBy")
   history             UserHistory[]        @relation("UserHistory_User")
   userTags            UserTag[]
+  consentAcceptances  UserConsentAcceptance[]
 }
+
 
 model UserHistory {
   id              Int      @id @default(autoincrement())
@@ -230,6 +232,69 @@ model LiquidationItem {
   amount        Decimal     @db.Decimal(10, 2)
   liquidation   Liquidation @relation(fields: [liquidationId], references: [id])
   reservation   Reservation @relation(fields: [reservationId], references: [id])
+}
+
+model ConsentDefinition {
+  id                         Int                     @id @default(autoincrement())
+  key                        String                  @unique
+  title                      String
+  type                       ConsentType
+  version                    String
+  description                String?
+  active                     Boolean                 @default(true)
+  required                   Boolean                 @default(false)
+  requiresAcceptance         Boolean                 @default(true)
+  showDocumentsToUser        Boolean                 @default(true)
+  allowUserDownloadDocuments Boolean                 @default(true)
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  documents                  ConsentDocument[]
+  acceptances                UserConsentAcceptance[]
+
+  @@index([type])
+  @@index([active])
+}
+
+model ConsentDocument {
+  id                  Int               @id @default(autoincrement())
+  consentDefinitionId Int
+  title               String
+  fileName            String
+  mimeType            String
+  contentBase64       String            @db.Text
+  active              Boolean           @default(true)
+  downloadEnabled     Boolean           @default(true)
+  sortOrder           Int               @default(0)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  consentDefinition   ConsentDefinition @relation(fields: [consentDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([consentDefinitionId])
+}
+
+model UserConsentAcceptance {
+  id                  Int               @id @default(autoincrement())
+  userId              Int
+  consentDefinitionId Int
+  consentVersion      String
+  accepted            Boolean           @default(true)
+  acceptedAt          DateTime          @default(now())
+  source              String?
+  ipAddress           String?
+  userAgent           String?
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consentDefinition   ConsentDefinition @relation(fields: [consentDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([consentDefinitionId])
+  @@index([acceptedAt])
+}
+
+enum ConsentType {
+  TERMS_AND_POLICIES
+  COMMERCIAL_COMMUNICATIONS
+  SOCIAL_COMMUNICATIONS
+  OTHER
 }
 
 enum LiquidationStatus {
