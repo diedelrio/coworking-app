@@ -26,21 +26,30 @@ async function getAdminRecipients() {
   return Array.from(new Set([...dbEmails, ...envEmails]));
 }
 
+const APP_TIME_ZONE = 'Europe/Madrid';
+
 function formatDateES(dateValue) {
   const d = new Date(dateValue);
   if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+
+  return new Intl.DateTimeFormat('es-ES', {
+    timeZone: APP_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(d);
 }
 
 function formatTimeHHMM(dateValue) {
   const d = new Date(dateValue);
   if (Number.isNaN(d.getTime())) return '';
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+
+  return new Intl.DateTimeFormat('es-ES', {
+    timeZone: APP_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d);
 }
 
 /**
