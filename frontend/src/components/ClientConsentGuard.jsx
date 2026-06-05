@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { getActiveConsents } from '../api/consents';
 
+const CACHE_KEY = 'sinergia.requiredConsents.pending';
+const CACHE_TTL_MS = 60 * 1000;
+
 function isConsentAccepted(consent) {
   return consent?.userAcceptance?.accepted === true
     && consent?.userAcceptance?.consentVersion === consent?.version;
@@ -14,11 +17,41 @@ function isRequiredPending(consent) {
     && !isConsentAccepted(consent);
 }
 
+function readCache() {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.timestamp || Date.now() - parsed.timestamp > CACHE_TTL_MS) {
+      return null;
+    }
+
+    return Array.isArray(parsed.pendingRequired) ? parsed.pendingRequired : [];
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(pendingRequired) {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      pendingRequired,
+    }));
+  } catch {
+    // no-op
+  }
+}
+
 export default function ClientConsentGuard({ children }) {
   const location = useLocation();
-  const [loading, setLoading] = useState(true);
+
+  const cachedPending = readCache();
+
+  const [loading, setLoading] = useState(cachedPending === null);
   const [error, setError] = useState('');
-  const [pendingRequired, setPendingRequired] = useState([]);
+  const [pendingRequired, setPendingRequired] = useState(cachedPending || []);
 
   const isProfileRoute = useMemo(() => {
     return location.pathname === '/user/perfil';
@@ -28,25 +61,41 @@ export default function ClientConsentGuard({ children }) {
     let mounted = true;
 
     async function loadRequiredConsents() {
-      setLoading(true);
+      if (cachedPending === null) {
+        setLoading(true);
+      }
+
       setError('');
+
       try {
         const { data } = await getActiveConsents();
         if (!mounted) return;
+
         const pending = Array.isArray(data) ? data.filter(isRequiredPending) : [];
         setPendingRequired(pending);
+        writeCache(pending);
       } catch (e) {
         if (!mounted) return;
         setError(e?.response?.data?.message || 'No se pudieron validar los consentimientos.');
-        setPendingRequired([]);
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
     loadRequiredConsents();
-    return () => { mounted = false; };
-  }, [location.pathname]);
+
+    function clearConsentCache() {
+      sessionStorage.removeItem(CACHE_KEY);
+      loadRequiredConsents();
+    }
+
+    window.addEventListener('sinergia:consents-updated', clearConsentCache);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('sinergia:consents-updated', clearConsentCache);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -56,8 +105,6 @@ export default function ClientConsentGuard({ children }) {
     );
   }
 
-  // Si falla la validación, no bloqueamos la app para evitar dejar al usuario sin acceso.
-  // El perfil seguirá mostrando los consentimientos cuando el endpoint responda correctamente.
   if (error) return children;
 
   if (pendingRequired.length > 0 && !isProfileRoute) {

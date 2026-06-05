@@ -14,7 +14,7 @@
     "db:deploy": "dotenv -e .env -- prisma migrate deploy",
     "prisma:gen:pg": "prisma generate",
     "prisma:gen:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
-    "seed:Horarios":"node src/scripts/seedHorarios.js"
+    "seed:Horarios": "node src/scripts/seedHorarios.js"
   },
   "kmkdir sceywords": [],
   "author": "",
@@ -28,12 +28,12 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^7.0.11",
+    "nodemailer": "^8.0.10",
     "pg": "^8.16.3"
   },
   "devDependencies": {
     "dotenv-cli": "^11.0.0",
     "nodemon": "^3.1.11",
-    "prisma": "6.15.0"
+    "prisma": "^6.19.3"
   }
 }
