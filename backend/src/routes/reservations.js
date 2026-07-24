@@ -281,12 +281,23 @@ async function validateAndBuildReservation({
   // ✅ Bloqueo por cierres del coworking (OfficeClosure)
   // Se evalúa por fecha (día completo). Si hay cierre activo, no se permite reservar.
   try {
+    const closureMadridDate = madridDateYMDToUtcMidnight(date);
+    const closureUtcDate = new Date(`${date}T00:00:00.000Z`);
+
     const closure = await prisma.officeClosure.findFirst({
-      where: { date: dateOnly, active: true },
+      where: {
+        active: true,
+        OR: [
+          { date: closureMadridDate },
+          { date: closureUtcDate },
+        ],
+      },
       select: { reason: true },
     });
+
     if (closure) {
-      const ymd = toDateOnlyYMD(dateOnly);
+      const ymd = date;
+
       throw new ReservationValidationError(
         closure.reason
           ? `El coworking está cerrado el ${ymd}. Motivo: ${closure.reason}`
@@ -297,8 +308,11 @@ async function validateAndBuildReservation({
     }
   } catch (e) {
     if (e instanceof ReservationValidationError) throw e;
-    // Si algo falla consultando cierres, no bloqueamos la reserva, pero lo logueamos.
-    console.warn('[office-closures] No se pudo validar cierres:', e?.message || e);
+
+    console.warn(
+      '[office-closures] No se pudo validar cierres:',
+      e?.message || e
+    );
   }
 
   if (endDateTime <= startDateTime) {
