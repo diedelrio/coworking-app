@@ -246,6 +246,7 @@ function resolveInitialStatus({ actorRole, targetUserClassify }) {
  */
 async function validateAndBuildReservation({
   userId,
+  actorRole ='USER',
   spaceId,
   date,
   startTime,
@@ -407,18 +408,23 @@ async function validateAndBuildReservation({
     0
   );
   
-  if (usedDayHours + newReservationHours > typeRules.maxHoursPerDayPerUser) {
-    throw new ReservationValidationError(
-      `Superas el máximo de ${typeRules.maxHoursPerDayPerUser} horas por día para este tipo de espacio`,
-      'DAY_HOURS_LIMIT_EXCEEDED',
-      {
-        spaceType: space.type,
-        usedDayHours,
-        newReservationHours,
-        maxHoursPerDayPerUser: typeRules.maxHoursPerDayPerUser,
-      }
-    );
-  }
+  
+  const isAdmin = String(actorRole).toUpperCase() === 'ADMIN';
+  if (
+      !isAdmin &&
+      usedDayHours + newReservationHours > typeRules.maxHoursPerDayPerUser
+    ) {
+      throw new ReservationValidationError(
+        `Superas el máximo de ${typeRules.maxHoursPerDayPerUser} horas por día para este tipo de espacio`,
+        'DAY_HOURS_LIMIT_EXCEEDED',
+        {
+          spaceType: space.type,
+          usedDayHours,
+          newReservationHours,
+          maxHoursPerDayPerUser: typeRules.maxHoursPerDayPerUser,
+        }
+      );
+    }
 
   // --- 1b) Límite de cantidad de espacios distintos por día (por tipo) ---
   const distinctSpacesDay = new Set(dayReservations.map((r) => r.spaceId));
@@ -462,7 +468,10 @@ async function validateAndBuildReservation({
     0
   );
 
-  if (usedWeekHours + newReservationHours > typeRules.maxHoursPerWeekPerUser) {
+  if (
+    !isAdmin &&
+    usedWeekHours + newReservationHours > typeRules.maxHoursPerWeekPerUser
+  ) {
     throw new ReservationValidationError(
       `Superas el máximo de ${typeRules.maxHoursPerWeekPerUser} horas por semana para este tipo de espacio`,
       'WEEK_HOURS_LIMIT_EXCEEDED',
@@ -1005,6 +1014,7 @@ const closures = prisma.officeClosure
 
       const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
         userId: targetUserId,
+        actorRole,
         spaceId,
         date: occYMD,
         startTime,
@@ -1399,6 +1409,7 @@ router.put('/:id', authRequired, async (req, res) => {
           // Validar reglas (excluye la propia ocurrencia)
           const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
             userId: r.userId,
+            actorRole,
             spaceId: r.spaceId,
             date: ymd,
             startTime: nextStart,
@@ -1515,6 +1526,7 @@ router.put('/:id', authRequired, async (req, res) => {
     const { dateOnly, startDateTime, endDateTime, space } =
       await validateAndBuildReservation({
         userId: existing.userId,
+        actorRole,
         spaceId: targetSpaceId,
         date: targetDate,
         startTime: targetStartTime,
