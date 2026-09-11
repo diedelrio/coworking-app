@@ -198,6 +198,7 @@ export default function AdminReservationDetails() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '1.1rem' }}>{header}</h1>
+              {reservation?.desks?.length > 0 && <p>Mesas asignadas: {reservation.desks.map(d => d.desk.number).join(", ")}</p>}
               <div style={{ marginTop: 6, color: '#6b7280', fontSize: 13 }}>
                 <span style={{ marginRight: 10 }}>ID: #{id}</span>
                 {isSeries && effectiveSeriesId ? <span title="Serie recurrente">Serie: {effectiveSeriesId}</span> : null}

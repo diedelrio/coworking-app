@@ -14,7 +14,9 @@
     "db:deploy": "dotenv -e .env -- prisma migrate deploy",
     "prisma:gen:pg": "prisma generate",
     "prisma:gen:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
-    "seed:Horarios": "node src/scripts/seedHorarios.js"
+    "seed:Horarios": "node src/scripts/seedHorarios.js",
+    "test:desks": "node --test tests/deskAllocation.test.js",
+    "test:desks:integration": "node --test tests/desks.integration.test.js"
   },
   "kmkdir sceywords": [],
   "author": "",

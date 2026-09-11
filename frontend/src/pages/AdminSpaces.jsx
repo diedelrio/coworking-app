@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "../api/axiosClient";
 import { getCurrentUser } from "../utils/auth";
 import Layout from "../components/Layout";
+import DeskManager from '../components/DeskManager';
 import SpaceFormModal from "../components/SpaceFormModal";
 
 const HARD_TAGS = ["Wifi", "Cafetería", "Impresora", "Climatización"];
@@ -30,6 +31,7 @@ function formatRate(rate) {
 export default function AdminSpaces() {
   const user = getCurrentUser();
 
+  const [deskSpace, setDeskSpace] = useState(null);
   const [spaces, setSpaces] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -331,6 +333,7 @@ export default function AdminSpaces() {
                       ))}
                     </div>
 
+                    {space.numberedDesks && <button type="button" className="pill-button-outline" onClick={() => setDeskSpace(space)} style={{marginBottom:12}}>Gestionar mesas</button>}
                     {/* Botones */}
                     <div className="space-card-actions">
                       <div
@@ -377,6 +380,7 @@ export default function AdminSpaces() {
           </div>
         )}
 
+        {deskSpace && <DeskManager space={deskSpace} onClose={() => setDeskSpace(null)} onChanged={loadSpaces} />}
         {/* Modal (crear/editar) */}
         <SpaceFormModal
           open={modalOpen}

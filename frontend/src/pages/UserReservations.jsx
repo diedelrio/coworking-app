@@ -214,6 +214,7 @@ export default function UserReservations() {
                                 <span className="sn-res-meta-chip">📅 {fechaES}</span>
                                 <span className="sn-res-meta-chip">🕐 {horaInicio}–{horaFin}</span>
                                 <span className="sn-res-meta-chip">👥 {r.attendees ?? 1}</span>
+                                {r.desks?.length > 0 && <span className="sn-res-meta-chip">Mesas: {r.desks.map(d => d.desk.number).join(", ")}</span>}
                               </div>
                             </div>
 
