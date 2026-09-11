@@ -1,3 +1,4 @@
+import UserCombobox from '../components/UserCombobox';
 import DeskAvailability from '../components/DeskAvailability';
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -730,23 +731,16 @@ const isLoadedFuture = useMemo(() => {
             <div className="user-reserve-grid">
               {/* ✅ DIFERENCIA ADMIN: Usuario */}
               <div className="user-reserve-field full">
-                <label>Usuario (CLIENT) *</label>
+                <label id="reservation-user-label">Usuario (CLIENT) *</label>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <select
+                  <UserCombobox
+                    users={users}
                     value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    disabled={loadingUsers || saving || createLocked || readOnly}
-                    style={{ flex: 1, minWidth: 280 }}
-                  >
-                    <option value="">
-                      {loadingUsers ? "Cargando usuarios..." : "Seleccioná un usuario"}
-                    </option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} {u.lastName} • {u.email}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setUserId}
+                    loading={loadingUsers}
+                    disabled={Boolean(success) || loadingUsers || saving || createLocked || readOnly}
+                    labelledBy="reservation-user-label"
+                  />
 
                   <Link
                     to={CREATE_USER_PATH}
