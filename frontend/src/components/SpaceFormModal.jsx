@@ -17,6 +17,7 @@ const DEFAULT_FORM = {
   name: "",
   type: "FLEX_DESK",
   capacity: 1,
+  numberedDesks: false,
   hourlyRate: 0,
   description: "",
   imageUrl: "",
@@ -77,6 +78,7 @@ export default function SpaceFormModal({
       name: String(form.name || "").trim(),
       type: form.type,
       capacity: Number(form.capacity),
+      numberedDesks: Boolean(form.numberedDesks),
       hourlyRate: Number(form.hourlyRate),
       description: String(form.description || "").trim() || null,
       imageUrl: img ? img : null,
@@ -167,6 +169,10 @@ export default function SpaceFormModal({
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label><input type="checkbox" name="numberedDesks" checked={Boolean(form.numberedDesks)} onChange={handleChange} disabled={Boolean(initialValues?.numberedDesks) || !['FLEX_DESK','SHARED_TABLE'].includes(form.type)} /> Mesas numeradas (un puesto por persona)</label>
+                  <small>Para Sinergia, activá esta opción en un espacio compartido. Se crearán tantas mesas como indique la capacidad. Las reservas vigentes recibirán mesas automáticamente.</small>
+                </div>
                 <div className="form-group">
                   <label>Tarifa por hora (€) *</label>
                   <input

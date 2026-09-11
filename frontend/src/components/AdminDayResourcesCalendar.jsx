@@ -150,10 +150,20 @@ export default function AdminDayResourcesCalendar() {
         if (!resourceId || !start || !end) return null;
 
         const userShort = shortUserName(r.user);
+        const deskNumbers = sp.numberedDesks
+          ? [...new Set((r.desks || []).map(assignment => assignment.desk?.number))]
+              .filter(number => Number.isInteger(number) && number > 0)
+              .sort((a, b) => a - b)
+          : [];
+        const deskLabel = sp.numberedDesks
+          ? deskNumbers.length
+            ? `${deskNumbers.length === 1 ? "Mesa" : "Mesas"} ${deskNumbers.join(", ")}`
+            : "Mesa sin asignar"
+          : "";
 
         return {
           id: String(r.id),
-          title: userShort || "Reserva",
+          title: [userShort || "Reserva", deskLabel].filter(Boolean).join(" · "),
           start,
           end,
           resourceId,
@@ -163,6 +173,7 @@ export default function AdminDayResourcesCalendar() {
           classNames: ["fc-event-soft"],
           extendedProps: {
             userNameShort: userShort || "",
+            deskLabel,
             // dejamos email/fullName guardado por si después querés tooltip o modal
             userEmail: r.user?.email || "",
             userFullName: `${(r.user?.name || r.user?.firstName || "").trim()} ${(r.user?.lastName || r.user?.lastname || "").trim()}`.trim(),
@@ -192,7 +203,7 @@ export default function AdminDayResourcesCalendar() {
             Calendario (día)
           </h2>
           <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-            Vista por espacio. Se muestra el nombre (apellido abreviado) en cada reserva. Cuando hay solapamientos, se renderizan una al lado de la otra.
+            Vista por espacio. Cada reserva muestra el usuario y sus mesas cuando el espacio tiene puestos numerados. Las reservas simultáneas aparecen una al lado de la otra.
           </div>
         </div>
 
@@ -273,25 +284,30 @@ export default function AdminDayResourcesCalendar() {
               }}
               eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
               eventContent={(arg) => {
-  const ep = arg.event.extendedProps || {};
-  const name = ep.userNameShort || arg.event.title || "";
+                const ep = arg.event.extendedProps || {};
+                const name = ep.userNameShort || "Reserva";
+                const tooltip = [ep.userFullName || name, ep.deskLabel].filter(Boolean).join(" · ");
+                const lineStyle = {
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                };
 
-  return (
-    <div
-      style={{
-        fontSize: "0.88rem",
-        fontWeight: 700,
-        lineHeight: 1.1,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-      title={ep.userFullName || name} // tooltip opcional
-    >
-      {name}
-    </div>
-  );
-}}
+                return (
+                  <div
+                    style={{ fontSize: "0.88rem", fontWeight: 700, lineHeight: 1.2, minWidth: 0, width: "100%" }}
+                    title={tooltip}
+                    aria-label={tooltip}
+                  >
+                    <div style={lineStyle}>{name}</div>
+                    {ep.deskLabel && (
+                      <div style={{ ...lineStyle, fontSize: "0.78rem", fontWeight: 600, marginTop: 2 }}>
+                        {ep.deskLabel}
+                      </div>
+                    )}
+                  </div>
+                );
+              }}
 
             />
           </div>

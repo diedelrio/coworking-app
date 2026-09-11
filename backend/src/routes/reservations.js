@@ -25,6 +25,7 @@ const {
 const { validateReservationTimes } = require('../utils/reservationTimeValidator');
 const { madridDateTimeToUtc, madridDateYMDToUtcMidnight } = require('../utils/timezone');
 
+const { DeskError, deskInclude, lockSpaces, allocationData } = require('../services/deskAllocation');
 const router = express.Router();
 
 /* ------------------------------ Helpers fechas ------------------------------ */
@@ -210,6 +211,121 @@ function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count, closedY
 }
 
 
+async function buildOccurrenceDates({ date, isRecurring, pattern, recurrenceEndDate, recurrenceCount, db = prisma }) {
+  const hasEndDate = Boolean(recurrenceEndDate);
+  const hasCount = recurrenceCount != null;
+  if (isRecurring && (!['DAILY', 'WEEKLY', 'MONTHLY'].includes(pattern) || hasEndDate === hasCount)) {
+    throw new ReservationValidationError('Indicá un patrón válido y una sola regla de fin.', 'INVALID_RECURRENCE');
+  }
+  if (hasCount && (!Number.isInteger(recurrenceCount) || recurrenceCount < 1 || recurrenceCount > 100)) throw new ReservationValidationError('La cantidad debe ser un entero entre 1 y 100.', 'INVALID_RECURRENCE');
+  if (hasEndDate && (!/^\d{4}-\d{2}-\d{2}$/.test(recurrenceEndDate) || recurrenceEndDate < date)) throw new ReservationValidationError('La fecha final debe ser igual o posterior al inicio.', 'INVALID_RECURRENCE');
+    // ---- Ocurrencias (con ajuste de feriados/cierres para MONTHLY) ----
+    let occurrenceDates;
+
+    if (!isRecurring) {
+      occurrenceDates = [new Date(`${date}T00:00:00`)];
+    } else if (pattern !== 'MONTHLY') {
+      // DAILY: excluir cierres/feriados (OfficeClosure)
+      let closedYMDSet = null;
+      if (pattern === 'DAILY') {
+        try {
+          const startDate = new Date(`${date}T00:00:00`);
+          let rangeEnd = null;
+          if (hasEndDate) rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
+          else if (hasCount) {
+            // aprox: count días hábiles pueden estirarse por finde/cierres; damos margen
+            rangeEnd = addDays(startDate, Math.max(0, Number(recurrenceCount) - 1) + 60);
+          } else {
+            rangeEnd = addDays(startDate, 120);
+          }
+
+          const closures = await db.officeClosure.findMany({
+            where: {
+              active: true,
+              date: { gte: startDate, lte: rangeEnd },
+            },
+            select: { date: true },
+          });
+
+          closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
+        } catch (e) {
+          console.warn('[office-closures] No se pudo cargar cierres para DAILY recurrence:', e?.message || e);
+          closedYMDSet = null;
+        }
+      }
+
+      occurrenceDates = generateOccurrenceDates({
+        startYMD: date,
+        pattern,
+        endDateYMD: hasEndDate ? recurrenceEndDate : null,
+        count: hasCount ? Number(recurrenceCount) : null,
+        closedYMDSet,
+      });
+    } else {
+      // MONTHLY: “último <weekday>” del mes cuando falta el día o cae en finde/feriado.
+      const startDate = new Date(`${date}T00:00:00`);
+      const anchorDay = startDate.getDate();
+      const anchorIsoWeekday = isoWeekday(startDate);
+
+      // rango estimado para traer cierres/feriados
+      let rangeEnd = null;
+      if (hasEndDate) {
+        rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
+      } else if (hasCount) {
+        // aprox: (count-1) meses adelante, +35d de margen por ajustes
+        const tmp = addMonthsSameDay(startDate, Math.max(0, Number(recurrenceCount) - 1));
+        rangeEnd = addDays(tmp, 35);
+      } else {
+        rangeEnd = addDays(addMonthsSameDay(startDate, 12), 35);
+      }
+
+const closures = db.officeClosure
+  ? await db.officeClosure.findMany({
+      where: {
+        date: {
+          gte: startDate,
+          lte: rangeEnd,
+        },
+        active: true,
+      },
+      select: { date: true },
+    })
+  : [];
+
+
+      const closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
+
+      // generar ocurrencias
+      const out = [];
+      const limitCount = hasCount ? Math.max(1, Number(recurrenceCount)) : null;
+      const endDateObj = hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null;
+
+      for (let i = 0; i < 100; i++) {
+        if (limitCount && out.length >= limitCount) break;
+
+        const occ =
+          i === 0
+            ? startDate
+            : addMonthsMonthlyBusinessWeekday({
+                startDate,
+                monthsToAdd: i,
+                anchorDay,
+                anchorIsoWeekday,
+                closedYMDSet,
+              });
+
+        if (endDateObj && occ > endDateObj) break;
+        out.push(new Date(occ));
+      }
+
+      occurrenceDates = out;
+    }
+
+
+  if (!occurrenceDates.length) throw new ReservationValidationError('La regla no genera fechas de reserva.', 'INVALID_RECURRENCE');
+  return occurrenceDates;
+}
+
 /* ------------------------------ Error tipado ------------------------------ */
 
 class ReservationValidationError extends Error {
@@ -245,6 +361,7 @@ function resolveInitialStatus({ actorRole, targetUserClassify }) {
  * Lanza ReservationValidationError si algo no cumple.
  */
 async function validateAndBuildReservation({
+  db = prisma,
   userId,
   actorRole ='USER',
   spaceId,
@@ -285,7 +402,7 @@ async function validateAndBuildReservation({
     const closureMadridDate = madridDateYMDToUtcMidnight(date);
     const closureUtcDate = new Date(`${date}T00:00:00.000Z`);
 
-    const closure = await prisma.officeClosure.findFirst({
+    const closure = await db.officeClosure.findFirst({
       where: {
         active: true,
         OR: [
@@ -364,7 +481,7 @@ async function validateAndBuildReservation({
   }
 
   // --- Cargamos el espacio para conocer su tipo ---
-  const space = await prisma.space.findUnique({
+  const space = await db.space.findUnique({
     where: { id: Number(spaceId) },
   });
 
@@ -387,7 +504,7 @@ async function validateAndBuildReservation({
   // --- 1) Límite por día, por usuario y tipo de espacio ---
   const { start: startOfDay, end: endOfDay } = getDayRange(dateOnly);
 
-  const dayReservations = await prisma.reservation.findMany({
+  const dayReservations = await db.reservation.findMany({
     where: {
       userId,
       status: 'ACTIVE',
@@ -447,7 +564,7 @@ async function validateAndBuildReservation({
   // --- 2) Límite por semana, por usuario y tipo ---
   const { weekStart, weekEnd } = getWeekRangeFromDate(dateOnly);
 
-  const weekReservations = await prisma.reservation.findMany({
+  const weekReservations = await db.reservation.findMany({
     where: {
       userId,
       status: 'ACTIVE',
@@ -485,7 +602,7 @@ async function validateAndBuildReservation({
   }
 
   // --- 3) No ocupar demasiados espacios simultáneos del mismo tipo ---
-  const overlappingSameType = await prisma.reservation.findMany({
+  const overlappingSameType = await db.reservation.findMany({
     where: {
       userId,
       status: 'ACTIVE',
@@ -515,7 +632,7 @@ async function validateAndBuildReservation({
   // --- 4) Solapamiento en el mismo espacio ---
   // En espacios compartidos permitimos solapes (capacidad se valida luego por attendees)
   if (!isSharedSpaceType(space.type)) {
-    const overlapping = await prisma.reservation.findFirst({
+    const overlapping = await db.reservation.findFirst({
       where: {
         ...excludeFilter,
         spaceId: Number(spaceId),
@@ -551,7 +668,7 @@ router.get('/pending', authRequired, requireAdmin, async (req, res) => {
 
     const reservations = await prisma.reservation.findMany({
       where: { status: 'PENDING', date: { gte: today } },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -575,7 +692,7 @@ router.get('/pending-groups', authRequired, requireAdmin, async (req, res) => {
 
     const pending = await prisma.reservation.findMany({
       where: { status: 'PENDING', date: { gte: today } },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -624,7 +741,7 @@ router.patch('/series/:seriesId/approve', authRequired, requireAdmin, async (req
     // Enviamos email usando la primera ocurrencia (si existe)
     const first = await prisma.reservation.findFirst({
       where: { seriesId },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -682,7 +799,7 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
 
     const existing = await prisma.reservation.findUnique({
       where: { id },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
     });
 
     if (!existing) return res.status(404).json({ message: 'Reserva no encontrada' });
@@ -693,7 +810,7 @@ router.patch('/:id/approve', authRequired, requireAdmin, async (req, res) => {
     const updated = await prisma.reservation.update({
       where: { id },
       data: { status: 'ACTIVE' },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
     });
 
     try {
@@ -727,7 +844,7 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
 
     const existing = await prisma.reservation.findUnique({
       where: { id },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
     });
 
     if (!existing) return res.status(404).json({ message: 'Reserva no encontrada' });
@@ -738,7 +855,7 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
     const updated = await prisma.reservation.update({
       where: { id },
       data: { status: 'REJECTED' },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
     });
 
     try {
@@ -878,107 +995,7 @@ router.post('/', authRequired, async (req, res) => {
       }
     }
 
-    // ---- Ocurrencias (con ajuste de feriados/cierres para MONTHLY) ----
-    let occurrenceDates;
-
-    if (!isRecurring) {
-      occurrenceDates = [new Date(`${date}T00:00:00`)];
-    } else if (pattern !== 'MONTHLY') {
-      // DAILY: excluir cierres/feriados (OfficeClosure)
-      let closedYMDSet = null;
-      if (pattern === 'DAILY') {
-        try {
-          const startDate = new Date(`${date}T00:00:00`);
-          let rangeEnd = null;
-          if (hasEndDate) rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
-          else if (hasCount) {
-            // aprox: count días hábiles pueden estirarse por finde/cierres; damos margen
-            rangeEnd = addDays(startDate, Math.max(0, Number(recurrenceCount) - 1) + 60);
-          } else {
-            rangeEnd = addDays(startDate, 120);
-          }
-
-          const closures = await prisma.officeClosure.findMany({
-            where: {
-              active: true,
-              date: { gte: startDate, lte: rangeEnd },
-            },
-            select: { date: true },
-          });
-
-          closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
-        } catch (e) {
-          console.warn('[office-closures] No se pudo cargar cierres para DAILY recurrence:', e?.message || e);
-          closedYMDSet = null;
-        }
-      }
-
-      occurrenceDates = generateOccurrenceDates({
-        startYMD: date,
-        pattern,
-        endDateYMD: hasEndDate ? recurrenceEndDate : null,
-        count: hasCount ? Number(recurrenceCount) : null,
-        closedYMDSet,
-      });
-    } else {
-      // MONTHLY: “último <weekday>” del mes cuando falta el día o cae en finde/feriado.
-      const startDate = new Date(`${date}T00:00:00`);
-      const anchorDay = startDate.getDate();
-      const anchorIsoWeekday = isoWeekday(startDate);
-
-      // rango estimado para traer cierres/feriados
-      let rangeEnd = null;
-      if (hasEndDate) {
-        rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
-      } else if (hasCount) {
-        // aprox: (count-1) meses adelante, +35d de margen por ajustes
-        const tmp = addMonthsSameDay(startDate, Math.max(0, Number(recurrenceCount) - 1));
-        rangeEnd = addDays(tmp, 35);
-      } else {
-        rangeEnd = addDays(addMonthsSameDay(startDate, 12), 35);
-      }
-
-const closures = prisma.officeClosure
-  ? await prisma.officeClosure.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lte: rangeEnd,
-        },
-        active: true,
-      },
-      select: { date: true },
-    })
-  : [];
-
-
-      const closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
-
-      // generar ocurrencias
-      const out = [];
-      const limitCount = hasCount ? Math.max(1, Number(recurrenceCount)) : null;
-      const endDateObj = hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null;
-
-      for (let i = 0; i < 100; i++) {
-        if (limitCount && out.length >= limitCount) break;
-
-        const occ =
-          i === 0
-            ? startDate
-            : addMonthsMonthlyBusinessWeekday({
-                startDate,
-                monthsToAdd: i,
-                anchorDay,
-                anchorIsoWeekday,
-                closedYMDSet,
-              });
-
-        if (endDateObj && occ > endDateObj) break;
-        out.push(new Date(occ));
-      }
-
-      occurrenceDates = out;
-    }
+    const occurrenceDates = await buildOccurrenceDates({ date, isRecurring, pattern, recurrenceEndDate: hasEndDate ? recurrenceEndDate : null, recurrenceCount: hasCount ? Number(recurrenceCount) : null });
 
     // Traer user para decidir PENDING/ACTIVE
     const user = await prisma.user.findUnique({
@@ -1028,7 +1045,9 @@ const closures = prisma.officeClosure
       // Validación de disponibilidad (fuera de tx)
       const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
 
-      if (shared) {
+      if (space.numberedDesks) {
+        // Individual desks are checked and assigned under the space lock below.
+      } else if (shared) {
         const agg = await prisma.reservation.aggregate({
           where: {
             spaceId: space.id,
@@ -1105,37 +1124,15 @@ const closures = prisma.officeClosure
       });
     }
 
-    // ----- Crear en transacción corta (createMany) -----
-    await prisma.$transaction(
-      async (tx) => {
-        if (preparedRows.length === 1) {
-          // createMany no devuelve el registro; para single usamos create.
-          await tx.reservation.create({ data: preparedRows[0] });
-        } else {
-          await tx.reservation.createMany({ data: preparedRows });
-        }
-      },
-      { timeout: 20000, maxWait: 20000 }
-    );
-
-    // Recuperar reservas creadas (con include) para respuesta
-    const createdReservations = isRecurring
-      ? await prisma.reservation.findMany({
-          where: { seriesId },
-          orderBy: { startTime: 'asc' },
-          include: { user: true, space: true },
-        })
-      : await prisma.reservation.findMany({
-          where: {
-            userId: targetUserId,
-            spaceId: Number(spaceId),
-            date: preparedRows[0].date,
-            startTime: preparedRows[0].startTime,
-            endTime: preparedRows[0].endTime,
-          },
-          take: 1,
-          include: { user: true, space: true },
-        });
+    const createdReservations = await prisma.$transaction(async (tx) => {
+      await lockSpaces(tx, preparedRows.map(row => row.spaceId));
+      const created = [];
+      for (const row of preparedRows) {
+        const desks = await allocationData(tx, row, { admin: actorRole === 'ADMIN', deskIds: req.body.deskIds });
+        created.push(await tx.reservation.create({ data: { ...row, ...desks }, include: { user: true, space: true, desks: deskInclude } }));
+      }
+      return created;
+    }, { timeout: 20000, maxWait: 20000 });
 
     // Si es recurrente devolvemos resumen + primera
     if (isRecurring) {
@@ -1149,6 +1146,7 @@ const closures = prisma.officeClosure
 
     return res.status(201).json(createdReservations[0]);
   } catch (err) {
+    if (err instanceof DeskError) return res.status(err.status).json({ message: err.message, code: err.code });
     if (err instanceof ReservationValidationError) {
       return res.status(400).json({
         message: err.message,
@@ -1174,7 +1172,7 @@ router.get('/my', authRequired, async (req, res) => {
 
     const reservations = await prisma.reservation.findMany({
       where: { userId },
-      include: { space: true },
+      include: { space: true, desks: deskInclude },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -1208,7 +1206,7 @@ router.get('/space/:spaceId', authRequired, requireAdmin, async (req, res) => {
 
     const reservations = await prisma.reservation.findMany({
       where: { spaceId, date: { gte: fromDate, lte: toDate } },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
       orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     });
 
@@ -1248,6 +1246,7 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
       include: {
         user: true,
         space: true,
+        desks: deskInclude,
       },
       orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
     });
@@ -1274,7 +1273,7 @@ router.get('/:id', authRequired, async (req, res) => {
 
     const reservation = await prisma.reservation.findUnique({
       where: { id },
-      include: { space: true, user: true },
+      include: { space: true, user: true, desks: deskInclude },
     });
 
     if (!reservation) {
@@ -1329,7 +1328,7 @@ router.put('/:id', authRequired, async (req, res) => {
     // 1) Traer reserva actual
     const existing = await prisma.reservation.findUnique({
       where: { id },
-      include: { space: true },
+      include: { space: true, desks: deskInclude },
     });
 
     if (!existing) {
@@ -1370,6 +1369,19 @@ router.put('/:id', authRequired, async (req, res) => {
     const targetEndTime = endTime ?? toHHMM(existing.endTime);
 
     const scope = (applyTo || 'ONE').toString().toUpperCase();
+    const body = req.body || {};
+    const nextPattern = String(body.recurrencePattern ?? existing.recurrencePattern ?? 'WEEKLY').toUpperCase();
+    const hasNewEnd = body.recurrenceEndDate != null;
+    const hasNewCount = body.recurrenceCount != null;
+    if (hasNewEnd && hasNewCount) throw new ReservationValidationError('Elegí una sola regla de fin.', 'INVALID_RECURRENCE');
+    const nextEnd = hasNewEnd ? body.recurrenceEndDate : hasNewCount ? null : existing.recurrenceEndDate ? toDateOnlyYMD(existing.recurrenceEndDate) : null;
+    const nextCount = hasNewCount ? Number(body.recurrenceCount) : hasNewEnd ? null : existing.recurrenceCount;
+    const recurrenceChanged = Boolean(existing.seriesId) && (
+      nextPattern !== existing.recurrencePattern || nextCount !== existing.recurrenceCount ||
+      nextEnd !== (existing.recurrenceEndDate ? toDateOnlyYMD(existing.recurrenceEndDate) : null)
+    );
+    if (recurrenceChanged && scope !== 'SERIES') throw new ReservationValidationError('Para cambiar la repetición, aplicá los cambios a la serie.', 'RECURRENCE_REQUIRES_SERIES');
+
 
     // ------------------------------
     // Edición serie recurrente
@@ -1386,16 +1398,37 @@ router.put('/:id', authRequired, async (req, res) => {
 
       const now = new Date();
 
+      const seriesSpaceRows = await prisma.reservation.findMany({ where: { seriesId: existing.seriesId }, select: { spaceId: true } });
+      const lockedSpaceIds = [...new Set(seriesSpaceRows.map(r => r.spaceId))];
       const updatedSeries = await prisma.$transaction(async (tx) => {
-        const seriesReservations = await tx.reservation.findMany({
+        await lockSpaces(tx, lockedSpaceIds);
+        let seriesReservations = await tx.reservation.findMany({
           where: {
             seriesId: existing.seriesId,
             status: { in: ['ACTIVE', 'PENDING'] },
             startTime: { gte: existing.startTime },
           },
-          include: { space: true },
+          include: { space: true, desks: deskInclude },
           orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         });
+
+        if (seriesReservations.some(r => !lockedSpaceIds.includes(r.spaceId))) throw new DeskError('La serie cambió de espacio. Recargá los datos antes de editar.');
+        if (!seriesReservations.length || seriesReservations.some(r => r.startTime <= now)) throw new DeskError('La serie ya comenzó o cambió. Recargá los datos antes de editar.');
+        let recurrenceData = {};
+        if (recurrenceChanged) {
+          const ids = seriesReservations.map(r => r.id);
+          if (await tx.liquidationItem.count({ where: { reservationId: { in: ids } } })) throw new DeskError('La serie contiene reservas liquidadas y no puede reprogramarse.');
+          const dates = await buildOccurrenceDates({ date: targetDate, isRecurring: true, pattern: nextPattern, recurrenceEndDate: nextEnd, recurrenceCount: nextCount, db: tx });
+          recurrenceData = { recurrencePattern: nextPattern, recurrenceEndDate: nextEnd ? madridDateYMDToUtcMidnight(nextEnd) : null, recurrenceCount: nextCount };
+          // Release the old dates inside this transaction; failures roll back the entire change.
+          await tx.reservation.updateMany({ where: { id: { in: ids } }, data: { status: 'CANCELLED' } });
+          const previous = seriesReservations;
+          seriesReservations = dates.map((day, index) => ({
+            ...(previous[index] || previous[0]),
+            id: previous[index]?.id ?? null,
+            date: madridDateYMDToUtcMidnight(toDateOnlyYMD(day)),
+          }));
+        }
 
         const out = [];
 
@@ -1408,6 +1441,7 @@ router.put('/:id', authRequired, async (req, res) => {
 
           // Validar reglas (excluye la propia ocurrencia)
           const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
+            db: tx,
             userId: r.userId,
             actorRole,
             spaceId: r.spaceId,
@@ -1431,7 +1465,9 @@ router.put('/:id', authRequired, async (req, res) => {
             ? Number(attendees ?? r.attendees ?? 1)
             : 1;
 
-          if (shared) {
+          if (space.numberedDesks) {
+            // allocationData validates the count and complete interval under the lock.
+          } else if (shared) {
             if (!Number.isInteger(occAttendees) || occAttendees < 1) {
               throw new ReservationValidationError('attendees debe ser un entero >= 1', 'INVALID_ATTENDEES', {
                 id: r.id,
@@ -1491,10 +1527,12 @@ router.put('/:id', authRequired, async (req, res) => {
             attendees: shared ? occAttendees : 1,
           });
 
-          const updated = await tx.reservation.update({
-            where: { id: r.id },
-            data: {
-              // No cambiamos date ni spaceId en edición por serie (solo horario + info)
+          const deskData = await allocationData(tx, { spaceId: r.spaceId, startTime: startDateTime, endTime: endDateTime, attendees: occAttendees }, { admin: isAdmin, deskIds: req.body.deskIds, excludeId: r.id });
+          const updatedData = {
+              ...deskData,
+              ...recurrenceData,
+              status: r.status,
+              date: dateOnly,
               startTime: startDateTime,
               endTime: endDateTime,
               attendees: shared ? occAttendees : 1,
@@ -1504,15 +1542,16 @@ router.put('/:id', authRequired, async (req, res) => {
               purpose:
                 purpose !== undefined ? (purpose ? String(purpose).trim() : null) : r.purpose,
               notes: notes !== undefined ? (notes ? String(notes).trim() : null) : r.notes,
-            },
-            include: { user: true, space: true },
-          });
-
+          };
+          const include = { user: true, space: true, desks: deskInclude };
+          const updated = r.id
+            ? await tx.reservation.update({ where: { id: r.id }, data: updatedData, include })
+            : await tx.reservation.create({ data: { ...updatedData, userId: r.userId, spaceId: r.spaceId, seriesId: existing.seriesId }, include });
           out.push(updated);
         }
 
         return out;
-      });
+      }, { timeout: 20000, maxWait: 20000 });
 
       return res.json({
         ok: true,
@@ -1565,7 +1604,9 @@ router.put('/:id', authRequired, async (req, res) => {
     // 7) Validación de disponibilidad (excluyendo esta reserva)
     const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
 
-    if (shared) {
+    if (space.numberedDesks) {
+      // Rechecked when persisting under the space lock.
+    } else if (shared) {
       const agg = await prisma.reservation.aggregate({
         where: {
           id: { not: id },
@@ -1626,10 +1667,16 @@ router.put('/:id', authRequired, async (req, res) => {
       attendees: shared ? requestedAttendees : 1,
     });
 
-    // 9) Persistir cambios
-    const updated = await prisma.reservation.update({
+    // Allocation and reservation changes commit together under the same space lock.
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockSpaces(tx, [existing.spaceId, targetSpaceId]);
+      const current = await tx.reservation.findUnique({ where: { id } });
+      if (!current || !['ACTIVE', 'PENDING'].includes(current.status) || current.spaceId !== existing.spaceId) throw new DeskError('La reserva cambió. Recargá sus datos antes de editar.');
+      const deskData = await allocationData(tx, { spaceId: targetSpaceId, startTime: startDateTime, endTime: endDateTime, attendees: shared ? requestedAttendees : 1 }, { admin: isAdmin, deskIds: req.body.deskIds, excludeId: id });
+      return tx.reservation.update({
       where: { id },
       data: {
+        ...deskData,
         spaceId: targetSpaceId,
         date: dateOnly,
         startTime: startDateTime,
@@ -1650,11 +1697,13 @@ router.put('/:id', authRequired, async (req, res) => {
             ? (notes ? String(notes).trim() : null)
             : existing.notes,
       },
-      include: { user: true, space: true },
+      include: { user: true, space: true, desks: deskInclude },
     });
 
+    }, { timeout: 20000, maxWait: 20000 });
     return res.json(updated);
   } catch (err) {
+    if (err instanceof DeskError) return res.status(err.status).json({ message: err.message, code: err.code });
     if (err instanceof ReservationValidationError) {
       return res.status(400).json({
         message: err.message,

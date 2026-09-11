@@ -2,7 +2,10 @@ const express = require('express');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
 
+const { configureDesks, lockSpaces, DeskError } = require('../services/deskAllocation');
 const router = express.Router();
+router.use('/', require('./spaceDesks'));
+
 
 function normalizeImageUrl(raw) {
   if (raw === undefined || raw === null) return null;
@@ -90,7 +93,7 @@ router.get('/:id', authRequired, requireAdmin, async (req, res) => {
  */
 router.post('/', authRequired, requireAdmin, async (req, res) => {
   try {
-    const { name, type, capacity, description, hourlyRate, imageUrl } = req.body;
+    const { name, type, capacity, numberedDesks, description, hourlyRate, imageUrl } = req.body;
 
     if (!name || !type || !capacity) {
       return res
@@ -108,19 +111,25 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'La URL de imagen no es válida' });
     }
 
-    const space = await prisma.space.create({
-      data: {
-        name: String(name).trim(),
-        type,
-        capacity: Number(capacity),
-        description: description ? String(description).trim() : null,
-        hourlyRate: rate,   // Decimal(10,2) acepta string
-        imageUrl: imgUrl,   // null si vacío
-      },
-    });
+    const space = await prisma.$transaction(async (tx) => {
+      const created = await tx.space.create({
+        data: {
+          name: String(name).trim(),
+          type,
+          capacity: Number(capacity),
+          numberedDesks: numberedDesks === true,
+          description: description ? String(description).trim() : null,
+          hourlyRate: rate,   // Decimal(10,2) acepta string
+          imageUrl: imgUrl,   // null si vacío
+        },
+      });
 
+      await configureDesks(tx, created, null);
+      return created;
+    }, { timeout: 20000 });
     res.status(201).json(space);
   } catch (err) {
+    if (err instanceof DeskError) return res.status(err.status).json({ message: err.message, code: err.code });
     console.error('ERROR POST /spaces', err);
     res.status(500).json({ message: 'Error al crear espacio' });
   }
@@ -134,7 +143,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
 router.put('/:id', authRequired, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, type, capacity, description, active, hourlyRate, imageUrl } = req.body;
+    const { name, type, capacity, numberedDesks, description, active, hourlyRate, imageUrl } = req.body;
 
     const rate = normalizeHourlyRate(hourlyRate);
     if (rate === null) {
@@ -146,21 +155,30 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'La URL de imagen no es válida' });
     }
 
-    const space = await prisma.space.update({
-      where: { id },
-      data: {
-        name: String(name).trim(),
-        type,
-        capacity: Number(capacity),
-        description: description ? String(description).trim() : null,
-        active: Boolean(active),
-        hourlyRate: rate,
-        imageUrl: imgUrl,
-      },
-    });
+    const space = await prisma.$transaction(async (tx) => {
+      await lockSpaces(tx, [id]);
+      const previous = await tx.space.findUnique({ where: { id } });
+      if (!previous) throw new DeskError("Espacio no encontrado", 404);
+      const updated = await tx.space.update({
+        where: { id },
+        data: {
+          name: String(name).trim(),
+          type,
+          capacity: Number(capacity),
+          numberedDesks: numberedDesks === undefined ? previous.numberedDesks : numberedDesks === true,
+          description: description ? String(description).trim() : null,
+          active: Boolean(active),
+          hourlyRate: rate,
+          imageUrl: imgUrl,
+        },
+      });
 
+      await configureDesks(tx, updated, previous);
+      return updated;
+    }, { timeout: 20000 });
     res.json(space);
   } catch (err) {
+    if (err instanceof DeskError) return res.status(err.status).json({ message: err.message, code: err.code });
     console.error('ERROR PUT /spaces/:id', err);
     res.status(500).json({ message: 'Error al actualizar espacio' });
   }

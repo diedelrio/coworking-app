@@ -1,3 +1,4 @@
+import DeskAvailability from '../components/DeskAvailability';
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axiosClient";
@@ -74,6 +75,10 @@ export default function UserNewReservation() {
   const [detailMode, setDetailMode] = useState(() => Boolean(editId) && modeParam !== "edit");
   useEffect(() => { setDetailMode(Boolean(editId) && modeParam !== "edit"); }, [editId, modeParam]);
 
+  const [deskIds, setDeskIds] = useState([]);
+  const [assignedDesks, setAssignedDesks] = useState([]);
+  const [deskAvailability, setDeskAvailability] = useState(null);
+  const [deskRefresh, setDeskRefresh] = useState(0);
   const [spaces, setSpaces]                   = useState([]);
   const [loadingSpaces, setLoadingSpaces]     = useState(true);
   const [spacesError, setSpacesError]         = useState("");
@@ -199,6 +204,8 @@ export default function UserNewReservation() {
         setLoadedStartISO(st && /^\d{2}:\d{2}$/.test(st) ? `${ymd}T${st}:00` : `${ymd}T00:00:00`);
         setOriginalStartTime(st);
         setAttendees(Number(r.attendees ?? 1));
+        setAssignedDesks(r.desks || []);
+        setDeskIds((r.desks || []).map(d => d.deskId));
         setPurpose(r.purpose ?? "");
         setNotes(r.notes ?? "");
         setLoadedSeriesId(r.seriesId ?? null);
@@ -278,6 +285,7 @@ export default function UserNewReservation() {
   }, [settings, startTime, editId]);
 
   async function submit() {
+    if (success) return;
     setSuccess(""); setFormError("");
     if (!spaceId) return setFormError("Seleccioná un espacio.");
     if (!date) return setFormError("Seleccioná una fecha.");
@@ -300,6 +308,12 @@ export default function UserNewReservation() {
           if (!Number.isInteger(n) || n < 1 || n > 100) return setFormError("La cantidad debe ser entre 1 y 100.");
         }
       }
+      if (selectedSpace?.numberedDesks) {
+        const currentKey = [selectedSpace.id,date,startTime,endTime,editId,deskRefresh].join('|');
+        if (!deskAvailability || !deskAvailability.key.startsWith(currentKey + '|')) return setFormError('Esperá a que se actualice la disponibilidad de mesas.');
+        if (deskAvailability.available < Number(attendees)) return setFormError('No hay suficientes mesas libres para todos los asistentes.');
+
+      }
       const payload = {
         spaceId: Number(spaceId), date, startTime, endTime,
         attendees: Number(attendees || 1),
@@ -314,14 +328,19 @@ export default function UserNewReservation() {
       }
       if (editId) {
         if (loadedSeriesId) payload.applyTo = scope;
-        await api.put(`/reservations/${editId}`, payload);
-        setSuccess("Reserva actualizada.");
+        const response = await api.put(`/reservations/${editId}`, payload);
+        const saved = response.data.first || response.data;
+        setAssignedDesks(saved.desks || []);
+        setSuccess('Reserva actualizada.' + (saved.desks?.length ? ' Mesas asignadas: ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
       } else {
-        await api.post("/reservations", payload);
-        setSuccess("Reserva creada.");
+        const response = await api.post('/reservations', payload);
+        const saved = response.data.first || response.data;
+        setAssignedDesks(saved.desks || []);
+        setSuccess((saved.status === 'PENDING' ? 'Reserva pendiente de aprobación.' : 'Reserva creada.') + (saved.desks?.length ? ' Mesas asignadas' + (response.data.first ? ' para la primera fecha' : '') + ': ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
       }
-      setTimeout(() => navigate("/user"), 350);
+      setTimeout(() => navigate("/user"), selectedSpace?.numberedDesks ? 4500 : 350);
     } catch (e) {
+      setDeskRefresh(n => n+1);
       const data = e?.response?.data;
       setFormError(data?.message || data?.error || (typeof data === "string" ? data : null) || e?.message || "Error guardando reserva");
     } finally {
@@ -417,7 +436,7 @@ export default function UserNewReservation() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
 
@@ -444,7 +463,7 @@ export default function UserNewReservation() {
                       <div className="sn-recurrence-sub">Configurá una cita programada y repetida</div>
                     </div>
                     <label className="sn-toggle">
-                      <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} disabled={saving || readOnly} />
+                      <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} disabled={Boolean(success) || saving || readOnly} />
                       <span className="sn-toggle-slider" />
                     </label>
                   </div>
@@ -459,7 +478,7 @@ export default function UserNewReservation() {
                             className="sn-select"
                             value={repeat}
                             onChange={(e) => setRepeat(e.target.value)}
-                            disabled={saving || readOnly}
+                            disabled={Boolean(success) || saving || readOnly}
                           >
                             <option value="DAILY">Diaria</option>
                             <option value="WEEKLY">Mismo día todas las semanas</option>
@@ -472,7 +491,7 @@ export default function UserNewReservation() {
                           <label className="sn-label" style={{ marginBottom: '0.4rem', display: 'block' }}>Regla de fin</label>
                           <div style={{ display: 'grid', gap: '0.65rem' }}>
                             <label className={`sn-radio-card${endRule === "DATE" ? " sn-radio-card--selected" : ""}`}>
-                              <input type="radio" name="endRule" checked={endRule === "DATE"} onChange={() => setEndRule("DATE")} disabled={saving || readOnly} />
+                              <input type="radio" name="endRule" checked={endRule === "DATE"} onChange={() => setEndRule("DATE")} disabled={Boolean(success) || saving || readOnly} />
                               <div>
                                 <div className="sn-radio-title">Hasta una fecha</div>
                                 <input
@@ -480,13 +499,13 @@ export default function UserNewReservation() {
                                   type="date"
                                   value={repeatEndDate}
                                   onChange={(e) => setRepeatEndDate(e.target.value)}
-                                  disabled={saving || endRule !== "DATE" || readOnly}
+                                  disabled={Boolean(success) || saving || endRule !== "DATE" || readOnly}
                                   style={{ marginTop: '0.45rem' }}
                                 />
                               </div>
                             </label>
                             <label className={`sn-radio-card${endRule === "COUNT" ? " sn-radio-card--selected" : ""}`}>
-                              <input type="radio" name="endRule" checked={endRule === "COUNT"} onChange={() => setEndRule("COUNT")} disabled={saving || readOnly} />
+                              <input type="radio" name="endRule" checked={endRule === "COUNT"} onChange={() => setEndRule("COUNT")} disabled={Boolean(success) || saving || readOnly} />
                               <div>
                                 <div className="sn-radio-title">Cantidad de ocurrencias</div>
                                 <input
@@ -494,7 +513,7 @@ export default function UserNewReservation() {
                                   type="number" min={1} max={100}
                                   value={repeatCount}
                                   onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
-                                  disabled={saving || endRule !== "COUNT" || readOnly}
+                                  disabled={Boolean(success) || saving || endRule !== "COUNT" || readOnly}
                                   style={{ marginTop: '0.45rem' }}
                                 />
                               </div>
@@ -527,6 +546,7 @@ export default function UserNewReservation() {
                 </div>
               )}
 
+              <DeskAvailability space={selectedSpace} date={date} startTime={startTime} endTime={endTime} attendees={attendees} editId={editId} admin={false} deskIds={deskIds} onSelection={setDeskIds} readOnly={readOnly} assignedDesks={assignedDesks} onAvailability={setDeskAvailability} refreshKey={deskRefresh} recurring={recurring || Boolean(loadedSeriesId)} />
               {/* Asistentes */}
               <div className="sn-field full">
                 <label className="sn-label">Número de asistentes</label>
@@ -535,7 +555,7 @@ export default function UserNewReservation() {
                   type="number" min={1}
                   value={attendees}
                   onChange={(e) => setAttendees(Number(e.target.value || 1))}
-                  disabled={saving || !shared || readOnly || createLocked}
+                  disabled={Boolean(success) || saving || !shared || readOnly || createLocked}
                 />
                 <div className="sn-help" style={{ marginTop: '0.3rem' }}>
                   {shared ? "En espacios compartidos podés indicar cuántos asistentes ocupan cupo." : "En espacios no compartidos, siempre es 1."}
@@ -550,7 +570,7 @@ export default function UserNewReservation() {
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   placeholder="ej. Reunión de equipo, Presentación a cliente"
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
 
@@ -562,7 +582,7 @@ export default function UserNewReservation() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Algún requerimiento especial o nota..."
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
             </div>
@@ -581,7 +601,7 @@ export default function UserNewReservation() {
                 <button
                   className="sn-btn sn-btn--primary"
                   onClick={submit}
-                  disabled={saving || loadingSpaces || loadingSettings || !!timeError || createLocked}
+                  disabled={Boolean(success) || saving || loadingSpaces || loadingSettings || !!timeError || createLocked}
                 >
                   {saving ? "Guardando…" : editId ? "Guardar cambios" : "Crear reserva"}
                 </button>

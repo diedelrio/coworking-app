@@ -49,18 +49,21 @@ model UserHistory {
 }
 
 model Space {
-  id           Int           @id @default(autoincrement())
-  name         String
-  type         SpaceType
-  capacity     Int
-  description  String?
-  active       Boolean       @default(true)
-  hourlyRate   Decimal       @default(0.00) @db.Decimal(10, 2)
-  imageUrl     String?
-  reservations Reservation[]
+  numberedDesks Boolean       @default(false)
+  desks         Desk[]
+  id            Int           @id @default(autoincrement())
+  name          String
+  type          SpaceType
+  capacity      Int
+  description   String?
+  active        Boolean       @default(true)
+  hourlyRate    Decimal       @default(0.00) @db.Decimal(10, 2)
+  imageUrl      String?
+  reservations  Reservation[]
 }
 
 model Reservation {
+  desks              ReservationDesk[]
   id                 Int               @id @default(autoincrement())
   date               DateTime
   startTime          DateTime
@@ -387,4 +390,38 @@ enum UserClassify {
   GOOD
   REGULAR
   BAD
+}
+
+model Desk {
+  id               Int                   @id @default(autoincrement())
+  spaceId          Int
+  number           Int
+  active           Boolean               @default(true)
+  space            Space                 @relation(fields: [spaceId], references: [id])
+  reservations     ReservationDesk[]
+  fixedAssignments FixedDeskAssignment[]
+
+  @@unique([spaceId, number])
+}
+
+model ReservationDesk {
+  reservationId Int
+  deskId        Int
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  desk          Desk        @relation(fields: [deskId], references: [id])
+
+  @@id([reservationId, deskId])
+  @@index([deskId])
+}
+
+model FixedDeskAssignment {
+  id           Int       @id @default(autoincrement())
+  deskId       Int
+  occupantName String
+  startTime    DateTime
+  endTime      DateTime?
+  active       Boolean   @default(true)
+  desk         Desk      @relation(fields: [deskId], references: [id])
+
+  @@index([deskId, startTime])
 }

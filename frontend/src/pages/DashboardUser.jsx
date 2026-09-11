@@ -228,6 +228,7 @@ export default function DashboardUser() {
                         <span className="sn-res-meta-chip">📅 {formatDateES(r.date)}</span>
                         <span className="sn-res-meta-chip">🕐 {toHHMM(r.startTime)}–{toHHMM(r.endTime)}</span>
                         <span className="sn-res-meta-chip">👥 {r.attendees ?? 1}</span>
+                        {r.desks?.length > 0 && <span className="sn-res-meta-chip">Mesas: {r.desks.map(d => d.desk.number).join(", ")}</span>}
                       </div>
                     </div>
                     <div className="sn-res-actions">
@@ -267,6 +268,7 @@ export default function DashboardUser() {
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--sn-ink)' }}>
                     {detailRes?.space?.name || `Reserva #${detailRes.id}`}
+                    {detailRes?.desks?.length > 0 && <small> · Mesas: {detailRes.desks.map(d => d.desk.number).join(", ")}</small>}
                   </div>
                   <div style={{ marginTop: '0.25rem', fontSize: '0.84rem', color: 'var(--sn-muted)' }}>
                     {formatDateES(detailRes.date)} · {toHHMM(detailRes.startTime)}–{toHHMM(detailRes.endTime)}

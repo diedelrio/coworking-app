@@ -1,3 +1,4 @@
+import DeskAvailability from '../components/DeskAvailability';
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axiosClient";
@@ -93,6 +94,10 @@ export default function AdminNewReservation() {
   const qEnd = params.get("end");
   const hasPrefillParams = Boolean(qDate || qStart || qEnd);
 
+  const [deskIds, setDeskIds] = useState([]);
+  const [assignedDesks, setAssignedDesks] = useState([]);
+  const [deskAvailability, setDeskAvailability] = useState(null);
+  const [deskRefresh, setDeskRefresh] = useState(0);
   const [spaces, setSpaces] = useState([]);
   const [loadingSpaces, setLoadingSpaces] = useState(true);
   const [spacesError, setSpacesError] = useState("");
@@ -253,6 +258,7 @@ const isLoadedFuture = useMemo(() => {
         const res = await api.get("/spaces/active");
         setSpaces(Array.isArray(res.data) ? res.data : []);
       } catch (e) {
+      setDeskRefresh(n => n+1);
         console.error(e);
         setSpacesError("No se pudieron cargar los espacios.");
       } finally {
@@ -342,6 +348,8 @@ const isLoadedFuture = useMemo(() => {
         setOriginalStartTime(st);
 
         setAttendees(Number(r.attendees ?? 1));
+        setAssignedDesks(r.desks || []);
+        setDeskIds((r.desks || []).map(d => d.deskId));
         setPurpose(r.purpose ?? "");
         setNotes(r.notes ?? "");
 
@@ -497,6 +505,7 @@ const isLoadedFuture = useMemo(() => {
   }, [settings, startTime]);
 
   async function submit() {
+    if (success) return;
     setSuccess("");
     setFormError("");
 
@@ -548,6 +557,12 @@ const isLoadedFuture = useMemo(() => {
         }
       }
 
+      if (selectedSpace?.numberedDesks) {
+        const currentKey = [selectedSpace.id,date,startTime,endTime,editId,deskRefresh].join('|');
+        if (!deskAvailability || !deskAvailability.key.startsWith(currentKey + '|')) return setFormError('Esperá a que se actualice la disponibilidad de mesas.');
+        if (deskAvailability.available < Number(attendees)) return setFormError('No hay suficientes mesas libres para todos los asistentes.');
+        if (deskIds.length !== Number(attendees) || deskIds.some(id => !deskAvailability.desks.some(d => d.id === id && d.status === 'FREE'))) return setFormError('Seleccioná una mesa libre por cada asistente.');
+      }
       const payload = {
         // ✅ diferencia admin
         userId: Number(userId),
@@ -557,6 +572,7 @@ const isLoadedFuture = useMemo(() => {
         startTime,
         endTime,
         attendees: Number(attendees || 1),
+        ...(selectedSpace?.numberedDesks ? { deskIds } : {}),
         purpose: purpose ? String(purpose).trim() : null,
         notes: notes ? String(notes).trim() : null,
       };
@@ -573,14 +589,18 @@ const isLoadedFuture = useMemo(() => {
 
       if (editId) {
         if (loadedSeriesId) payload.applyTo = scope; // ONE | SERIES
-        await api.put(`/reservations/${editId}`, payload);
-        setSuccess("Reserva actualizada.");
+        const response = await api.put(`/reservations/${editId}`, payload);
+        const saved = response.data.first || response.data;
+        setAssignedDesks(saved.desks || []);
+        setSuccess('Reserva actualizada.' + (saved.desks?.length ? ' Mesas asignadas: ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
       } else {
-        await api.post("/reservations", payload);
-        setSuccess("Reserva creada.");
+        const response = await api.post('/reservations', payload);
+        const saved = response.data.first || response.data;
+        setAssignedDesks(saved.desks || []);
+        setSuccess((saved.status === 'PENDING' ? 'Reserva pendiente de aprobación.' : 'Reserva creada.') + (saved.desks?.length ? ' Mesas asignadas' + (response.data.first ? ' para la primera fecha' : '') + ': ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
       }
 
-      setTimeout(() => navigate("/admin"), 350);
+      setTimeout(() => navigate("/admin"), selectedSpace?.numberedDesks ? 4500 : 350);
     } catch (e) {
       console.error(e);
       const status = e?.response?.status;
@@ -788,7 +808,7 @@ const isLoadedFuture = useMemo(() => {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
 
@@ -819,7 +839,7 @@ const isLoadedFuture = useMemo(() => {
                         type="checkbox"
                         checked={recurring}
                         onChange={(e) => setRecurring(e.target.checked)}
-                        disabled={saving || readOnly}
+                        disabled={Boolean(success) || saving || readOnly}
                       />
                       <span className="toggle-slider" />
                     </label>
@@ -836,7 +856,7 @@ const isLoadedFuture = useMemo(() => {
                             <select
                               value={repeat}
                               onChange={(e) => setRepeat(e.target.value)}
-                              disabled={saving || readOnly}
+                              disabled={Boolean(success) || saving || readOnly}
                               style={recurStyles.input}
                             >
                               <option value="DAILY">Diaria</option>
@@ -858,7 +878,7 @@ const isLoadedFuture = useMemo(() => {
                                 name="endRule"
                                 checked={endRule === "DATE"}
                                 onChange={() => setEndRule("DATE")}
-                                disabled={saving || readOnly}
+                                disabled={Boolean(success) || saving || readOnly}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -867,7 +887,7 @@ const isLoadedFuture = useMemo(() => {
                                   type="date"
                                   value={repeatEndDate}
                                   onChange={(e) => setRepeatEndDate(e.target.value)}
-                                  disabled={saving || endRule !== "DATE" || readOnly}
+                                  disabled={Boolean(success) || saving || endRule !== "DATE" || readOnly}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -879,7 +899,7 @@ const isLoadedFuture = useMemo(() => {
                                 name="endRule"
                                 checked={endRule === "COUNT"}
                                 onChange={() => setEndRule("COUNT")}
-                                disabled={saving || readOnly}
+                                disabled={Boolean(success) || saving || readOnly}
                                 style={{ marginTop: 3 }}
                               />
                               <div>
@@ -890,7 +910,7 @@ const isLoadedFuture = useMemo(() => {
                                   max={100}
                                   value={repeatCount}
                                   onChange={(e) => setRepeatCount(Number(e.target.value || 1))}
-                                  disabled={saving || endRule !== "COUNT" || readOnly}
+                                  disabled={Boolean(success) || saving || endRule !== "COUNT" || readOnly}
                                   style={recurStyles.input}
                                 />
                               </div>
@@ -949,6 +969,7 @@ const isLoadedFuture = useMemo(() => {
                   </div>
                 </div>
               ) : null}
+              <DeskAvailability space={selectedSpace} date={date} startTime={startTime} endTime={endTime} attendees={attendees} editId={editId} admin={true} deskIds={deskIds} onSelection={setDeskIds} readOnly={readOnly} assignedDesks={assignedDesks} onAvailability={setDeskAvailability} refreshKey={deskRefresh} recurring={recurring || Boolean(loadedSeriesId)} />
               {/* Asistentes */}
               <div className="user-reserve-field full">
                 <label>Número de Asistentes</label>
@@ -957,7 +978,7 @@ const isLoadedFuture = useMemo(() => {
                   min={1}
                   value={attendees}
                   onChange={(e) => setAttendees(Number(e.target.value || 1))}
-                  disabled={saving || !shared || readOnly || createLocked}
+                  disabled={Boolean(success) || saving || !shared || readOnly || createLocked}
                 />
                 <div className="user-reserve-help">
                   {shared
@@ -973,7 +994,7 @@ const isLoadedFuture = useMemo(() => {
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   placeholder="ej. Reunión de equipo, Presentación a cliente"
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
 
@@ -984,7 +1005,7 @@ const isLoadedFuture = useMemo(() => {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Algún requerimiento especial o nota..."
-                  disabled={saving || readOnly}
+                  disabled={Boolean(success) || saving || readOnly}
                 />
               </div>
             </div>
