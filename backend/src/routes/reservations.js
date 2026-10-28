@@ -4,7 +4,6 @@ const { countOverlappingReservations } = require('../services/reservationOccupan
 const { computeReservationStatus } = require('../services/reservationStatus');
 
 const express = require('express');
-const crypto = require('crypto');
 const prisma = require('../prisma');
 const { authRequired, requireAdmin } = require('../middlewares/auth');
 
@@ -19,322 +18,51 @@ const { notifyLimitExceeded } = require('../services/limitAlertService');
 const {
   notifyReservationPendingApproval,
   notifyReservationApprovedToUser,
+  notifyReservationCancelledToAdmins,
 } = require('../services/alertNotificationService');
 
 // ✅ Validador de horario/min/step (usa settings DB por dentro)
 const { validateReservationTimes } = require('../utils/reservationTimeValidator');
-const { madridDateTimeToUtc, madridDateYMDToUtcMidnight } = require('../utils/timezone');
+const {
+  madridDateTimeToUtc,
+  madridDateYMDToUtcMidnight,
+  utcToMadridYMD,
+  addDaysYMD,
+  isoWeekdayYMD,
+  getPartsInTZ,
+  TZ,
+} = require('../utils/timezone');
+const { ReservationValidationError } = require('../services/reservationErrors');
+const { safeRandomId, toDateOnlyYMD, buildOccurrenceDates } = require('../services/recurrence');
 
 const { DeskError, deskInclude, lockSpaces, allocationData } = require('../services/deskAllocation');
 const router = express.Router();
 
 /* ------------------------------ Helpers fechas ------------------------------ */
+// Todas las fechas de reserva se guardan como medianoche Europe/Madrid (en UTC).
+// Los rangos de día/semana se calculan en calendario Madrid para no depender de la TZ del servidor.
 
 function getDayRange(dateOnly) {
-  const start = new Date(dateOnly);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(dateOnly);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
+  const ymd = utcToMadridYMD(dateOnly);
+  return {
+    start: madridDateYMDToUtcMidnight(ymd),
+    end: madridDateYMDToUtcMidnight(addDaysYMD(ymd, 1)),
+  };
+}
+
+// 'HH:MM' en hora Madrid de un instante UTC
+function toHHMM(date) {
+  const p = getPartsInTZ(new Date(date), TZ);
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
 }
 
 function getWeekRangeFromDate(dateOnly) {
-  const base = new Date(dateOnly);
-  base.setHours(0, 0, 0, 0);
-
-  const day = base.getDay() || 7; // domingo=0 -> 7
-  const weekStart = new Date(base);
-  weekStart.setDate(base.getDate() - day + 1);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
-
-  return { weekStart, weekEnd };
-}
-
-/* ------------------------------ Recurrencia ------------------------------ */
-
-function safeRandomId() {
-  try {
-    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  } catch (_) {}
-  return crypto.randomBytes(16).toString('hex');
-}
-
-function toDateOnlyYMD(d) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-function addMonthsSameDay(date, months) {
-  const base = new Date(date);
-  const day = base.getDate();
-
-  const d = new Date(base);
-  d.setDate(1);
-  d.setMonth(d.getMonth() + months);
-
-  // Clamp al último día del mes
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(day, lastDay));
-  return d;
-}
-
-function isoWeekday(date) {
-  // JS: 0=Sun..6=Sat  | ISO: 1=Mon..7=Sun
-  const d = date.getDay();
-  return d === 0 ? 7 : d;
-}
-
-function isWeekend(date) {
-  const d = date.getDay();
-  return d === 0 || d === 6;
-}
-
-function ymd(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/**
- * MONTHLY ("Mismo día todos los meses") con ajuste a día hábil:
- * - Se toma el "día del mes" ancla (p.ej. 29) y el "día de semana" ancla (p.ej. jueves).
- * - Para cada mes:
- *    1) Se arma una fecha base = min(díaAncla, últimoDíaDelMes)
- *    2) Se busca el mismo día de semana ancla dentro de la MISMA semana ISO (lun-dom)
- *       que la fecha base (puede ser hacia adelante o hacia atrás).
- *    3) Si cae fuera del mes, se retrocede 7 días (semana anterior).
- *    4) Si cae en fin de semana o feriado/cierre, se retrocede 7 días hasta un día hábil.
- */
-function addMonthsMonthlyBusinessWeekday({
-  startDate,
-  monthsToAdd,
-  anchorDay,
-  anchorIsoWeekday,
-  closedYMDSet,
-}) {
-  const d = new Date(startDate);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(1);
-  d.setMonth(d.getMonth() + monthsToAdd);
-
-  const year = d.getFullYear();
-  const month = d.getMonth();
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  const baseDay = Math.min(anchorDay, lastDay);
-  let candidate = new Date(year, month, baseDay);
-
-  // Ajuste al mismo weekday ancla dentro de la misma semana ISO (lun-dom)
-  const candIso = isoWeekday(candidate);
-  const diff = anchorIsoWeekday - candIso; // positivo => avanzar, negativo => retroceder
-  candidate = addDays(candidate, diff);
-
-  // Si nos pasamos de mes, retroceder una semana
-  if (candidate.getMonth() !== month) {
-    candidate = addDays(candidate, -7);
-  }
-
-  // Si cae en fin de semana o feriado/cierre, retroceder una semana (mismo weekday)
-  while (isWeekend(candidate) || (closedYMDSet && closedYMDSet.has(ymd(candidate)))) {
-    candidate = addDays(candidate, -7);
-  }
-
-  return candidate;
-}
-
-/**
- * Genera fechas (Date) para ocurrencias recurrentes.
- * - pattern: DAILY | WEEKLY | MONTHLY
- * - endDate: YYYY-MM-DD (inclusive)
- * - count: cantidad total de ocurrencias (incluye la primera)
- *
- * DAILY:
- *  - Solo lun-vie
- *  - Excluye cierres/feriados (OfficeClosures)
- */
-function generateOccurrenceDates({ startYMD, pattern, endDateYMD, count, closedYMDSet }) {
-  const start = new Date(`${startYMD}T00:00:00`);
-  if (Number.isNaN(start.getTime())) throw new Error('Fecha inicial inválida');
-
-  let limitCount = count != null ? Number(count) : null;
-  if (limitCount != null) {
-    if (!Number.isInteger(limitCount) || limitCount < 1 || limitCount > 100) {
-      throw new Error('recurrenceCount debe ser un entero entre 1 y 100');
-    }
-  }
-
-  let endDate = null;
-  if (endDateYMD) {
-    endDate = new Date(`${endDateYMD}T00:00:00`);
-    if (Number.isNaN(endDate.getTime())) throw new Error('Fecha fin inválida');
-  }
-
-  const out = [];
-  let current = new Date(start);
-  
-
-  // DAILY: solo días hábiles (lun-vie) y excluye feriados/cierres.
-  // Si la fecha inicial cae en finde o cierre, se corre al próximo día hábil.
-  if (pattern === 'DAILY') {
-    while (isWeekend(current) || (closedYMDSet && closedYMDSet.has(ymd(current)))) {
-      current = addDays(current, 1);
-    }
-  }
-
-  // Siempre incluye la primera
-  for (let i = 0; i < 100; i++) {
-    if (endDate && current > endDate) break;
-    out.push(new Date(current));
-    if (limitCount && out.length >= limitCount) break;
-
-    if (pattern === 'DAILY') {
-      // avanzar al próximo día hábil
-      do {
-        current = addDays(current, 1);
-      } while (isWeekend(current) || (closedYMDSet && closedYMDSet.has(ymd(current))));
-    } else if (pattern === 'WEEKLY') current = addDays(current, 7);
-    else if (pattern === 'MONTHLY') current = addMonthsSameDay(current, 1);
-    else throw new Error('Patrón de recurrencia inválido');
-  }
-
-  return out;
-}
-
-
-async function buildOccurrenceDates({ date, isRecurring, pattern, recurrenceEndDate, recurrenceCount, db = prisma }) {
-  const hasEndDate = Boolean(recurrenceEndDate);
-  const hasCount = recurrenceCount != null;
-  if (isRecurring && (!['DAILY', 'WEEKLY', 'MONTHLY'].includes(pattern) || hasEndDate === hasCount)) {
-    throw new ReservationValidationError('Indicá un patrón válido y una sola regla de fin.', 'INVALID_RECURRENCE');
-  }
-  if (hasCount && (!Number.isInteger(recurrenceCount) || recurrenceCount < 1 || recurrenceCount > 100)) throw new ReservationValidationError('La cantidad debe ser un entero entre 1 y 100.', 'INVALID_RECURRENCE');
-  if (hasEndDate && (!/^\d{4}-\d{2}-\d{2}$/.test(recurrenceEndDate) || recurrenceEndDate < date)) throw new ReservationValidationError('La fecha final debe ser igual o posterior al inicio.', 'INVALID_RECURRENCE');
-    // ---- Ocurrencias (con ajuste de feriados/cierres para MONTHLY) ----
-    let occurrenceDates;
-
-    if (!isRecurring) {
-      occurrenceDates = [new Date(`${date}T00:00:00`)];
-    } else if (pattern !== 'MONTHLY') {
-      // DAILY: excluir cierres/feriados (OfficeClosure)
-      let closedYMDSet = null;
-      if (pattern === 'DAILY') {
-        try {
-          const startDate = new Date(`${date}T00:00:00`);
-          let rangeEnd = null;
-          if (hasEndDate) rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
-          else if (hasCount) {
-            // aprox: count días hábiles pueden estirarse por finde/cierres; damos margen
-            rangeEnd = addDays(startDate, Math.max(0, Number(recurrenceCount) - 1) + 60);
-          } else {
-            rangeEnd = addDays(startDate, 120);
-          }
-
-          const closures = await db.officeClosure.findMany({
-            where: {
-              active: true,
-              date: { gte: startDate, lte: rangeEnd },
-            },
-            select: { date: true },
-          });
-
-          closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
-        } catch (e) {
-          console.warn('[office-closures] No se pudo cargar cierres para DAILY recurrence:', e?.message || e);
-          closedYMDSet = null;
-        }
-      }
-
-      occurrenceDates = generateOccurrenceDates({
-        startYMD: date,
-        pattern,
-        endDateYMD: hasEndDate ? recurrenceEndDate : null,
-        count: hasCount ? Number(recurrenceCount) : null,
-        closedYMDSet,
-      });
-    } else {
-      // MONTHLY: “último <weekday>” del mes cuando falta el día o cae en finde/feriado.
-      const startDate = new Date(`${date}T00:00:00`);
-      const anchorDay = startDate.getDate();
-      const anchorIsoWeekday = isoWeekday(startDate);
-
-      // rango estimado para traer cierres/feriados
-      let rangeEnd = null;
-      if (hasEndDate) {
-        rangeEnd = new Date(`${recurrenceEndDate}T00:00:00`);
-      } else if (hasCount) {
-        // aprox: (count-1) meses adelante, +35d de margen por ajustes
-        const tmp = addMonthsSameDay(startDate, Math.max(0, Number(recurrenceCount) - 1));
-        rangeEnd = addDays(tmp, 35);
-      } else {
-        rangeEnd = addDays(addMonthsSameDay(startDate, 12), 35);
-      }
-
-const closures = db.officeClosure
-  ? await db.officeClosure.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lte: rangeEnd,
-        },
-        active: true,
-      },
-      select: { date: true },
-    })
-  : [];
-
-
-      const closedYMDSet = new Set(closures.map((c) => toDateOnlyYMD(new Date(c.date))));
-
-      // generar ocurrencias
-      const out = [];
-      const limitCount = hasCount ? Math.max(1, Number(recurrenceCount)) : null;
-      const endDateObj = hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null;
-
-      for (let i = 0; i < 100; i++) {
-        if (limitCount && out.length >= limitCount) break;
-
-        const occ =
-          i === 0
-            ? startDate
-            : addMonthsMonthlyBusinessWeekday({
-                startDate,
-                monthsToAdd: i,
-                anchorDay,
-                anchorIsoWeekday,
-                closedYMDSet,
-              });
-
-        if (endDateObj && occ > endDateObj) break;
-        out.push(new Date(occ));
-      }
-
-      occurrenceDates = out;
-    }
-
-
-  if (!occurrenceDates.length) throw new ReservationValidationError('La regla no genera fechas de reserva.', 'INVALID_RECURRENCE');
-  return occurrenceDates;
-}
-
-/* ------------------------------ Error tipado ------------------------------ */
-
-class ReservationValidationError extends Error {
-  constructor(message, code = 'VALIDATION_ERROR', extra = {}) {
-    super(message);
-    this.name = 'ReservationValidationError';
-    this.code = code;
-    this.extra = extra;
-  }
+  const ymd = utcToMadridYMD(dateOnly);
+  const monday = addDaysYMD(ymd, 1 - isoWeekdayYMD(ymd));
+  return {
+    weekStart: madridDateYMDToUtcMidnight(monday),
+    weekEnd: madridDateYMDToUtcMidnight(addDaysYMD(monday, 7)),
+  };
 }
 
 const MS_PER_HOUR = 1000 * 60 * 60;
@@ -356,12 +84,96 @@ function resolveInitialStatus({ actorRole, targetUserClassify }) {
   return 'PENDING';
 }
 
+/* ------------------------------ Contexto de validación ------------------------------ */
+
+/**
+ * Precarga de datos para validar muchas fechas (series) sin repetir consultas.
+ * - Siempre carga espacios, reglas por tipo y cierres del rango.
+ * - Con { withReservations: true } también carga las reservas del usuario (ACTIVE) y del
+ *   espacio (ACTIVE/PENDING) del rango, y las validaciones se resuelven en memoria.
+ */
+async function createValidationContext({ db = prisma, userId, spaceIds, ymds, withReservations = false }) {
+  const sorted = [...ymds].sort();
+  const from = madridDateYMDToUtcMidnight(addDaysYMD(sorted[0], -7));
+  const to = madridDateYMDToUtcMidnight(addDaysYMD(sorted[sorted.length - 1], 8));
+  const ids = [...new Set(spaceIds.map(Number))];
+
+  const [spaces, closures] = await Promise.all([
+    db.space.findMany({ where: { id: { in: ids } } }),
+    db.officeClosure.findMany({ where: { active: true, date: { gte: from, lte: to } }, select: { date: true } }),
+  ]);
+
+  const ctx = {
+    spaces: new Map(spaces.map((s) => [s.id, s])),
+    typeRules: new Map(),
+    closedYMDs: new Set(closures.map((c) => utcToMadridYMD(c.date))),
+    userRes: null,
+    spaceRes: null,
+  };
+
+  for (const type of new Set(spaces.map((s) => s.type))) {
+    ctx.typeRules.set(type, await getTypeReservationRules(type));
+  }
+
+  if (withReservations) {
+    const [userRes, spaceRes] = await Promise.all([
+      db.reservation.findMany({
+        where: { userId, status: 'ACTIVE', date: { gte: from, lt: to } },
+        select: { id: true, spaceId: true, date: true, startTime: true, endTime: true, space: { select: { type: true } } },
+      }),
+      db.reservation.findMany({
+        where: { spaceId: { in: ids }, status: { in: ['ACTIVE', 'PENDING'] }, date: { gte: from, lt: to } },
+        select: { id: true, spaceId: true, date: true, startTime: true, endTime: true, attendees: true },
+      }),
+    ]);
+    ctx.userRes = userRes.map((r) => ({ ...r, spaceType: r.space?.type }));
+    ctx.spaceRes = spaceRes;
+  }
+
+  return ctx;
+}
+
+/** Refleja en el contexto una reserva guardada (nueva o editada) para las validaciones siguientes. */
+function updateValidationContextRow(ctx, saved, spaceType) {
+  if (!ctx) return;
+  const row = {
+    id: saved.id,
+    spaceId: saved.spaceId,
+    date: saved.date,
+    startTime: saved.startTime,
+    endTime: saved.endTime,
+    attendees: saved.attendees,
+  };
+  const replace = (list, item) => {
+    const i = list.findIndex((o) => o.id === saved.id);
+    if (item) {
+      if (i >= 0) list[i] = item;
+      else list.push(item);
+    } else if (i >= 0) {
+      list.splice(i, 1);
+    }
+  };
+  const blocks = ['ACTIVE', 'PENDING'].includes(saved.status);
+  if (ctx.spaceRes) replace(ctx.spaceRes, blocks ? row : null);
+  if (ctx.userRes) replace(ctx.userRes, saved.status === 'ACTIVE' ? { ...row, spaceType } : null);
+}
+
+/** Suma al contexto una reserva ya validada para que cuente en las siguientes fechas de la serie. */
+function addToValidationContext(ctx, { spaceId, spaceType, date, startTime, endTime, attendees, countsForLimits }) {
+  if (!ctx) return;
+  const row = { id: null, spaceId, date, startTime, endTime, attendees };
+  if (ctx.spaceRes) ctx.spaceRes.push(row);
+  if (ctx.userRes && countsForLimits) ctx.userRes.push({ ...row, spaceType });
+}
+
 /**
  * Valida reglas de negocio y devuelve los objetos Date construidos.
  * Lanza ReservationValidationError si algo no cumple.
+ * `ctx` (opcional) evita consultas repetidas al validar series.
  */
 async function validateAndBuildReservation({
   db = prisma,
+  ctx = null,
   userId,
   actorRole ='USER',
   spaceId,
@@ -396,40 +208,31 @@ async function validateAndBuildReservation({
     throw new ReservationValidationError('Fecha u horas inválidas');
   }
 
-  // ✅ Bloqueo por cierres del coworking (OfficeClosure)
-  // Se evalúa por fecha (día completo). Si hay cierre activo, no se permite reservar.
-  try {
-    const closureMadridDate = madridDateYMDToUtcMidnight(date);
-    const closureUtcDate = new Date(`${date}T00:00:00.000Z`);
-
-    const closure = await db.officeClosure.findFirst({
+  // ✅ Bloqueo por cierres del coworking (OfficeClosure), por fecha (día completo).
+  // Si falla la consulta se propaga el error (500): nunca se reserva "a ciegas" un día cerrado.
+  let closure = null;
+  if (ctx?.closedYMDs) {
+    if (ctx.closedYMDs.has(date)) closure = { reason: null };
+  } else {
+    closure = await db.officeClosure.findFirst({
       where: {
         active: true,
         OR: [
-          { date: closureMadridDate },
-          { date: closureUtcDate },
+          { date: dateOnly },
+          { date: new Date(`${date}T00:00:00.000Z`) },
         ],
       },
       select: { reason: true },
     });
+  }
 
-    if (closure) {
-      const ymd = date;
-
-      throw new ReservationValidationError(
-        closure.reason
-          ? `El coworking está cerrado el ${ymd}. Motivo: ${closure.reason}`
-          : `El coworking está cerrado el ${ymd}.`,
-        'OFFICE_CLOSED',
-        { date: ymd, reason: closure.reason || null }
-      );
-    }
-  } catch (e) {
-    if (e instanceof ReservationValidationError) throw e;
-
-    console.warn(
-      '[office-closures] No se pudo validar cierres:',
-      e?.message || e
+  if (closure) {
+    throw new ReservationValidationError(
+      closure.reason
+        ? `El coworking está cerrado el ${date}. Motivo: ${closure.reason}`
+        : `El coworking está cerrado el ${date}.`,
+      'OFFICE_CLOSED',
+      { date, reason: closure.reason || null }
     );
   }
 
@@ -440,7 +243,6 @@ async function validateAndBuildReservation({
   }
 
   // ✅ Validación única (sin duplicar): horario + step + minDuration
-  // Este validador debe leer settings (openHour/closeHour/minMinutes/stepMinutes).
   try {
     await validateReservationTimes({
       startTime: startDateTime,
@@ -454,13 +256,12 @@ async function validateAndBuildReservation({
     );
   }
 
-  // ✅ Antelación mínima (si tu sistema la usa desde settings)
+  // ✅ Antelación mínima (settings)
   const now = new Date();
   let minHoursBefore = 0;
 
   try {
     const rules = await getReservationRules();
-    // soporta varios nombres por compatibilidad
     const v =
       rules?.min_hours_before ??
       rules?.minHoursBefore ??
@@ -481,16 +282,16 @@ async function validateAndBuildReservation({
   }
 
   // --- Cargamos el espacio para conocer su tipo ---
-  const space = await db.space.findUnique({
-    where: { id: Number(spaceId) },
-  });
+  const space = ctx?.spaces?.has(Number(spaceId))
+    ? ctx.spaces.get(Number(spaceId))
+    : await db.space.findUnique({ where: { id: Number(spaceId) } });
 
   if (!space || !space.active) {
     throw new ReservationValidationError('El espacio no existe o está inactivo');
   }
 
   // Reglas por tipo (viene desde reservationValidationService.js)
-  const typeRules = await getTypeReservationRules(space.type);
+  const typeRules = ctx?.typeRules?.get(space.type) ?? (await getTypeReservationRules(space.type));
 
   const newReservationHours = getReservationDurationHours(
     startDateTime,
@@ -501,31 +302,38 @@ async function validateAndBuildReservation({
     ? { id: { not: reservationIdToExcludeFinal } }
     : {};
 
+  // Reservas ACTIVE del usuario para este tipo de espacio en [from, to): en memoria (series) o BD.
+  const findUserReservations = async (from, to) => {
+    if (ctx?.userRes) {
+      return ctx.userRes.filter(
+        (r) =>
+          r.spaceType === space.type &&
+          (reservationIdToExcludeFinal == null || r.id !== reservationIdToExcludeFinal) &&
+          r.date >= from &&
+          r.date < to
+      );
+    }
+    return db.reservation.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        ...excludeFilter,
+        date: { gte: from, lt: to },
+        space: { type: space.type },
+      },
+      select: { spaceId: true, startTime: true, endTime: true },
+    });
+  };
+
   // --- 1) Límite por día, por usuario y tipo de espacio ---
   const { start: startOfDay, end: endOfDay } = getDayRange(dateOnly);
-
-  const dayReservations = await db.reservation.findMany({
-    where: {
-      userId,
-      status: 'ACTIVE',
-      ...excludeFilter,
-      date: {
-        gte: startOfDay,
-        lt: endOfDay,
-      },
-      space: {
-        type: space.type,
-      },
-    },
-    include: { space: true },
-  });
+  const dayReservations = await findUserReservations(startOfDay, endOfDay);
 
   const usedDayHours = dayReservations.reduce(
     (sum, r) => sum + getReservationDurationHours(r.startTime, r.endTime),
     0
   );
-  
-  
+
   const isAdmin = String(actorRole).toUpperCase() === 'ADMIN';
   if (
       !isAdmin &&
@@ -563,22 +371,7 @@ async function validateAndBuildReservation({
 
   // --- 2) Límite por semana, por usuario y tipo ---
   const { weekStart, weekEnd } = getWeekRangeFromDate(dateOnly);
-
-  const weekReservations = await db.reservation.findMany({
-    where: {
-      userId,
-      status: 'ACTIVE',
-      ...excludeFilter,
-      date: {
-        gte: weekStart,
-        lt: weekEnd,
-      },
-      space: {
-        type: space.type,
-      },
-    },
-    include: { space: true },
-  });
+  const weekReservations = await findUserReservations(weekStart, weekEnd);
 
   const usedWeekHours = weekReservations.reduce(
     (sum, r) => sum + getReservationDurationHours(r.startTime, r.endTime),
@@ -602,19 +395,10 @@ async function validateAndBuildReservation({
   }
 
   // --- 3) No ocupar demasiados espacios simultáneos del mismo tipo ---
-  const overlappingSameType = await db.reservation.findMany({
-    where: {
-      userId,
-      status: 'ACTIVE',
-      ...excludeFilter,
-      date: dateOnly,
-      startTime: { lt: endDateTime },
-      endTime: { gt: startDateTime },
-      space: { type: space.type },
-    },
-    select: { spaceId: true },
-  });
-
+  // (las reservas del día ya están cargadas: filtramos las que se solapan en horario)
+  const overlappingSameType = dayReservations.filter(
+    (r) => r.startTime < endDateTime && r.endTime > startDateTime
+  );
   const distinctSpaces = new Set(overlappingSameType.map((r) => r.spaceId));
 
   if (distinctSpaces.size >= typeRules.maxOverlappingSpacesPerUser) {
@@ -632,17 +416,29 @@ async function validateAndBuildReservation({
   // --- 4) Solapamiento en el mismo espacio ---
   // En espacios compartidos permitimos solapes (capacidad se valida luego por attendees)
   if (!isSharedSpaceType(space.type)) {
-    const overlapping = await db.reservation.findFirst({
-      where: {
-        ...excludeFilter,
-        spaceId: Number(spaceId),
-        status: { in: ['ACTIVE', 'PENDING'] }, // ✅ alineado con el resto del flujo
-        date: dateOnly,
-        startTime: { lt: endDateTime },
-        endTime: { gt: startDateTime },
-      },
-      select: { id: true },
-    });
+    let overlapping;
+    if (ctx?.spaceRes) {
+      overlapping = ctx.spaceRes.find(
+        (r) =>
+          r.spaceId === Number(spaceId) &&
+          (reservationIdToExcludeFinal == null || r.id !== reservationIdToExcludeFinal) &&
+          r.date.getTime() === dateOnly.getTime() &&
+          r.startTime < endDateTime &&
+          r.endTime > startDateTime
+      );
+    } else {
+      overlapping = await db.reservation.findFirst({
+        where: {
+          ...excludeFilter,
+          spaceId: Number(spaceId),
+          status: { in: ['ACTIVE', 'PENDING'] },
+          date: dateOnly,
+          startTime: { lt: endDateTime },
+          endTime: { gt: startDateTime },
+        },
+        select: { id: true },
+      });
+    }
 
     if (overlapping) {
       throw new ReservationValidationError(
@@ -653,6 +449,48 @@ async function validateAndBuildReservation({
   }
 
   return { dateOnly, startDateTime, endDateTime, space };
+}
+
+/**
+ * Re-chequea solapes/capacidad con el espacio bloqueado (FOR UPDATE), en UNA consulta para
+ * todas las filas. La validación previa se hace fuera de la transacción y dos peticiones
+ * simultáneas podían pasarla a la vez (sobreventa).
+ * Los espacios con mesas numeradas se validan en allocationData.
+ */
+async function assertNoConflictsUnderLock(tx, rows, space) {
+  if (!rows.length || !space || space.numberedDesks) return;
+  const minStart = new Date(Math.min(...rows.map((r) => r.startTime.getTime())));
+  const maxEnd = new Date(Math.max(...rows.map((r) => r.endTime.getTime())));
+  const existing = await tx.reservation.findMany({
+    where: {
+      spaceId: space.id,
+      status: { in: ['ACTIVE', 'PENDING'] },
+      startTime: { lt: maxEnd },
+      endTime: { gt: minStart },
+    },
+    select: { startTime: true, endTime: true, attendees: true },
+  });
+  const shared = isSharedSpaceType(space.type);
+  const cap = effectiveCapacity(space);
+  rows.forEach((row, i) => {
+    const overlapping = existing.filter((r) => r.startTime < row.endTime && r.endTime > row.startTime);
+    if (shared) {
+      const occupied = overlapping.reduce((sum, r) => sum + Number(r.attendees ?? 1), 0);
+      if (occupied + row.attendees > cap) {
+        throw new ReservationValidationError(
+          `No hay disponibilidad. ${space.name} está completo para ese horario (${occupied}/${cap}).`,
+          'CAPACITY_FULL',
+          { occurrenceIndex: i + 1 }
+        );
+      }
+    } else if (overlapping.length) {
+      throw new ReservationValidationError(
+        `El espacio ${space.name} ya está reservado en ese horario.`,
+        'SPACE_UNAVAILABLE',
+        { occurrenceIndex: i + 1 }
+      );
+    }
+  });
 }
 
 /* ------------------------------ ENDPOINTS ------------------------------ */
@@ -746,15 +584,14 @@ router.patch('/series/:seriesId/approve', authRequired, requireAdmin, async (req
     });
 
     if (first) {
-      try {
-        await notifyReservationApprovedToUser({
-          reservation: first,
-          user: first.user,
-          space: first.space,
-        });
-      } catch (e) {
+      // Sin await: el SMTP puede tardar hasta 20 s y no debe retrasar la respuesta.
+      notifyReservationApprovedToUser({
+        reservation: first,
+        user: first.user,
+        space: first.space,
+      }).catch((e) => {
         console.error('No se pudo enviar email de serie aprobada al usuario:', e);
-      }
+      });
     }
 
     return res.json({ ok: true, seriesId, approvedCount: result.count });
@@ -878,6 +715,19 @@ router.patch('/:id/reject', authRequired, requireAdmin, async (req, res) => {
 });
 
 /**
+ * Avisa a los admins (email + popup) cuando un NO admin cancela una reserva.
+ * Sin await: no debe demorar ni romper la respuesta al usuario.
+ */
+function notifyAdminsOfCancellation({ role, reservation }) {
+  if (String(role).toUpperCase() === 'ADMIN') return;
+  notifyReservationCancelledToAdmins({
+    reservation,
+    user: reservation.user,
+    space: reservation.space,
+  }).catch((e) => console.error('No se pudo notificar la cancelación a los admins:', e));
+}
+
+/**
  * PATCH /api/reservations/:id/cancel
  */
 router.patch('/:id/cancel', authRequired, async (req, res) => {
@@ -897,6 +747,10 @@ router.patch('/:id/cancel', authRequired, async (req, res) => {
       return res.status(403).json({ message: 'No puedes cancelar esta reserva' });
     }
 
+    if (!['ACTIVE', 'PENDING'].includes(reservation.status)) {
+      return res.status(400).json({ message: 'Solo se pueden cancelar reservas activas o pendientes' });
+    }
+
     const now = new Date();
     if (reservation.startTime <= now) {
       return res.status(400).json({ message: 'No se puede cancelar una reserva pasada' });
@@ -905,7 +759,9 @@ router.patch('/:id/cancel', authRequired, async (req, res) => {
     const updated = await prisma.reservation.update({
       where: { id },
       data: { status: 'CANCELLED' },
+      include: { user: true, space: true },
     });
+    notifyAdminsOfCancellation({ role, reservation: updated });
 
     res.json({ message: 'Reserva cancelada', reservation: updated });
   } catch (err) {
@@ -1025,11 +881,20 @@ router.post('/', authRequired, async (req, res) => {
     const seriesId = isRecurring ? safeRandomId() : null;
     const preparedRows = [];
 
+    // Una sola ronda de consultas para toda la serie (antes: ~8 consultas por fecha).
+    const ctx = await createValidationContext({
+      userId: targetUserId,
+      spaceIds: [spaceId],
+      ymds: occurrenceDates.map(toDateOnlyYMD),
+      withReservations: true,
+    });
+
     for (let i = 0; i < occurrenceDates.length; i++) {
       const occDate = occurrenceDates[i];
       const occYMD = toDateOnlyYMD(occDate);
 
       const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
+        ctx,
         userId: targetUserId,
         actorRole,
         spaceId,
@@ -1048,19 +913,20 @@ router.post('/', authRequired, async (req, res) => {
       if (space.numberedDesks) {
         // Individual desks are checked and assigned under the space lock below.
       } else if (shared) {
-        const agg = await prisma.reservation.aggregate({
-          where: {
-            spaceId: space.id,
-            status: { in: ['ACTIVE', 'PENDING'] },
-            AND: [
-              { startTime: { gte: dayStart, lt: dayEnd } },
-              { startTime: { lt: endDateTime } },
-              { endTime: { gt: startDateTime } },
-            ],
+        const agg = {
+          _sum: {
+            attendees: ctx.spaceRes
+              .filter(
+                (r) =>
+                  r.spaceId === space.id &&
+                  r.startTime >= dayStart &&
+                  r.startTime < dayEnd &&
+                  r.startTime < endDateTime &&
+                  r.endTime > startDateTime
+              )
+              .reduce((sum, r) => sum + Number(r.attendees ?? 1), 0),
           },
-          _sum: { attendees: true },
-        });
-
+        };
         const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
         if (occupiedAttendees + occAttendees > cap) {
           throw new ReservationValidationError(
@@ -1070,16 +936,13 @@ router.post('/', authRequired, async (req, res) => {
           );
         }
       } else {
-        const overlapping = await prisma.reservation.findFirst({
-          where: {
-            spaceId: space.id,
-            status: { in: ['ACTIVE', 'PENDING'] },
-            date: dateOnly,
-            startTime: { lt: endDateTime },
-            endTime: { gt: startDateTime },
-          },
-          select: { id: true },
-        });
+        const overlapping = ctx.spaceRes.find(
+          (r) =>
+            r.spaceId === space.id &&
+            r.date.getTime() === dateOnly.getTime() &&
+            r.startTime < endDateTime &&
+            r.endTime > startDateTime
+        );
 
         if (overlapping) {
           throw new ReservationValidationError(
@@ -1099,6 +962,16 @@ router.post('/', authRequired, async (req, res) => {
         attendees: occAttendees,
       });
 
+      addToValidationContext(ctx, {
+        spaceId: Number(spaceId),
+        spaceType: space.type,
+        date: dateOnly,
+        startTime: startDateTime,
+        endTime: endDateTime,
+        attendees: occAttendees,
+        countsForLimits: status === 'ACTIVE',
+      });
+
       preparedRows.push({
         userId: targetUserId,
         spaceId: Number(spaceId),
@@ -1111,7 +984,7 @@ router.post('/', authRequired, async (req, res) => {
         // recurrencia
         seriesId,
         recurrencePattern: isRecurring ? pattern : null,
-        recurrenceEndDate: isRecurring && hasEndDate ? new Date(`${recurrenceEndDate}T00:00:00`) : null,
+        recurrenceEndDate: isRecurring && hasEndDate ? madridDateYMDToUtcMidnight(recurrenceEndDate) : null,
         recurrenceCount: isRecurring && hasCount ? Number(recurrenceCount) : null,
 
         // snapshot + cálculo
@@ -1126,13 +999,14 @@ router.post('/', authRequired, async (req, res) => {
 
     const createdReservations = await prisma.$transaction(async (tx) => {
       await lockSpaces(tx, preparedRows.map(row => row.spaceId));
+      await assertNoConflictsUnderLock(tx, preparedRows, ctx.spaces.get(Number(spaceId)));
       const created = [];
       for (const row of preparedRows) {
-        const desks = await allocationData(tx, row, { admin: actorRole === 'ADMIN', deskIds: req.body.deskIds });
+        const desks = await allocationData(tx, row, { admin: actorRole === 'ADMIN', deskIds: req.body.deskIds, space: ctx.spaces.get(row.spaceId) });
         created.push(await tx.reservation.create({ data: { ...row, ...desks }, include: { user: true, space: true, desks: deskInclude } }));
       }
       return created;
-    }, { timeout: 20000, maxWait: 20000 });
+    }, { timeout: 60000, maxWait: 20000 });
 
     // Si es recurrente devolvemos resumen + primera
     if (isRecurring) {
@@ -1356,13 +1230,7 @@ router.put('/:id', authRequired, async (req, res) => {
     const targetSpaceId = Number(spaceId ?? existing.spaceId);
 
     // existing.date es Date → convertimos a YYYY-MM-DD para no romper validateAndBuildReservation
-    const existingDateYMD = (() => {
-      const d = new Date(existing.date);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
-    })();
+    const existingDateYMD = utcToMadridYMD(existing.date);
 
     const targetDate = date ?? existingDateYMD;
     const targetStartTime = startTime ?? toHHMM(existing.startTime);
@@ -1374,11 +1242,11 @@ router.put('/:id', authRequired, async (req, res) => {
     const hasNewEnd = body.recurrenceEndDate != null;
     const hasNewCount = body.recurrenceCount != null;
     if (hasNewEnd && hasNewCount) throw new ReservationValidationError('Elegí una sola regla de fin.', 'INVALID_RECURRENCE');
-    const nextEnd = hasNewEnd ? body.recurrenceEndDate : hasNewCount ? null : existing.recurrenceEndDate ? toDateOnlyYMD(existing.recurrenceEndDate) : null;
+    const nextEnd = hasNewEnd ? body.recurrenceEndDate : hasNewCount ? null : existing.recurrenceEndDate ? utcToMadridYMD(existing.recurrenceEndDate) : null;
     const nextCount = hasNewCount ? Number(body.recurrenceCount) : hasNewEnd ? null : existing.recurrenceCount;
     const recurrenceChanged = Boolean(existing.seriesId) && (
       nextPattern !== existing.recurrencePattern || nextCount !== existing.recurrenceCount ||
-      nextEnd !== (existing.recurrenceEndDate ? toDateOnlyYMD(existing.recurrenceEndDate) : null)
+      nextEnd !== (existing.recurrenceEndDate ? utcToMadridYMD(existing.recurrenceEndDate) : null)
     );
     if (recurrenceChanged && scope !== 'SERIES') throw new ReservationValidationError('Para cambiar la repetición, aplicá los cambios a la serie.', 'RECURRENCE_REQUIRES_SERIES');
 
@@ -1430,11 +1298,20 @@ router.put('/:id', authRequired, async (req, res) => {
           }));
         }
 
+        // Una sola ronda de consultas para toda la serie; las filas ya actualizadas se
+        // reflejan en el contexto (updateValidationContextRow) para que las siguientes las vean.
+        const staticCtx = await createValidationContext({
+          db: tx,
+          userId: seriesReservations[0].userId,
+          spaceIds: lockedSpaceIds,
+          ymds: seriesReservations.map((r) => utcToMadridYMD(r.date)),
+          withReservations: true,
+        });
         const out = [];
 
         for (const r of seriesReservations) {
           // Mantener fecha por ocurrencia
-          const ymd = toDateOnlyYMD(new Date(r.date));
+          const ymd = utcToMadridYMD(r.date);
 
           const nextStart = startTime ?? toHHMM(r.startTime);
           const nextEnd = endTime ?? toHHMM(r.endTime);
@@ -1442,6 +1319,7 @@ router.put('/:id', authRequired, async (req, res) => {
           // Validar reglas (excluye la propia ocurrencia)
           const { dateOnly, startDateTime, endDateTime, space } = await validateAndBuildReservation({
             db: tx,
+            ctx: staticCtx,
             userId: r.userId,
             actorRole,
             spaceId: r.spaceId,
@@ -1476,20 +1354,17 @@ router.put('/:id', authRequired, async (req, res) => {
             }
 
             const { start: dayStart, end: dayEnd } = getDayRange(dateOnly);
-            const agg = await tx.reservation.aggregate({
-              where: {
-                id: { not: r.id },
-                spaceId: r.spaceId,
-                status: { in: ['ACTIVE', 'PENDING'] },
-                AND: [
-                  { startTime: { gte: dayStart, lt: dayEnd } },
-                  { startTime: { lt: endDateTime } },
-                  { endTime: { gt: startDateTime } },
-                ],
-              },
-              _sum: { attendees: true },
-            });
-            const occupiedAttendees = Number(agg?._sum?.attendees ?? 0);
+            const occupiedAttendees = staticCtx.spaceRes
+              .filter(
+                (o) =>
+                  (r.id == null || o.id !== r.id) &&
+                  o.spaceId === r.spaceId &&
+                  o.startTime >= dayStart &&
+                  o.startTime < dayEnd &&
+                  o.startTime < endDateTime &&
+                  o.endTime > startDateTime
+              )
+              .reduce((sum, o) => sum + Number(o.attendees ?? 1), 0);
             if (occupiedAttendees + occAttendees > cap) {
               throw new ReservationValidationError(
                 `No hay disponibilidad. ${space.name} está completo para ese horario (${occupiedAttendees}/${cap}).`,
@@ -1498,17 +1373,14 @@ router.put('/:id', authRequired, async (req, res) => {
               );
             }
           } else {
-            const overlapping = await tx.reservation.findFirst({
-              where: {
-                id: { not: r.id },
-                spaceId: r.spaceId,
-                status: { in: ['ACTIVE', 'PENDING'] },
-                date: dateOnly,
-                startTime: { lt: endDateTime },
-                endTime: { gt: startDateTime },
-              },
-              select: { id: true },
-            });
+            const overlapping = staticCtx.spaceRes.find(
+              (o) =>
+                (r.id == null || o.id !== r.id) &&
+                o.spaceId === r.spaceId &&
+                o.date.getTime() === dateOnly.getTime() &&
+                o.startTime < endDateTime &&
+                o.endTime > startDateTime
+            );
             if (overlapping) {
               throw new ReservationValidationError(
                 `El espacio ${space.name} ya está reservado en ese horario.`,
@@ -1527,7 +1399,7 @@ router.put('/:id', authRequired, async (req, res) => {
             attendees: shared ? occAttendees : 1,
           });
 
-          const deskData = await allocationData(tx, { spaceId: r.spaceId, startTime: startDateTime, endTime: endDateTime, attendees: occAttendees }, { admin: isAdmin, deskIds: req.body.deskIds, excludeId: r.id });
+          const deskData = await allocationData(tx, { spaceId: r.spaceId, startTime: startDateTime, endTime: endDateTime, attendees: occAttendees }, { admin: isAdmin, deskIds: req.body.deskIds, excludeId: r.id, space });
           const updatedData = {
               ...deskData,
               ...recurrenceData,
@@ -1547,6 +1419,7 @@ router.put('/:id', authRequired, async (req, res) => {
           const updated = r.id
             ? await tx.reservation.update({ where: { id: r.id }, data: updatedData, include })
             : await tx.reservation.create({ data: { ...updatedData, userId: r.userId, spaceId: r.spaceId, seriesId: existing.seriesId }, include });
+          updateValidationContextRow(staticCtx, updated, space.type);
           out.push(updated);
         }
 
@@ -1721,26 +1594,6 @@ router.put('/:id', authRequired, async (req, res) => {
 });
 
 /**
- * helper local: convierte Date a "HH:MM"
- */
-function toHHMM(dateOrString) {
-  if (typeof dateOrString === 'string') {
-    if (/^\d{2}:\d{2}$/.test(dateOrString)) return dateOrString;
-    const d = new Date(dateOrString);
-    if (!Number.isNaN(d.getTime())) {
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      return `${hh}:${mm}`;
-    }
-    return dateOrString;
-  }
-  const d = new Date(dateOrString);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
-/**
  * DELETE /api/reservations/:id
  */
 router.delete('/:id', authRequired, async (req, res) => {
@@ -1767,7 +1620,9 @@ router.delete('/:id', authRequired, async (req, res) => {
     const updated = await prisma.reservation.update({
       where: { id },
       data: { status: 'CANCELLED' },
+      include: { user: true, space: true },
     });
+    notifyAdminsOfCancellation({ role, reservation: updated });
 
     res.json({ message: 'Reserva cancelada', reservation: updated });
   } catch (err) {

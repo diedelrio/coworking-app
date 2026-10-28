@@ -1,7 +1,8 @@
 const prisma = require('../prisma');
 const { getActiveSettingsMap } = require('../services/settingsService');
+const { madridDateTimeToUtc, utcToMadridYMD, addDaysYMD } = require('../utils/timezone');
 
-const DEFAULT_HOUR = 2; // 02:00 AM
+const DEFAULT_HOUR = 2; // 02:00 AM (hora de Madrid)
 const DEFAULT_MINUTE = 0;
 
 async function getScheduleFromSettings() {
@@ -30,10 +31,12 @@ async function autoCompleteOnce(now = new Date()) {
   return result.count ?? 0;
 }
 
+// La hora configurada es hora de Madrid (igual que el resto del sistema), no la del servidor.
 function msUntilNextRun({ hour, minute }, now = new Date()) {
-  const next = new Date(now);
-  next.setHours(hour, minute, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  const hhmm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  const today = utcToMadridYMD(now);
+  let next = madridDateTimeToUtc(today, hhmm);
+  if (next <= now) next = madridDateTimeToUtc(addDaysYMD(today, 1), hhmm);
   return next.getTime() - now.getTime();
 }
 
@@ -79,4 +82,5 @@ function startAutoCompleteJob() {
 module.exports = {
   startAutoCompleteJob,
   autoCompleteOnce,
+  msUntilNextRun,
 };

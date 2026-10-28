@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:local": "dotenv -e local-db/.env.local -- nodemon src/server.js",
     "start": "node src/server.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -13,18 +14,17 @@
     "db:migrate": "dotenv -e .env -- prisma migrate dev",
     "db:deploy": "dotenv -e .env -- prisma migrate deploy",
     "prisma:gen:pg": "prisma generate",
-    "prisma:gen:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
     "seed:Horarios": "node src/scripts/seedHorarios.js",
+    "test": "node --test tests/recurrence.test.js tests/deskAllocation.test.js",
     "test:desks": "node --test tests/deskAllocation.test.js",
     "test:desks:integration": "node --test tests/desks.integration.test.js"
   },
-  "kmkdir sceywords": [],
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "6.15.0",
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

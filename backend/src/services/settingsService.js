@@ -1,6 +1,8 @@
 const prisma = require('../prisma'); // ajusta si tu prisma client está en otro path
 
+// Caché de TODOS los settings ACTIVE (no depende de qué claves pida cada llamador).
 let cache = { ts: 0, map: null };
+let inflight = null;
 const TTL_MS = 60_000;
 
 function toTyped(value, valueType, fallback) {
@@ -33,25 +35,40 @@ function toTyped(value, valueType, fallback) {
   }
 }
 
-async function getActiveSettingsMap(keys) {
+async function loadAllActiveSettings() {
   const now = Date.now();
   if (cache.map && now - cache.ts < TTL_MS) return cache.map;
+  // Evita N consultas simultáneas cuando el caché expira
+  if (inflight) return inflight;
 
-  const rows = await prisma.setting.findMany({
-    where: {
-      key: { in: keys },
-      status: 'ACTIVE',
-    },
-    select: { key: true, value: true, valueType: true },
-  });
+  inflight = prisma.setting
+    .findMany({
+      where: { status: 'ACTIVE' },
+      select: { key: true, value: true, valueType: true },
+    })
+    .then((rows) => {
+      const map = {};
+      for (const r of rows) {
+        map[r.key] = { value: r.value, valueType: r.valueType };
+      }
+      cache = { ts: Date.now(), map };
+      return map;
+    })
+    .finally(() => {
+      inflight = null;
+    });
 
-  const map = {};
-  for (const r of rows) {
-    map[r.key] = { value: r.value, valueType: r.valueType };
+  return inflight;
+}
+
+async function getActiveSettingsMap(keys) {
+  const all = await loadAllActiveSettings();
+  if (!Array.isArray(keys)) return all;
+  const out = {};
+  for (const k of keys) {
+    if (all[k]) out[k] = all[k];
   }
-
-  cache = { ts: now, map };
-  return map;
+  return out;
 }
 
 function invalidateSettingsCache() {
@@ -76,7 +93,6 @@ async function getReservationRules() {
   const minMinutes = toTyped(m.RESERVATION_MIN_MINUTES?.value, m.RESERVATION_MIN_MINUTES?.valueType, 60);
   const stepMinutes = toTyped(m.RESERVATION_STEP_MINUTES?.value, m.RESERVATION_STEP_MINUTES?.valueType, 30);
   const minMinutesBefore = toTyped(m.MIN_HOURS_BEFORE?.value, m.MIN_HOURS_BEFORE?.valueType, 0);
-  // DIEGO console.log('Loaded reservation rules from settings:', { openHour, closeHour, minMinutes, stepMinutes, minMinutesBefore });
   return {
     openHour: Number(openHour),
     closeHour: Number(closeHour),

@@ -69,8 +69,31 @@ function madridDateYMDToUtcMidnight(dateYMD) {
   return madridDateTimeToUtc(dateYMD, '00:00');
 }
 
+// 'YYYY-MM-DD' (calendario Madrid) de un instante UTC
+function utcToMadridYMD(date) {
+  const p = getPartsInTZ(new Date(date), TZ);
+  return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+}
+
+// Suma días a un 'YYYY-MM-DD' sin depender de la zona horaria del servidor
+function addDaysYMD(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+}
+
+// Día de la semana ISO (1=lun..7=dom) de un 'YYYY-MM-DD'
+function isoWeekdayYMD(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return w === 0 ? 7 : w;
+}
+
 module.exports = {
   TZ,
+  utcToMadridYMD,
+  addDaysYMD,
+  isoWeekdayYMD,
   madridDateTimeToUtc,
   madridDateYMDToUtcMidnight,
   getPartsInTZ,

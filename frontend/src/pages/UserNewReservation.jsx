@@ -333,7 +333,7 @@ export default function UserNewReservation() {
         setAssignedDesks(saved.desks || []);
         setSuccess('Reserva actualizada.' + (saved.desks?.length ? ' Mesas asignadas: ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
       } else {
-        const response = await api.post('/reservations', payload);
+        const response = await api.post('/reservations', payload, { timeout: 90000 });
         const saved = response.data.first || response.data;
         setAssignedDesks(saved.desks || []);
         setSuccess((saved.status === 'PENDING' ? 'Reserva pendiente de aprobación.' : 'Reserva creada.') + (saved.desks?.length ? ' Mesas asignadas' + (response.data.first ? ' para la primera fecha' : '') + ': ' + saved.desks.map(d => d.desk.number).join(', ') + '.' : ''));
