@@ -566,6 +566,48 @@ router.get('/pending-groups', authRequired, requireAdmin, async (req, res) => {
  * PATCH /api/reservations/series/:seriesId/approve
  * Aprueba TODAS las ocurrencias pendientes de una serie.
  */
+router.get('/series/:seriesId/pending', authRequired, requireAdmin, async (req, res) => {
+  try {
+    const { seriesId } = req.params;
+    if (!seriesId) return res.status(400).json({ message: 'seriesId inválido' });
+
+    const rows = await prisma.reservation.findMany({
+      where: { seriesId },
+      include: { user: true, space: true, desks: deskInclude },
+      orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+    });
+    if (!rows.length) return res.status(404).json({ message: 'Serie no encontrada' });
+
+    const now = new Date();
+    const pending = rows.filter((r) => r.status === 'PENDING');
+    const first = rows[0];
+
+    return res.json({
+      seriesId,
+      pattern: first.recurrencePattern || null,
+      user: first.user
+        ? { id: first.user.id, name: first.user.name, lastName: first.user.lastName, email: first.user.email }
+        : null,
+      space: first.space ? { id: first.space.id, name: first.space.name } : null,
+      total: rows.length,
+      approvedCount: rows.filter((r) => r.status === 'ACTIVE').length,
+      pendingCount: pending.length,
+      occurrences: pending.map((r) => ({
+        id: r.id,
+        date: r.date,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        attendees: r.attendees,
+        desks: (r.desks || []).map((d) => d.desk?.number).filter((n) => n != null),
+        isPast: r.startTime <= now,
+      })),
+    });
+  } catch (err) {
+    console.error('ERROR GET /reservations/series/:seriesId/pending', err);
+    return res.status(500).json({ message: 'Error al obtener la serie' });
+  }
+});
+
 router.patch('/series/:seriesId/approve', authRequired, requireAdmin, async (req, res) => {
   try {
     const { seriesId } = req.params;
