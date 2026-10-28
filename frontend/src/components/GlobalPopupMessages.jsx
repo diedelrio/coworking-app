@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getPendingPopupMessages, markPopupMessageRead } from '../api/popupMessages';
 
 const CATEGORY_LABELS = {
@@ -7,12 +7,16 @@ const CATEGORY_LABELS = {
   COMMERCIAL: 'Comercial',
   SOCIAL: 'Social',
   OTHER: 'General',
+  CANCELLATION: 'Cancelaciones',
 };
 
-export default function GlobalPopupMessages({ portal }) {
+// pollMs: si es > 0, consulta cada tanto y muestra de a uno los mensajes nuevos que lleguen
+// con la sesión abierta (al iniciar sesión, las cancelaciones acumuladas vienen en un solo popup).
+export default function GlobalPopupMessages({ portal, pollMs = 0 }) {
   const [messages, setMessages] = useState([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(false);
+  const seenIds = useRef(new Set());
 
   const active = useMemo(() => messages[index] || null, [messages, index]);
 
@@ -22,9 +26,11 @@ export default function GlobalPopupMessages({ portal }) {
     async function load() {
       if (!portal) return;
       try {
-        const { data } = await getPendingPopupMessages(portal);
+        const { data } = await getPendingPopupMessages(portal, { group: true });
         if (alive) {
-          setMessages(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : [];
+          seenIds.current = new Set(list.flatMap((m) => m.groupedIds || [m.id]));
+          setMessages(list);
           setIndex(0);
         }
       } catch (err) {
@@ -32,17 +38,34 @@ export default function GlobalPopupMessages({ portal }) {
       }
     }
 
+    async function poll() {
+      if (!portal || document.hidden) return;
+      try {
+        const { data } = await getPendingPopupMessages(portal);
+        if (!alive || !Array.isArray(data)) return;
+        const fresh = data.filter((m) => !seenIds.current.has(m.id));
+        if (!fresh.length) return;
+        fresh.forEach((m) => seenIds.current.add(m.id));
+        setMessages((prev) => [...prev, ...fresh]);
+      } catch (err) {
+        console.error('Error consultando mensajes emergentes nuevos:', err);
+      }
+    }
+
+    seenIds.current = new Set();
     load();
+    const timer = pollMs > 0 ? setInterval(poll, pollMs) : null;
     return () => {
       alive = false;
+      if (timer) clearInterval(timer);
     };
-  }, [portal]);
+  }, [portal, pollMs]);
 
   const closeCurrent = useCallback(async () => {
     if (!active || loading) return;
     setLoading(true);
     try {
-      await markPopupMessageRead(active.id);
+      await markPopupMessageRead(active.id, active.groupedIds);
     } catch (err) {
       console.error('Error marcando mensaje emergente como leído:', err);
     } finally {

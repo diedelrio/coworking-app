@@ -16,10 +16,12 @@ export function deletePopupMessage(id) {
   return api.delete(`/admin/popup-messages/${id}`);
 }
 
-export function getPendingPopupMessages(portal) {
-  return api.get('/popup-messages/pending', { params: { portal } });
+// group: agrupa las cancelaciones acumuladas en un solo popup (solo al iniciar sesión)
+export function getPendingPopupMessages(portal, { group = false } = {}) {
+  return api.get('/popup-messages/pending', { params: { portal, ...(group ? { group: 1 } : {}) } });
 }
 
-export function markPopupMessageRead(id) {
-  return api.post(`/popup-messages/${id}/read`);
+// ids: mensajes que componen un popup agrupado (se marcan todos como leídos)
+export function markPopupMessageRead(id, ids) {
+  return api.post(`/popup-messages/${id}/read`, ids && ids.length > 1 ? { ids } : undefined);
 }

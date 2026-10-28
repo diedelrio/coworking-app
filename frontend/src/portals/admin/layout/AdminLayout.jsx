@@ -13,7 +13,7 @@ export default function AdminLayout({ children, user }) {
         <AdminSidebar />
         <main className="admin-portal-main">{children}</main>
       </div>
-      <GlobalPopupMessages portal="ADMIN" />
+      <GlobalPopupMessages portal="ADMIN" pollMs={60000} />
     </div>
   );
 }

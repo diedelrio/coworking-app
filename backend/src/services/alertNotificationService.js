@@ -11,7 +11,7 @@ function renderTemplate(text, vars = {}) {
 
 async function getAdminRecipients() {
   const admins = await prisma.user.findMany({
-    where: { role: 'ADMIN' },
+    where: { role: 'ADMIN', active: true },
     select: { email: true },
   });
 
@@ -174,7 +174,86 @@ async function notifyReservationRejectedToUser({ reservation, user, space, reaso
   return { sent: true, recipient: user.email };
 }
 
+const DEFAULT_CANCELLED_SUBJECT = 'Reserva cancelada: {{spaceName}} el {{date}}';
+const DEFAULT_CANCELLED_BODY = [
+  'Hola {{adminName}},',
+  '',
+  '{{userName}} ({{userEmail}}) canceló una reserva:',
+  '',
+  'Espacio: {{spaceName}}',
+  'Fecha: {{date}}',
+  'Horario: {{startTime}} - {{endTime}}',
+  'Reserva Nº: {{reservationId}}',
+  '',
+  'El espacio quedó libre para ese horario.',
+].join(String.fromCharCode(10));
+
+/**
+ * Avisa a los admins de que un usuario canceló una reserva:
+ *  - email (EmailTemplate key = "RESERVATION_CANCELLED_ADMIN" si existe; si no, texto por defecto)
+ *  - popup en el portal ADMIN, que cada admin ve al iniciar sesión (vence en 14 días)
+ * Ambos canales son independientes: si falla uno, el otro se intenta igual.
+ */
+async function notifyReservationCancelledToAdmins({ reservation, user, space }) {
+  const vars = {
+    adminName: 'Admin',
+    userName: [user?.name, user?.lastName].filter(Boolean).join(' '),
+    userEmail: user?.email || '',
+    spaceName: space?.name || '',
+    spaceType: space?.type || '',
+    date: formatDateES(reservation?.date),
+    startTime: formatTimeHHMM(reservation?.startTime),
+    endTime: formatTimeHHMM(reservation?.endTime),
+    reservationId: reservation?.id ?? '',
+  };
+
+  const result = { email: null, popup: null };
+
+  try {
+    const recipients = await getAdminRecipients();
+    if (!recipients.length) {
+      console.warn('[alertNotificationService] No hay emails de admins (DB ni ENV).');
+      result.email = { sent: false, reason: 'NO_RECIPIENTS' };
+    } else {
+      const tpl = await prisma.emailTemplate.findUnique({ where: { key: 'RESERVATION_CANCELLED_ADMIN' } });
+      await sendMail({
+        to: recipients,
+        subject: renderTemplate(tpl?.subject || DEFAULT_CANCELLED_SUBJECT, vars),
+        text: renderTemplate(tpl?.body || DEFAULT_CANCELLED_BODY, vars),
+      });
+      result.email = { sent: true, recipients };
+    }
+  } catch (err) {
+    console.error('[alertNotificationService] No se pudo enviar el email de cancelación:', err);
+    result.email = { sent: false, reason: 'ERROR' };
+  }
+
+  try {
+    const popup = await prisma.popupMessage.create({
+      data: {
+        title: 'Reserva cancelada',
+        description: `${vars.userName || vars.userEmail} canceló su reserva en ${vars.spaceName} el ${vars.date} de ${vars.startTime} a ${vars.endTime} (Nº ${vars.reservationId}).`,
+        portal: 'ADMIN',
+        category: 'CANCELLATION',
+        active: true,
+        showFrom: new Date(),
+        showUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        showOnce: true,
+        requireConfirmation: true,
+      },
+      select: { id: true },
+    });
+    result.popup = { created: true, id: popup.id };
+  } catch (err) {
+    console.error('[alertNotificationService] No se pudo crear el popup de cancelación:', err);
+    result.popup = { created: false, reason: 'ERROR' };
+  }
+
+  return result;
+}
+
 module.exports = {
+  notifyReservationCancelledToAdmins,
   notifyReservationPendingApproval,
   notifyReservationApprovedToUser,  
   notifyReservationRejectedToUser,
