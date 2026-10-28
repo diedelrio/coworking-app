@@ -26,12 +26,15 @@ MEJORAS
 1. Reservas recurrentes mucho más rápidas.
     a. Crear o editar una serie (hasta 100 reservas) ya no se queda esperando ni da error de tiempo agotado.
     b. Si la fecha de fin genera más de 100 reservas, se avisa con un mensaje claro en lugar de cortar la serie sin avisar.
-2. Avisos de cancelación para el administrador.
+2. Aprobación de reservas recurrentes.
+    a. Al aprobar una serie pendiente, ahora puedes elegir entre aprobar toda la serie o resolver las fechas una a una (aprobar o rechazar cada fecha).
+    b. Si apruebas toda la serie, el usuario recibe un solo email; si las resuelves una a una, recibe un email por cada fecha.
+3. Avisos de cancelación para el administrador.
     a. Cuando un cliente cancela una reserva, se envía un email a los administradores.
     b. Además aparece un popup al ingresar: si hay varias cancelaciones acumuladas se muestran juntas en un solo mensaje.
-    c. Con la sesión abierta, las nuevas cancelaciones aparecen a medida que ocurren (puede tardar hasta 1 minuto).
-3. Nuevo en Reglas de negocio: los máximos de horas por día/semana, espacios por día y espacios simultáneos de cada tipo de espacio se pueden ajustar (claves MAX_HOURS_PER_DAY_<TIPO>, MAX_HOURS_PER_WEEK_<TIPO>, MAX_SPACES_PER_DAY_<TIPO> y MAX_OVERLAPPING_SPACES_<TIPO>).
-4. Más seguridad: se limita la cantidad de intentos de inicio de sesión y de recuperación de contraseña, y las cuentas desactivadas pierden el acceso como máximo en 1 minuto.
+    c. Con la sesión abierta, las nuevas cancelaciones aparecen a medida que ocurren (hasta 15 segundos de demora, o al instante al volver a la pestaña).
+4. Nuevo en Reglas de negocio: los máximos de horas por día/semana, espacios por día y espacios simultáneos de cada tipo de espacio se pueden ajustar (claves MAX_HOURS_PER_DAY_<TIPO>, MAX_HOURS_PER_WEEK_<TIPO>, MAX_SPACES_PER_DAY_<TIPO> y MAX_OVERLAPPING_SPACES_<TIPO>).
+5. Más seguridad: se limita la cantidad de intentos de inicio de sesión y de recuperación de contraseña, y las cuentas desactivadas pierden el acceso como máximo en 1 minuto.
 
 CORRECCIONES
 1. Las reglas de horario (apertura, cierre, duración mínima e intervalos) a veces se aplicaban con valores por defecto en lugar de los configurados. Ahora se respetan siempre.
@@ -66,7 +69,13 @@ CORRECCIONES
 * Cuando un **no administrador** cancela (`PATCH /:id/cancel` o `DELETE /:id`): email a los admins activos y popup (portal ADMIN, categoría `CANCELLATION`, vence a los 14 días).
 * Plantilla opcional `RESERVATION_CANCELLED_ADMIN` (variables: `userName`, `userEmail`, `spaceName`, `date`, `startTime`, `endTime`, `reservationId`); si no existe se usa un texto por defecto.
 * Al iniciar sesión (`GET /popup-messages/pending?group=1`) las cancelaciones pendientes se agrupan en un solo popup; confirmar lo marca todo como leído.
-* Con la sesión abierta, el portal admin consulta cada 60 s y muestra las nuevas de a una.
+* Con la sesión abierta, el portal admin consulta cada 15 s (y de inmediato al volver a la pestaña) y muestra las nuevas de a una.
+
+### Aprobación de series recurrentes
+
+* Al aprobar una serie pendiente se abre un modal (`SeriesApprovalModal`): "Aprobar toda la serie (N)" o aprobar/rechazar cada fecha por separado.
+* Nuevo `GET /reservations/series/:seriesId/pending` (solo admin) con las fechas pendientes, mesas y conteo de aprobadas.
+* Aprobar toda la serie envía un solo email al usuario; resolver una a una envía uno por fecha.
 
 ### Seguridad y mantenimiento
 

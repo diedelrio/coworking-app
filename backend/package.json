@@ -15,7 +15,7 @@
     "db:deploy": "dotenv -e .env -- prisma migrate deploy",
     "prisma:gen:pg": "prisma generate",
     "seed:Horarios": "node src/scripts/seedHorarios.js",
-    "test": "node --test tests/recurrence.test.js tests/deskAllocation.test.js",
+    "test": "node --test tests/recurrence.test.js tests/deskAllocation.test.js tests/deskBatch.test.js",
     "test:desks": "node --test tests/deskAllocation.test.js",
     "test:desks:integration": "node --test tests/desks.integration.test.js"
   },

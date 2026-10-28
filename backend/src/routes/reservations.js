@@ -35,7 +35,8 @@ const {
 const { ReservationValidationError } = require('../services/reservationErrors');
 const { safeRandomId, toDateOnlyYMD, buildOccurrenceDates } = require('../services/recurrence');
 
-const { DeskError, deskInclude, lockSpaces, allocationData } = require('../services/deskAllocation');
+const { Prisma } = require('@prisma/client');
+const { DeskError, deskInclude, lockSpaces, allocationData, allocateDeskBatch } = require('../services/deskAllocation');
 const router = express.Router();
 
 /* ------------------------------ Helpers fechas ------------------------------ */
@@ -449,6 +450,31 @@ async function validateAndBuildReservation({
   }
 
   return { dateOnly, startDateTime, endDateTime, space };
+}
+
+/**
+ * Actualiza muchas reservas existentes con UNA sola sentencia (UPDATE ... FROM VALUES).
+ * Antes se hacía un update (con includes) por reserva: en series largas, con la latencia entre
+ * el backend y la base, la transacción superaba su tiempo máximo.
+ * Los valores se envían como texto y se convierten en SQL, para no depender de la zona
+ * horaria de la sesión (timestamp sin zona = UTC, igual que Prisma).
+ */
+async function bulkUpdateReservations(tx, plan) {
+  if (!plan.length) return;
+  const iso = (d) => new Date(d).toISOString();
+  const tuples = plan.map(
+    (p) => Prisma.sql`(${String(p.id)}::text::int, ${iso(p.date)}::text::timestamp, ${iso(p.startTime)}::text::timestamp,
+      ${iso(p.endTime)}::text::timestamp, ${String(p.attendees)}::text::int, ${String(p.hourlyRateSnapshot)}::text::numeric,
+      ${String(p.durationMinutes)}::text::int, ${String(p.totalAmount)}::text::numeric, ${p.status}::text::"ReservationStatus",
+      ${p.purpose ?? null}::text, ${p.notes ?? null}::text)`
+  );
+  await tx.$executeRaw`
+    UPDATE "Reservation" AS r SET
+      "date" = v."date", "startTime" = v."startTime", "endTime" = v."endTime", "attendees" = v."attendees",
+      "hourlyRateSnapshot" = v."rate", "durationMinutes" = v."dur", "totalAmount" = v."total",
+      "status" = v."status", "purpose" = v."purpose", "notes" = v."notes"
+    FROM (VALUES ${Prisma.join(tuples)}) AS v(id, "date", "startTime", "endTime", "attendees", "rate", "dur", "total", "status", "purpose", "notes")
+    WHERE r.id = v.id`;
 }
 
 /**
@@ -1042,12 +1068,31 @@ router.post('/', authRequired, async (req, res) => {
     const createdReservations = await prisma.$transaction(async (tx) => {
       await lockSpaces(tx, preparedRows.map(row => row.spaceId));
       await assertNoConflictsUnderLock(tx, preparedRows, ctx.spaces.get(Number(spaceId)));
-      const created = [];
-      for (const row of preparedRows) {
-        const desks = await allocationData(tx, row, { admin: actorRole === 'ADMIN', deskIds: req.body.deskIds, space: ctx.spaces.get(row.spaceId) });
-        created.push(await tx.reservation.create({ data: { ...row, ...desks }, include: { user: true, space: true, desks: deskInclude } }));
+      // Número fijo de consultas, sin importar cuántas fechas tenga la serie.
+      const space = ctx.spaces.get(Number(spaceId));
+      const assignments = space?.numberedDesks
+        ? await allocateDeskBatch(
+            tx,
+            space,
+            preparedRows.map((row) => ({ id: null, startTime: row.startTime, endTime: row.endTime, attendees: row.attendees })),
+            { admin: actorRole === 'ADMIN', deskIds: req.body.deskIds }
+          )
+        : null;
+
+      // INSERT múltiple; los ids se asignan en orden de inserción
+      const inserted = (await tx.reservation.createManyAndReturn({ data: preparedRows, select: { id: true } })).sort((a, b) => a.id - b.id);
+
+      if (assignments) {
+        await tx.reservationDesk.createMany({
+          data: inserted.flatMap((row, i) => assignments[i].map((deskId) => ({ reservationId: row.id, deskId }))),
+        });
       }
-      return created;
+
+      return tx.reservation.findMany({
+        where: { id: { in: inserted.map((row) => row.id) } },
+        include: { user: true, space: true, desks: deskInclude },
+        orderBy: { id: 'asc' },
+      });
     }, { timeout: 60000, maxWait: 20000 });
 
     // Si es recurrente devolvemos resumen + primera
@@ -1349,7 +1394,8 @@ router.put('/:id', authRequired, async (req, res) => {
           ymds: seriesReservations.map((r) => utcToMadridYMD(r.date)),
           withReservations: true,
         });
-        const out = [];
+        // 1) Se valida y se planifica TODO en memoria; 2) se escribe en lote (pocas consultas).
+        const plan = [];
 
         for (const r of seriesReservations) {
           // Mantener fecha por ocurrencia
@@ -1441,32 +1487,71 @@ router.put('/:id', authRequired, async (req, res) => {
             attendees: shared ? occAttendees : 1,
           });
 
-          const deskData = await allocationData(tx, { spaceId: r.spaceId, startTime: startDateTime, endTime: endDateTime, attendees: occAttendees }, { admin: isAdmin, deskIds: req.body.deskIds, excludeId: r.id, space });
-          const updatedData = {
-              ...deskData,
-              ...recurrenceData,
-              status: r.status,
-              date: dateOnly,
-              startTime: startDateTime,
-              endTime: endDateTime,
-              attendees: shared ? occAttendees : 1,
-              hourlyRateSnapshot: pricing.hourlyRateSnapshot,
-              durationMinutes: pricing.durationMinutes,
-              totalAmount: pricing.totalAmount,
-              purpose:
-                purpose !== undefined ? (purpose ? String(purpose).trim() : null) : r.purpose,
-              notes: notes !== undefined ? (notes ? String(notes).trim() : null) : r.notes,
+          const rowData = {
+            status: r.status,
+            date: dateOnly,
+            startTime: startDateTime,
+            endTime: endDateTime,
+            attendees: shared ? occAttendees : 1,
+            hourlyRateSnapshot: pricing.hourlyRateSnapshot,
+            durationMinutes: pricing.durationMinutes,
+            totalAmount: pricing.totalAmount,
+            purpose: purpose !== undefined ? (purpose ? String(purpose).trim() : null) : r.purpose,
+            notes: notes !== undefined ? (notes ? String(notes).trim() : null) : r.notes,
           };
-          const include = { user: true, space: true, desks: deskInclude };
-          const updated = r.id
-            ? await tx.reservation.update({ where: { id: r.id }, data: updatedData, include })
-            : await tx.reservation.create({ data: { ...updatedData, userId: r.userId, spaceId: r.spaceId, seriesId: existing.seriesId }, include });
-          updateValidationContextRow(staticCtx, updated, space.type);
-          out.push(updated);
+          plan.push({ r, id: r.id, space, rowData });
+          updateValidationContextRow(
+            staticCtx,
+            { id: r.id, spaceId: r.spaceId, date: dateOnly, startTime: startDateTime, endTime: endDateTime, attendees: rowData.attendees, status: r.status },
+            space.type
+          );
         }
 
-        return out;
-      }, { timeout: 20000, maxWait: 20000 });
+        const planSpace = plan[0].space;
+        const existingPlan = plan.filter((p) => p.id != null);
+        const newPlan = plan.filter((p) => p.id == null);
+
+        // Mesas (solo espacios con mesas numeradas): se calculan antes de escribir
+        const assignments = planSpace.numberedDesks
+          ? await allocateDeskBatch(
+              tx,
+              planSpace,
+              plan.map((p) => ({ id: p.id, startTime: p.rowData.startTime, endTime: p.rowData.endTime, attendees: p.rowData.attendees })),
+              { admin: isAdmin, deskIds: req.body.deskIds }
+            )
+          : null;
+
+        await bulkUpdateReservations(tx, existingPlan.map((p) => ({ id: p.id, ...p.rowData })));
+        if (recurrenceChanged && existingPlan.length) {
+          await tx.reservation.updateMany({ where: { id: { in: existingPlan.map((p) => p.id) } }, data: recurrenceData });
+        }
+
+        const createdRows = newPlan.length
+          ? (
+              await tx.reservation.createManyAndReturn({
+                data: newPlan.map((p) => ({ ...p.rowData, ...recurrenceData, userId: p.r.userId, spaceId: p.r.spaceId, seriesId: existing.seriesId })),
+                select: { id: true },
+              })
+            ).sort((a, b) => a.id - b.id)
+          : [];
+        newPlan.forEach((p, i) => {
+          p.id = createdRows[i].id;
+        });
+
+        const allIds = plan.map((p) => p.id);
+        await tx.reservationDesk.deleteMany({ where: { reservationId: { in: allIds } } });
+        if (assignments) {
+          await tx.reservationDesk.createMany({
+            data: plan.flatMap((p, i) => assignments[i].map((deskId) => ({ reservationId: p.id, deskId }))),
+          });
+        }
+
+        return tx.reservation.findMany({
+          where: { id: { in: allIds } },
+          include: { user: true, space: true, desks: deskInclude },
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+        });
+      }, { timeout: 60000, maxWait: 20000 });
 
       return res.json({
         ok: true,
