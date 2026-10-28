@@ -51,6 +51,70 @@ async function allocationData(tx, row, { admin = false, deskIds, excludeId, spac
   if (excludeId) await tx.reservationDesk.deleteMany({ where: { reservationId: excludeId } });
   return { desks: { create: ids.map(deskId => ({ deskId })) } };
 }
+/**
+ * Asigna mesas a VARIAS reservas del mismo espacio con un número fijo de consultas
+ * (antes: ~4 consultas por reserva, que en series largas agotaba la transacción).
+ *
+ * rows: [{ id|null, startTime, endTime, attendees }]  (id = reserva existente que se reprograma)
+ * Devuelve un array de deskIds por cada fila, en el mismo orden.
+ */
+async function allocateDeskBatch(tx, space, rows, { admin = false, deskIds } = {}) {
+  if (!rows.length) return [];
+  if (admin && deskIds === undefined) throw new DeskError('Seleccioná el número de mesa para cada asistente.', 400);
+
+  const minStart = new Date(Math.min(...rows.map((r) => r.startTime.getTime())));
+  const maxEnd = new Date(Math.max(...rows.map((r) => r.endTime.getTime())));
+  const rowIds = rows.map((r) => r.id).filter((id) => id != null);
+
+  const [desks, blocking, previousRows] = await Promise.all([
+    tx.desk.findMany({
+      where: { spaceId: space.id, active: true },
+      orderBy: { number: 'asc' },
+      include: {
+        fixedAssignments: {
+          where: { active: true, startTime: { lt: maxEnd }, OR: [{ endTime: null }, { endTime: { gt: minStart } }] },
+          select: { startTime: true, endTime: true },
+        },
+      },
+    }),
+    tx.reservationDesk.findMany({
+      where: {
+        desk: { spaceId: space.id },
+        reservation: { status: { in: BLOCKING_STATUSES }, startTime: { lt: maxEnd }, endTime: { gt: minStart } },
+      },
+      select: { deskId: true, reservationId: true, reservation: { select: { startTime: true, endTime: true } } },
+    }),
+    rowIds.length
+      ? tx.reservationDesk.findMany({ where: { reservationId: { in: rowIds } }, select: { reservationId: true, deskId: true } })
+      : [],
+  ]);
+
+  const previousByRow = new Map();
+  for (const p of previousRows) {
+    if (!previousByRow.has(p.reservationId)) previousByRow.set(p.reservationId, []);
+    previousByRow.get(p.reservationId).push(p.deskId);
+  }
+
+  const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && aEnd > bStart;
+  const assigned = []; // mesas ya elegidas para filas anteriores de este mismo lote
+  const result = [];
+
+  for (const row of rows) {
+    const view = desks.map((d) => {
+      const fixed = d.fixedAssignments.some((f) => f.startTime < row.endTime && (f.endTime == null || f.endTime > row.startTime));
+      const occupied =
+        blocking.some(
+          (b) => b.deskId === d.id && b.reservationId !== row.id && overlaps(b.reservation.startTime, b.reservation.endTime, row.startTime, row.endTime)
+        ) || assigned.some((a) => a.deskId === d.id && overlaps(a.startTime, a.endTime, row.startTime, row.endTime));
+      return { id: d.id, number: d.number, status: fixed ? 'FIXED' : occupied ? 'OCCUPIED' : 'FREE' };
+    });
+    const ids = chooseDesks(view, row.attendees, admin ? deskIds : undefined, previousByRow.get(row.id) || []);
+    ids.forEach((deskId) => assigned.push({ deskId, startTime: row.startTime, endTime: row.endTime }));
+    result.push(ids);
+  }
+  return result;
+}
+
 async function configureDesks(tx, space, previous) {
   if (!Number.isInteger(space.capacity) || space.capacity < 1) throw new DeskError('La capacidad debe ser un entero mayor a cero.', 400);
   if (!space.numberedDesks) {
@@ -71,4 +135,4 @@ async function configureDesks(tx, space, previous) {
     }
   }
 }
-module.exports = { BLOCKING_STATUSES, deskInclude, DeskError, lockSpaces, chooseDesks, getAvailability, allocationData, configureDesks };
+module.exports = { BLOCKING_STATUSES, deskInclude, DeskError, lockSpaces, chooseDesks, getAvailability, allocationData, allocateDeskBatch, configureDesks };
