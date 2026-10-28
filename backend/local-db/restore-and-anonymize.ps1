@@ -1,4 +1,4 @@
-# Levanta Postgres en Docker, restaura ./dump/prod.dump y anonimiza los datos.
+﻿# Levanta Postgres en Docker, restaura ./dump/prod.dump y anonimiza los datos.
 # Se puede repetir las veces que quieras: recrea la base desde cero.
 Set-Location $PSScriptRoot
 if (-not (Test-Path ./dump/prod.dump)) { throw "Falta ./dump/prod.dump. Ejecutá primero ./dump-from-neon.ps1" }

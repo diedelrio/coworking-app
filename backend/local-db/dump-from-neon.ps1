@@ -1,4 +1,4 @@
-# Descarga un dump de la base de producción (Neon) a ./dump/prod.dump
+﻿# Descarga un dump de la base de producción (Neon) a ./dump/prod.dump
 # Uso:  $env:NEON_DATABASE_URL = "postgresql://...conexión DIRECTA (sin -pooler)..."
 #       ./dump-from-neon.ps1
 # Solo LEE de producción (pg_dump no modifica nada).
