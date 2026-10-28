@@ -17,6 +17,7 @@ export default function GlobalPopupMessages({ portal, pollMs = 0 }) {
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const seenIds = useRef(new Set());
+  const ready = useRef(false); // la carga inicial (agrupada) ya terminó
 
   const active = useMemo(() => messages[index] || null, [messages, index]);
 
@@ -30,6 +31,7 @@ export default function GlobalPopupMessages({ portal, pollMs = 0 }) {
         if (alive) {
           const list = Array.isArray(data) ? data : [];
           seenIds.current = new Set(list.flatMap((m) => m.groupedIds || [m.id]));
+          ready.current = true;
           setMessages(list);
           setIndex(0);
         }
@@ -39,7 +41,7 @@ export default function GlobalPopupMessages({ portal, pollMs = 0 }) {
     }
 
     async function poll() {
-      if (!portal || document.hidden) return;
+      if (!portal || document.hidden || !ready.current) return;
       try {
         const { data } = await getPendingPopupMessages(portal);
         if (!alive || !Array.isArray(data)) return;
@@ -52,12 +54,25 @@ export default function GlobalPopupMessages({ portal, pollMs = 0 }) {
       }
     }
 
+    // Al volver a la pestaña (o recuperar el foco) se consulta de inmediato, sin esperar al próximo ciclo:
+    // los temporizadores de una pestaña en segundo plano se frenan y el aviso llegaría tarde.
+    const onVisible = () => {
+      if (!document.hidden) poll();
+    };
+
     seenIds.current = new Set();
+    ready.current = false;
     load();
     const timer = pollMs > 0 ? setInterval(poll, pollMs) : null;
+    if (pollMs > 0) {
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('focus', onVisible);
+    }
     return () => {
       alive = false;
       if (timer) clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [portal, pollMs]);
 
