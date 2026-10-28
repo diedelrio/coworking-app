@@ -7,6 +7,7 @@ import { getCurrentUser } from '../utils/auth';
 import calendarImg from '../images/calendar-illustration.png';
 import { aggregateSharedSlots, occupyingReservations } from '../utils/reservationsCalendar';
 import AdminDayResourcesCalendar from '../components/AdminDayResourcesCalendar';
+import SeriesApprovalModal from '../components/SeriesApprovalModal';
 import './AdminMobileOccupancy.css';
 
 
@@ -78,6 +79,7 @@ export default function DashboardAdmin() {
 
   // Modal cancelación (admin)
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [seriesApprovalId, setSeriesApprovalId] = useState(null); // serie en revisión (aprobar toda o una a una)
   const [cancelTarget, setCancelTarget] = useState(null);
   const [canceling, setCanceling] = useState(false);
 
@@ -235,13 +237,14 @@ async function fetchCalendarReservations() {
 
   async function handleApproveReservation(reservation) {
     if (!reservation?.id) return;
+    // Serie recurrente: el admin elige aprobar toda la serie o una a una
+    if (reservation.seriesId) {
+      setSeriesApprovalId(reservation.seriesId);
+      return;
+    }
     try {
       setError('');
-      if (reservation.seriesId) {
-        await api.patch(`/reservations/series/${reservation.seriesId}/approve`);
-      } else {
-        await api.patch(`/reservations/${reservation.id}/approve`);
-      }
+      await api.patch(`/reservations/${reservation.id}/approve`);
       await Promise.all([fetchReservations(), fetchCalendarReservations()]);
     } catch (err) {
       console.error(err);
@@ -467,6 +470,15 @@ async function fetchCalendarReservations() {
 
   return (
     <Layout user={user}>
+      <SeriesApprovalModal
+        seriesId={seriesApprovalId}
+        onChanged={() => Promise.all([fetchReservations(), fetchCalendarReservations()])}
+        onClose={() => {
+          setSeriesApprovalId(null);
+          fetchReservations();
+          fetchCalendarReservations();
+        }}
+      />
       <div className="admin-page">
         <section className="admin-dashboard-v2">
           <div className="admin-dashboard-v2__hero">

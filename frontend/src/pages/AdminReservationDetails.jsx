@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '../api/axiosClient';
 import Layout from '../components/Layout';
+import SeriesApprovalModal from '../components/SeriesApprovalModal';
 
 function isSharedType(spaceType) {
   const t = String(spaceType || '').toUpperCase();
@@ -38,6 +39,7 @@ export default function AdminReservationDetails() {
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [seriesModalOpen, setSeriesModalOpen] = useState(false);
   const [error, setError] = useState('');
   const [reservation, setReservation] = useState(null);
 
@@ -140,6 +142,11 @@ export default function AdminReservationDetails() {
 
   const approve = async () => {
   if (!reservation) return;
+  // Serie recurrente: el admin elige aprobar toda la serie o una a una
+  if (isSeries && effectiveSeriesId) {
+    setSeriesModalOpen(true);
+    return;
+  }
   setBusy(true);
   setError('');
   try {
@@ -184,6 +191,14 @@ export default function AdminReservationDetails() {
 
   return (
     <Layout>
+       <SeriesApprovalModal
+         seriesId={seriesModalOpen ? effectiveSeriesId : null}
+         onChanged={load}
+         onClose={() => {
+           setSeriesModalOpen(false);
+           load();
+         }}
+       />
        <div className="admin-page admin-reservation-detail-page">
           <div className="admin-reservation-detail-shell">
             <h1 margin-bottom='0.25rem'>Detalle de Reserva</h1>
@@ -344,7 +359,7 @@ export default function AdminReservationDetails() {
               {reservation.status === 'PENDING' || reservation.status === 'APPROVED' ? (
                 <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <button type="button" className="pill-button-green" onClick={approve} disabled={busy}>
-                    {busy ? 'Procesando…' : isSeries ? 'Aprobar serie' : 'Aprobar'}
+                    {busy ? 'Procesando…' : isSeries ? 'Aprobar serie…' : 'Aprobar'}
                   </button>
                   <button type="button" className="pill-button-red" onClick={reject} disabled={busy}>
                     {busy ? 'Procesando…' : isSeries ? 'Rechazar serie' : 'Rechazar'}

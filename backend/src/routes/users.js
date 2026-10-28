@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../prisma');
-const { authRequired, requireAdmin } = require('../middlewares/auth');
-const bcrypt = require('bcrypt');
+const { authRequired, requireAdmin, invalidateUserActiveCache } = require('../middlewares/auth');
+const bcrypt = require('bcryptjs');
 
 const router = express.Router();
 
@@ -295,6 +295,7 @@ router.patch('/me/deactivate', authRequired, async (req, res) => {
       where: { id: userId },
       data: { active: false },
     });
+    invalidateUserActiveCache(userId);
 
     res.json({ message: 'Cuenta desactivada correctamente.' });
   } catch (err) {
@@ -408,6 +409,7 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
       }
     });
 
+    invalidateUserActiveCache(id);
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.user.update({
         where: { id },

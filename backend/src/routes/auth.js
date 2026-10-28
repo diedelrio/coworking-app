@@ -6,11 +6,12 @@ const { sendMail } = require('../services/emailService');
 const { getEmailTemplateByKey, renderEmailTemplate } = require('../services/emailTemplateService');
 const crypto = require('crypto');
 const { joinFrontendUrl } = require('../utils/frontendUrl');
+const { loginLimiter, sensitiveLimiter } = require('../middlewares/rateLimit');
 
 const router = express.Router();
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', sensitiveLimiter, async (req, res) => {
   try {
     const { name, lastName, phone, email, password } = req.body;
     const consentAcceptances = Array.isArray(req.body?.consentAcceptances)
@@ -108,7 +109,7 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -275,7 +276,7 @@ router.post('/activate/complete', async (req, res) => {
 });
 
 // POST /api/auth/activate/resend { email }
-router.post('/activate/resend', async (req, res) => {
+router.post('/activate/resend', sensitiveLimiter, async (req, res) => {
   try {
     const emailRaw = req.body?.email;
     const email = typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : '';
@@ -315,7 +316,7 @@ function genericForgotResponse(res) {
  * POST /api/auth/forgot-password
  * Body: { email }
  */
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', sensitiveLimiter, async (req, res) => {
   try {
     const emailRaw = req.body?.email;
     const email = typeof emailRaw === 'string' ? emailRaw.trim().toLowerCase() : '';
@@ -381,7 +382,7 @@ router.post('/forgot-password', async (req, res) => {
  * POST /api/auth/reset-password
  * Body: { token, password }
  */
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', sensitiveLimiter, async (req, res) => {
   try {
     const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';

@@ -37,8 +37,8 @@ async function getAvailability(tx, space, startTime, endTime, excludeId) {
   const available = result.filter(d => d.status === 'FREE').length;
   return { capacity: desks.length, available, occupied: desks.length - available, desks: result };
 }
-async function allocationData(tx, row, { admin = false, deskIds, excludeId } = {}) {
-  const space = await tx.space.findUnique({ where: { id: row.spaceId } });
+async function allocationData(tx, row, { admin = false, deskIds, excludeId, space: knownSpace } = {}) {
+  const space = knownSpace ?? await tx.space.findUnique({ where: { id: row.spaceId } });
   if (!space?.active) throw new DeskError('El espacio no está disponible.', 400);
   if (!space.numberedDesks) {
     if (excludeId) await tx.reservationDesk.deleteMany({ where: { reservationId: excludeId } });

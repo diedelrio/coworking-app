@@ -30,6 +30,7 @@ const CATEGORY_LABELS = {
   COMMERCIAL: 'Comercial',
   SOCIAL: 'Social',
   OTHER: 'Otro',
+  CANCELLATION: 'Cancelaciones',
 };
 
 function toInputDateTime(value) {

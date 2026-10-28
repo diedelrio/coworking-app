@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axiosClient';
+import SeriesApprovalModal from './SeriesApprovalModal';
 
 function hasNotes(str) {
   return typeof str === 'string' && str.trim().length > 0;
@@ -180,6 +181,9 @@ export default function AdminDashboardWidgets() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReservation, setRejectReservation] = useState(null);
 
+  // Serie que se está revisando (aprobar toda o fecha por fecha)
+  const [seriesModalId, setSeriesModalId] = useState(null);
+
   const loadPending = async () => {
     setLoadingPending(true);
     try {
@@ -214,6 +218,11 @@ export default function AdminDashboardWidgets() {
   }, []);
 
   const approveReservation = async (group) => {
+    // Serie recurrente: el admin elige aprobar toda la serie o una a una
+    if (group?.type === 'SERIES') {
+      setSeriesModalId(group.seriesId);
+      return;
+    }
     const busyKey = group?.type === 'SERIES' ? `S:${group.seriesId}` : `O:${group.reservationId}`;
     setActionBusyId(busyKey);
     setError('');
@@ -274,6 +283,14 @@ export default function AdminDashboardWidgets() {
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
+      <SeriesApprovalModal
+        seriesId={seriesModalId}
+        onChanged={loadPending}
+        onClose={() => {
+          setSeriesModalId(null);
+          loadPending();
+        }}
+      />
       {error && (
         <div className="admin-card" style={{ borderLeft: '4px solid #f97373' }}>
           <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p>
@@ -406,7 +423,7 @@ export default function AdminDashboardWidgets() {
                             onClick={() => approveReservation(g)}
                             disabled={busy}
                           >
-                            {busy ? 'Procesando...' : 'Aprobar'}
+                            {busy ? 'Procesando...' : g.type === 'SERIES' ? 'Aprobar…' : 'Aprobar'}
                           </button>
 
                           <button

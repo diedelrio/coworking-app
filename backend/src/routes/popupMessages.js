@@ -5,7 +5,36 @@ const { authRequired, requireAdmin } = require('../middlewares/auth');
 const router = express.Router();
 
 const PORTALS = ['ADMIN', 'CLIENT', 'BOTH'];
-const CATEGORIES = ['SYSTEM', 'RELEASE', 'COMMERCIAL', 'SOCIAL', 'OTHER'];
+const CATEGORIES = ['SYSTEM', 'RELEASE', 'COMMERCIAL', 'SOCIAL', 'OTHER', 'CANCELLATION'];
+const MAX_GROUPED_LINES = 50;
+
+// Junta varios avisos de cancelación pendientes en un solo mensaje (una línea por cancelación).
+// El id es el del más reciente; groupedIds lleva todos para marcarlos como leídos juntos.
+function groupCancellations(pending) {
+  const cancels = pending.filter((m) => m.category === 'CANCELLATION');
+  if (cancels.length < 2) return pending;
+
+  const lines = cancels.slice(0, MAX_GROUPED_LINES).map((m) => `• ${m.description}`);
+  if (cancels.length > MAX_GROUPED_LINES) lines.push(`…y ${cancels.length - MAX_GROUPED_LINES} más.`);
+
+  const grouped = {
+    ...cancels[0],
+    title: `Reservas canceladas (${cancels.length})`,
+    description: lines.join(String.fromCharCode(10)),
+    groupedIds: cancels.map((m) => m.id),
+  };
+
+  const out = [];
+  let placed = false;
+  for (const m of pending) {
+    if (m.category !== 'CANCELLATION') out.push(m);
+    else if (!placed) {
+      out.push(grouped);
+      placed = true;
+    }
+  }
+  return out;
+}
 
 function normalizeBool(value, fallback = false) {
   if (typeof value === 'boolean') return value;
@@ -166,7 +195,8 @@ router.get('/popup-messages/pending', authRequired, async (req, res) => {
     const readIds = new Set(reads.map((r) => r.popupMessageId));
 
     const pending = messages.filter((message) => !message.showOnce || !readIds.has(message.id));
-    res.json(pending);
+    // group=1 (solo al iniciar sesión): las cancelaciones acumuladas se muestran en un único popup
+    res.json(String(req.query.group) === '1' ? groupCancellations(pending) : pending);
   } catch (err) {
     console.error('ERROR GET /popup-messages/pending', err);
     res.status(500).json({ message: 'Error al obtener mensajes emergentes pendientes' });
@@ -180,6 +210,22 @@ router.post('/popup-messages/:id/read', authRequired, async (req, res) => {
 
     const popup = await prisma.popupMessage.findUnique({ where: { id } });
     if (!popup) return res.status(404).json({ message: 'Mensaje emergente no encontrado' });
+
+    // Popup agrupado: se marcan como leídos todos los mensajes que lo componen
+    const ids = Array.isArray(req.body?.ids)
+      ? [...new Set(req.body.ids.map(Number).filter(Number.isInteger))].slice(0, 500)
+      : [];
+    if (ids.length) {
+      const existing = await prisma.popupMessage.findMany({
+        where: { id: { in: [...ids, id] }, category: popup.category },
+        select: { id: true },
+      });
+      await prisma.userPopupMessageRead.createMany({
+        data: existing.map((m) => ({ userId: req.user.userId, popupMessageId: m.id })),
+        skipDuplicates: true,
+      });
+      return res.status(201).json({ ok: true, marked: existing.length });
+    }
 
     const read = await prisma.userPopupMessageRead.upsert({
       where: { userId_popupMessageId: { userId: req.user.userId, popupMessageId: id } },

@@ -5,12 +5,10 @@ const { authRequired, requireAdmin } = require('../middlewares/auth');
 
 const router = express.Router();
 
+// Los cierres se guardan SIEMPRE como medianoche UTC del día (YYYY-MM-DDT00:00:00Z),
+// sin depender de la zona horaria del servidor. Quien los lee los compara por fecha.
 function toYMD(date) {
-  const d = new Date(date);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return new Date(date).toISOString().slice(0, 10);
 }
 
 /**
@@ -32,8 +30,8 @@ router.get('/', authRequired, requireAdmin, async (req, res) => {
     }
 
     if (from || to) {
-      const fromDate = from ? new Date(`${from}T00:00:00`) : null;
-      const toDate = to ? new Date(`${to}T23:59:59`) : null;
+      const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : null;
+      const toDate = to ? new Date(`${to}T23:59:59.999Z`) : null;
 
       if (fromDate && Number.isNaN(fromDate.getTime())) {
         return res.status(400).json({ message: 'from inválido (YYYY-MM-DD)' });
@@ -86,19 +84,17 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'Debe enviar date (YYYY-MM-DD) o startDate/endDate' });
     }
 
-    const start = new Date(`${oneDate}T00:00:00`);
+    const start = new Date(`${oneDate}T00:00:00.000Z`);
     if (Number.isNaN(start.getTime())) {
       return res.status(400).json({ message: 'Fecha inválida (YYYY-MM-DD)' });
     }
-    start.setHours(0, 0, 0, 0);
 
     let end = null;
     if (endDate) {
-      end = new Date(`${endDate}T00:00:00`);
+      end = new Date(`${endDate}T00:00:00.000Z`);
       if (Number.isNaN(end.getTime())) {
         return res.status(400).json({ message: 'endDate inválida (YYYY-MM-DD)' });
       }
-      end.setHours(0, 0, 0, 0);
     } else {
       end = new Date(start);
     }
@@ -114,7 +110,6 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
     const current = new Date(start);
     while (current <= end) {
       const d = new Date(current);
-      d.setHours(0, 0, 0, 0);
       try {
         // upsert: si existe, reactivar y actualizar reason
         const row = await prisma.officeClosure.upsert({
@@ -126,7 +121,7 @@ router.post('/', authRequired, requireAdmin, async (req, res) => {
       } catch (e) {
         errors.push({ date: toYMD(d), error: e?.message || 'error' });
       }
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return res.status(201).json({
@@ -154,9 +149,8 @@ router.put('/:id', authRequired, requireAdmin, async (req, res) => {
 
     const data = {};
     if (date != null) {
-      const dateOnly = new Date(`${date}T00:00:00`);
+      const dateOnly = new Date(`${date}T00:00:00.000Z`);
       if (Number.isNaN(dateOnly.getTime())) return res.status(400).json({ message: 'date inválido (YYYY-MM-DD)' });
-      dateOnly.setHours(0, 0, 0, 0);
       data.date = dateOnly;
     }
     if (reason !== undefined) data.reason = reason ? String(reason).trim() : null;

@@ -3,3 +3,11 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# SQLite local de desarrollo (contiene datos)
+prisma/dev.db
+*.db
+
+# Copia local de producción (datos personales)
+local-db/dump/
+local-db/.env.local
